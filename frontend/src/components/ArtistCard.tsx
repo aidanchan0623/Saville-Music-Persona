@@ -1,0 +1,44 @@
+import type { TopArtist } from "../types/api";
+
+export function ArtistCard({ artist }: { artist: TopArtist }) {
+  return (
+    <article className="rounded-lg border border-line bg-panel/80 p-5 transition hover:border-indigo/40 hover:bg-panelSoft/85">
+      <div className="flex items-start gap-4">
+        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full bg-indigo/20 text-lg font-bold text-white">
+          {artist.image ? <img className="h-full w-full object-cover" src={artist.image} alt="" /> : artist.artist.slice(0, 2).toUpperCase()}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl font-black text-white/20">#{artist.rank}</span>
+            <h3 className="truncate text-lg font-semibold text-white">{artist.artist}</h3>
+          </div>
+          <p className="mt-1 text-sm text-violet-200">{artist.artist_loyalty_label}</p>
+        </div>
+      </div>
+      <dl className="mt-5 grid grid-cols-3 gap-3 text-sm">
+        <div className="rounded-md bg-white/[0.04] p-3">
+          <dt className="text-mist/70">Plays</dt>
+          <dd className="mt-1 font-semibold text-white">{artist.play_count}</dd>
+        </div>
+        <div className="rounded-md bg-white/[0.04] p-3">
+          <dt className="text-mist/70">Share</dt>
+          <dd className="mt-1 font-semibold text-white">{artist.share_of_listens}%</dd>
+        </div>
+        <div className="rounded-md bg-white/[0.04] p-3">
+          <dt className="text-mist/70">Songs</dt>
+          <dd className="mt-1 font-semibold text-white">{artist.unique_songs_played}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 text-sm leading-6 text-mist">{artist.observation}</p>
+      <p className="mt-3 text-xs text-mist/75">Most played: {artist.most_played_song || "Unavailable"}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {artist.related_genres.map((genre) => (
+          <span key={genre} className="rounded-full border border-white/10 px-3 py-1 text-xs text-mist">
+            {genre}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
