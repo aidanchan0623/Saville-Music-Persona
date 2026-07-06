@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-import urllib.error
-import urllib.request
+import socket
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -151,21 +150,80 @@ class OllamaService:
         )
 
     def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
+        host, port, prefix = self._parse_http_base_url()
+        request_path = f"{prefix}{path}"
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
-        request = urllib.request.Request(
-            f"{self.settings.ollama_base_url}{path}",
-            data=body,
-            method=method,
-            headers={"Content-Type": "application/json"} if body else {},
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - localhost Ollama endpoint from settings.
-                text = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Ollama returned HTTP {exc.code}: {detail}") from exc
+        headers = [
+            f"{method} {request_path} HTTP/1.1",
+            f"Host: {host}:{port}",
+            "Accept: application/json",
+            "Connection: close",
+        ]
+        if body is not None:
+            headers.extend(["Content-Type: application/json", f"Content-Length: {len(body)}"])
+        raw_request = ("\r\n".join(headers) + "\r\n\r\n").encode("ascii") + (body or b"")
+        with socket.create_connection((host, port), timeout=timeout) as conn:
+            conn.settimeout(timeout)
+            conn.sendall(raw_request)
+            chunks: list[bytes] = []
+            while True:
+                chunk = conn.recv(65536)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+        raw_response = b"".join(chunks)
+        header_bytes, _, body_bytes = raw_response.partition(b"\r\n\r\n")
+        header_lines = header_bytes.decode("iso-8859-1").split("\r\n")
+        status_line = header_lines[0] if header_lines else ""
+        parts = status_line.split(" ", 2)
+        if len(parts) < 2 or not parts[1].isdigit():
+            raise RuntimeError("Ollama returned an invalid HTTP response.")
+        status_code = int(parts[1])
+        response_headers = {}
+        for line in header_lines[1:]:
+            if ":" in line:
+                key, value = line.split(":", 1)
+                response_headers[key.lower()] = value.strip().lower()
+        if response_headers.get("transfer-encoding") == "chunked":
+            body_bytes = self._decode_chunked_body(body_bytes)
+        text = body_bytes.decode("utf-8")
+        if status_code >= 400:
+            raise RuntimeError(f"Ollama returned HTTP {status_code}: {text}")
         data = json.loads(text)
         return data if isinstance(data, dict) else {}
+
+    def _parse_http_base_url(self) -> tuple[str, int, str]:
+        base = self.settings.ollama_base_url.rstrip("/")
+        if not base.startswith("http://"):
+            raise RuntimeError("Only http:// Ollama endpoints are supported by the local socket client.")
+        remainder = base[len("http://") :]
+        if "/" in remainder:
+            host_port, prefix = remainder.split("/", 1)
+            prefix = f"/{prefix}"
+        else:
+            host_port, prefix = remainder, ""
+        if ":" in host_port:
+            host, port_text = host_port.rsplit(":", 1)
+            port = int(port_text)
+        else:
+            host, port = host_port, 80
+        return host, port, prefix
+
+    def _decode_chunked_body(self, body: bytes) -> bytes:
+        decoded = bytearray()
+        cursor = 0
+        while cursor < len(body):
+            line_end = body.find(b"\r\n", cursor)
+            if line_end == -1:
+                break
+            size_text = body[cursor:line_end].split(b";", 1)[0]
+            size = int(size_text, 16)
+            cursor = line_end + 2
+            if size == 0:
+                break
+            decoded.extend(body[cursor : cursor + size])
+            cursor += size + 2
+        return bytes(decoded)
 
     def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
         data = self.extract_json(raw)
