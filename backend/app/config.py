@@ -4,6 +4,20 @@ import os
 from pathlib import Path
 
 
+def load_private_env(private_dir: Path) -> None:
+    env_path = private_dir / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
 class Settings:
     """Small settings object that keeps secrets out of source control."""
 
@@ -11,6 +25,7 @@ class Settings:
         self.backend_dir = Path(__file__).resolve().parents[1]
         self.project_root = Path(__file__).resolve().parents[2]
         self.private_dir = Path(os.getenv("SMP_PRIVATE_DIR", self.backend_dir / "private"))
+        load_private_env(self.private_dir)
         self.data_dir = Path(os.getenv("SMP_DATA_DIR", self.project_root / "data"))
         self.raw_dir = self.data_dir / "raw"
         self.db_path = Path(os.getenv("SMP_DB_PATH", self.data_dir / "saville_music_persona.db"))
@@ -34,4 +49,3 @@ class Settings:
 
 
 settings = Settings()
-
