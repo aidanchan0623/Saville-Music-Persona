@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import json
+import re
+from typing import Any
+
+import httpx
+from pydantic import BaseModel, Field, ValidationError
+
+from app.config import Settings
+
+
+class PersonalityTag(BaseModel):
+    tag: str
+    reason: str
+
+
+class PersonaReport(BaseModel):
+    headline: str
+    summary: str
+    current_era: str
+    core_identity: str
+    listening_habits: str
+    comfort_artists: str
+    personality_tags: list[PersonalityTag] = Field(default_factory=list)
+    report_sections: list[str] = Field(default_factory=list)
+    recommendation_explanations: list[dict[str, str]] = Field(default_factory=list)
+    mode: str = "serious"
+    model: str = ""
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class OllamaService:
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def status(self) -> dict[str, Any]:
+        try:
+            with httpx.Client(timeout=2.0) as client:
+                response = client.get(f"{self.settings.ollama_base_url}/api/tags")
+                response.raise_for_status()
+                data = response.json()
+        except Exception as exc:  # noqa: BLE001 - friendly local diagnostic
+            return {
+                "reachable": False,
+                "model_installed": False,
+                "model": self.settings.ollama_model,
+                "message": f"Ollama is not reachable at {self.settings.ollama_base_url}: {exc}",
+            }
+        models = data.get("models", [])
+        names = {model.get("name") for model in models if isinstance(model, dict)}
+        installed = self.settings.ollama_model in names
+        return {
+            "reachable": True,
+            "model_installed": installed,
+            "model": self.settings.ollama_model,
+            "message": "Ollama is reachable." if installed else f"Ollama is reachable, but {self.settings.ollama_model} is not installed.",
+        }
+
+    def generate_report(self, profile: dict[str, Any], mode: str) -> PersonaReport:
+        status = self.status()
+        if not status["reachable"]:
+            raise RuntimeError(status["message"])
+        if not status["model_installed"]:
+            raise RuntimeError(status["message"])
+        prompt = self._build_report_prompt(profile, mode)
+        with httpx.Client(timeout=90.0) as client:
+            response = client.post(
+                f"{self.settings.ollama_base_url}/api/generate",
+                json={
+                    "model": self.settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.45, "top_p": 0.9},
+                },
+            )
+            response.raise_for_status()
+            raw = response.json().get("response", "")
+        report = self.parse_report(raw, profile)
+        report.mode = mode
+        report.model = self.settings.ollama_model
+        report.evidence = profile
+        return report
+
+    def generate_recommendation_explanations(self, profile: dict[str, Any], recommendations: list[dict[str, Any]]) -> list[dict[str, str]]:
+        status = self.status()
+        if not status["reachable"] or not status["model_installed"]:
+            return []
+        compact = [
+            {
+                "track_title": item["track_title"],
+                "artist": item["artist"],
+                "recommendation_type": item["recommendation_type"],
+                "source_reason": item["source_reason"],
+                "score": item["score"],
+            }
+            for item in recommendations[:20]
+        ]
+        prompt = (
+            "You explain YouTube Music recommendations. Use only the supplied JSON. "
+            "Return JSON with key recommendation_explanations as an array of objects containing "
+            "track_title, artist, why_this_fits. Do not invent facts.\n\n"
+            f"PROFILE:\n{json.dumps(profile, ensure_ascii=True)}\n\n"
+            f"RECOMMENDATIONS:\n{json.dumps(compact, ensure_ascii=True)}"
+        )
+        try:
+            with httpx.Client(timeout=90.0) as client:
+                response = client.post(
+                    f"{self.settings.ollama_base_url}/api/generate",
+                    json={
+                        "model": self.settings.ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        "format": "json",
+                        "options": {"temperature": 0.4},
+                    },
+                )
+                response.raise_for_status()
+                raw = response.json().get("response", "")
+            data = self.extract_json(raw)
+            items = data.get("recommendation_explanations", [])
+            if isinstance(items, list):
+                return [
+                    {
+                        "track_title": str(item.get("track_title", "")),
+                        "artist": str(item.get("artist", "")),
+                        "why_this_fits": str(item.get("why_this_fits", "")),
+                    }
+                    for item in items
+                    if isinstance(item, dict)
+                ]
+        except Exception:
+            return []
+        return []
+
+    def _build_report_prompt(self, profile: dict[str, Any], mode: str) -> str:
+        mode_instruction = {
+            "serious": "Write a polished, serious profile.",
+            "playful": "Write a playful but still evidence-led profile.",
+            "roast": "Roast gently. Keep it affectionate and non-hateful. No slurs, sexual content, protected-characteristic insults, or genuinely demeaning language.",
+        }.get(mode, "Write a polished, serious profile.")
+        return (
+            "You write the Saville Music Persona report for a local private music dashboard.\n"
+            "Use only the facts in the supplied JSON. Never invent artists, tracks, genres, dates, play counts, or personal life details. "
+            "Do not claim causation. Where data confidence is low, explicitly state uncertainty. "
+            "Write in clear English, polished but not overly dramatic.\n"
+            f"{mode_instruction}\n"
+            "Return strict JSON matching this schema: "
+            '{"headline":"","summary":"","current_era":"","core_identity":"","listening_habits":"","comfort_artists":"","personality_tags":[{"tag":"","reason":""}],"report_sections":[],"recommendation_explanations":[]}.\n'
+            "The report should contain 4-6 substantial paragraphs across the fields and 3 personality tags.\n\n"
+            f"FACTUAL_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=True)}"
+        )
+
+    def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
+        data = self.extract_json(raw)
+        try:
+            return PersonaReport(**data)
+        except ValidationError:
+            repaired = {
+                "headline": str(data.get("headline") or (evidence or {}).get("headline_persona") or "Saville Music Persona"),
+                "summary": str(data.get("summary") or "The local model returned a partial report, so this summary was repaired from available fields."),
+                "current_era": str(data.get("current_era") or ""),
+                "core_identity": str(data.get("core_identity") or ""),
+                "listening_habits": str(data.get("listening_habits") or ""),
+                "comfort_artists": str(data.get("comfort_artists") or ""),
+                "personality_tags": data.get("personality_tags") if isinstance(data.get("personality_tags"), list) else [],
+                "report_sections": data.get("report_sections") if isinstance(data.get("report_sections"), list) else [],
+                "recommendation_explanations": data.get("recommendation_explanations") if isinstance(data.get("recommendation_explanations"), list) else [],
+            }
+            return PersonaReport(**repaired)
+
+    def extract_json(self, raw: str) -> dict[str, Any]:
+        try:
+            data = json.loads(raw)
+            return data if isinstance(data, dict) else {}
+        except json.JSONDecodeError:
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not match:
+                return {}
+            try:
+                data = json.loads(match.group(0))
+                return data if isinstance(data, dict) else {}
+            except json.JSONDecodeError:
+                return {}
+
