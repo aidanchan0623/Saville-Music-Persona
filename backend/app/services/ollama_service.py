@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import re
+import urllib.error
+import urllib.request
 from typing import Any
 
-import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import Settings
@@ -36,10 +37,7 @@ class OllamaService:
 
     def status(self) -> dict[str, Any]:
         try:
-            with httpx.Client(timeout=2.0) as client:
-                response = client.get(f"{self.settings.ollama_base_url}/api/tags")
-                response.raise_for_status()
-                data = response.json()
+            data = self._request_json("GET", "/api/tags", timeout=2.0)
         except Exception as exc:  # noqa: BLE001 - friendly local diagnostic
             return {
                 "reachable": False,
@@ -64,19 +62,19 @@ class OllamaService:
         if not status["model_installed"]:
             raise RuntimeError(status["message"])
         prompt = self._build_report_prompt(profile, mode)
-        with httpx.Client(timeout=90.0) as client:
-            response = client.post(
-                f"{self.settings.ollama_base_url}/api/generate",
-                json={
-                    "model": self.settings.ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.45, "top_p": 0.9},
-                },
-            )
-            response.raise_for_status()
-            raw = response.json().get("response", "")
+        data = self._request_json(
+            "POST",
+            "/api/generate",
+            {
+                "model": self.settings.ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.45, "top_p": 0.9},
+            },
+            timeout=90.0,
+        )
+        raw = data.get("response", "")
         report = self.parse_report(raw, profile)
         report.mode = mode
         report.model = self.settings.ollama_model
@@ -105,19 +103,19 @@ class OllamaService:
             f"RECOMMENDATIONS:\n{json.dumps(compact, ensure_ascii=True)}"
         )
         try:
-            with httpx.Client(timeout=90.0) as client:
-                response = client.post(
-                    f"{self.settings.ollama_base_url}/api/generate",
-                    json={
-                        "model": self.settings.ollama_model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "format": "json",
-                        "options": {"temperature": 0.4},
-                    },
-                )
-                response.raise_for_status()
-                raw = response.json().get("response", "")
+            response_data = self._request_json(
+                "POST",
+                "/api/generate",
+                {
+                    "model": self.settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.4},
+                },
+                timeout=90.0,
+            )
+            raw = response_data.get("response", "")
             data = self.extract_json(raw)
             items = data.get("recommendation_explanations", [])
             if isinstance(items, list):
@@ -152,6 +150,23 @@ class OllamaService:
             f"FACTUAL_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=True)}"
         )
 
+    def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
+        body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        request = urllib.request.Request(
+            f"{self.settings.ollama_base_url}{path}",
+            data=body,
+            method=method,
+            headers={"Content-Type": "application/json"} if body else {},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - localhost Ollama endpoint from settings.
+                text = response.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"Ollama returned HTTP {exc.code}: {detail}") from exc
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+
     def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
         data = self.extract_json(raw)
         try:
@@ -183,4 +198,3 @@ class OllamaService:
                 return data if isinstance(data, dict) else {}
             except json.JSONDecodeError:
                 return {}
-
