@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+backend/.venv/
+.venv/
+
+# Build output
+dist/
+frontend/dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment and credentials
+.env
+*.env
+backend/private/
+oauth.json
+browser.json
+cookies*
+*cookie*
+*headers*.json
+
+# Local private data
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/raw/
+history exports/
+*.history.json
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
