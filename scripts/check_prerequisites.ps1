@@ -31,6 +31,14 @@ function Get-PythonCommand {
     $py = Get-Command py -ErrorAction SilentlyContinue
     if ($py) {
         try {
+            $versionText = & $py.Source -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+            if ($LASTEXITCODE -eq 0 -and [version]$versionText -ge [version]"3.11") {
+                return [pscustomobject]@{ Exe = $py.Source; Args = @() }
+            }
+        } catch {
+            # Continue to an explicit 3.11 launcher check.
+        }
+        try {
             $versionText = & $py.Source -3.11 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
             if ([version]$versionText -ge [version]"3.11") {
                 return [pscustomobject]@{ Exe = $py.Source; Args = @("-3.11") }

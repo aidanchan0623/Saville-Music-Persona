@@ -35,6 +35,10 @@ class Settings:
         self.ytmusic_auth_file = Path(os.getenv("YTMUSIC_AUTH_FILE", auth_default))
         if not self.ytmusic_auth_file.is_absolute():
             self.ytmusic_auth_file = self.project_root / self.ytmusic_auth_file
+        browser_default = self.private_dir / "browser.json"
+        self.ytmusic_browser_auth_file = Path(os.getenv("YTMUSIC_BROWSER_AUTH_FILE", browser_default))
+        if not self.ytmusic_browser_auth_file.is_absolute():
+            self.ytmusic_browser_auth_file = self.project_root / self.ytmusic_browser_auth_file
         self.ytmusic_client_id = os.getenv("YTMUSIC_OAUTH_CLIENT_ID", "")
         self.ytmusic_client_secret = os.getenv("YTMUSIC_OAUTH_CLIENT_SECRET", "")
         self.cors_origins = [

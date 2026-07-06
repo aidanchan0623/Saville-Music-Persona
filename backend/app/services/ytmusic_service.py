@@ -14,7 +14,32 @@ class YTMusicService:
 
     def auth_status(self) -> dict[str, Any]:
         auth_file_exists = self.settings.ytmusic_auth_file.exists()
+        browser_file_exists = self.settings.ytmusic_browser_auth_file.exists()
         oauth_configured = bool(self.settings.ytmusic_client_id and self.settings.ytmusic_client_secret)
+        if browser_file_exists:
+            try:
+                yt = self.client(prefer_browser=True)
+                info = yt.get_account_info()
+                name = None
+                if isinstance(info, dict):
+                    name = info.get("name") or info.get("accountName")
+                return {
+                    "connected": True,
+                    "auth_file_exists": True,
+                    "auth_file_path": str(self.settings.ytmusic_browser_auth_file),
+                    "oauth_client_configured": oauth_configured,
+                    "account_name": name,
+                    "message": "Authenticated YouTube Music access is working through manual browser-header auth.",
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "connected": False,
+                    "auth_file_exists": True,
+                    "auth_file_path": str(self.settings.ytmusic_browser_auth_file),
+                    "oauth_client_configured": oauth_configured,
+                    "account_name": None,
+                    "message": f"Browser-header authentication check failed: {exc}",
+                }
         if not auth_file_exists:
             return {
                 "connected": False,
@@ -72,11 +97,13 @@ class YTMusicService:
             "warning": "Do not commit oauth.json, browser headers, cookies, .env files, or raw listening exports.",
         }
 
-    def client(self) -> Any:
+    def client(self, prefer_browser: bool = True) -> Any:
         try:
             from ytmusicapi import OAuthCredentials, YTMusic
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError("ytmusicapi is not installed. Run scripts/setup_windows.ps1 first.") from exc
+        if prefer_browser and self.settings.ytmusic_browser_auth_file.exists():
+            return YTMusic(str(self.settings.ytmusic_browser_auth_file))
         if not self.settings.ytmusic_auth_file.exists():
             raise RuntimeError(f"Missing auth file: {self.settings.ytmusic_auth_file}")
         if not self.settings.ytmusic_client_id or not self.settings.ytmusic_client_secret:
@@ -176,4 +203,3 @@ class YTMusicService:
 
 def executable_available(name: str) -> bool:
     return shutil.which(name) is not None
-

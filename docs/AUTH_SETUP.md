@@ -59,6 +59,33 @@ Open `http://localhost:5173`, go to **Settings**, and use **Recheck Connection**
 - Do not automate browser cookie extraction.
 - Browser-header authentication should only be used as a manual advanced fallback. Treat the header file as sensitive account-access data.
 
+## Advanced fallback: manual browser headers
+
+If OAuth succeeds but YouTube Music returns `HTTP 400: Request contains an invalid argument`, use manual browser-header auth. This is a known ytmusicapi/OAuth failure mode caused by YouTube-side changes. Browser headers are sensitive because they include account-access cookies.
+
+1. Open `https://music.youtube.com` in the browser where you are signed in.
+2. Press `F12` to open Developer Tools.
+3. Open the **Network** tab.
+4. Click around YouTube Music, for example **Library**.
+5. In the Network list, select a request to `music.youtube.com/youtubei/v1/browse` or another `youtubei/v1/...` request.
+6. Right-click the request and choose **Copy** -> **Copy request headers**.
+7. In PowerShell from the repository root, run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\create_browser_auth.ps1
+```
+
+8. Paste the copied request headers into the terminal.
+9. Press `Ctrl+Z`, then `Enter`.
+
+The script writes:
+
+```text
+backend/private/browser.json
+```
+
+Restart the app and use **Settings** -> **Recheck Connection**.
+
 ## Troubleshooting
 
 - If the app says `oauth.json` is missing, confirm it is at `backend/private/oauth.json`.
