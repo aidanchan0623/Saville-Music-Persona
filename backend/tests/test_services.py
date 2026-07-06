@@ -29,10 +29,10 @@ def test_no_authenticated_youtube_music_account(tmp_path: Path) -> None:
     settings = Settings()
     settings.private_dir = tmp_path
     settings.ytmusic_auth_file = tmp_path / "oauth.json"
+    settings.ytmusic_browser_auth_file = tmp_path / "browser.json"
     settings.ytmusic_client_id = ""
     settings.ytmusic_client_secret = ""
     service = YTMusicService(settings)
     status = service.auth_status()
     assert status["connected"] is False
     assert status["auth_file_exists"] is False
-

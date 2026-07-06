@@ -48,4 +48,4 @@ def test_available_history_without_dates_is_labelled() -> None:
 
 def test_parse_relative_played_dates() -> None:
     assert parse_played_date("2 weeks ago", today=date(2026, 7, 1)) == date(2026, 6, 17)
-
+    assert parse_played_date("Last week", today=date(2026, 7, 1)) == date(2026, 6, 24)

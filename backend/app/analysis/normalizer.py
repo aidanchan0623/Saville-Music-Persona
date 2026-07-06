@@ -97,6 +97,13 @@ def parse_played_date(value: Any, today: date | None = None) -> date | None:
         return anchor
     if low == "yesterday":
         return anchor - timedelta(days=1)
+    last_periods = {
+        "last week": timedelta(days=7),
+        "last month": timedelta(days=30),
+        "last year": timedelta(days=365),
+    }
+    if low in last_periods:
+        return anchor - last_periods[low]
     rel = re.search(r"(\d+)\s+(day|week|month|year)s?\s+ago", low)
     if rel:
         amount = int(rel.group(1))
@@ -404,4 +411,3 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
             "source": raw.get("source", "ytmusicapi"),
         },
     }
-
