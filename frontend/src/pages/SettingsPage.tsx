@@ -6,11 +6,13 @@ interface Props {
   auth: AuthStatus | null;
   prerequisites: Prerequisites | null;
   useDemo: boolean;
+  busy: boolean;
   onUseDemoChange: (value: boolean) => void;
   onCheckAuth: () => void;
+  onImportTakeout: (file: File) => void;
 }
 
-export function SettingsPage({ auth, prerequisites, useDemo, onUseDemoChange, onCheckAuth }: Props) {
+export function SettingsPage({ auth, prerequisites, useDemo, busy, onUseDemoChange, onCheckAuth, onImportTakeout }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -60,6 +62,27 @@ export function SettingsPage({ auth, prerequisites, useDemo, onUseDemoChange, on
       </section>
 
       <section className="rounded-lg border border-line bg-panel/82 p-5">
+        <h2 className="text-xl font-semibold text-white">Import Google Takeout history</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
+          YouTube Music only exposed a short recent web history feed. Upload a Google Takeout YouTube watch-history JSON, HTML, or ZIP file to rebuild analysis with the longest account history Google provides.
+        </p>
+        <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-violet/40 hover:bg-white/[0.09]">
+          Choose Takeout file
+          <input
+            className="sr-only"
+            disabled={busy}
+            type="file"
+            accept=".json,.zip,.html,.htm,application/json,application/zip,text/html"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onImportTakeout(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </section>
+
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
           <ShieldCheck size={20} /> Local prerequisites
         </h2>
@@ -88,4 +111,3 @@ function Info({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-

@@ -43,6 +43,22 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ use_demo: useDemo }),
     }),
+  importTakeout: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${API_BASE}/data/import-takeout`, { method: "POST", body: form });
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const data = await response.json();
+        message = data.detail?.detail || data.detail?.error || message;
+      } catch {
+        // Keep HTTP status message.
+      }
+      throw new Error(message);
+    }
+    return response.json() as Promise<{ imported_count: number; earliest_play: string | null; latest_play: string | null; message: string }>;
+  },
   overview: () => request<Overview>("/analysis/overview"),
   topTracks: () => request<TopTrack[]>("/analysis/top-tracks"),
   topArtists: () => request<TopArtist[]>("/analysis/top-artists"),
@@ -59,4 +75,3 @@ export const api = {
       body: JSON.stringify({ confirm: true, title }),
     }),
 };
-

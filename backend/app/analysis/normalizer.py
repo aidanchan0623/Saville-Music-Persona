@@ -97,6 +97,8 @@ def parse_played_date(value: Any, today: date | None = None) -> date | None:
         return anchor
     if low == "yesterday":
         return anchor - timedelta(days=1)
+    if low == "this week":
+        return anchor - timedelta(days=anchor.weekday())
     last_periods = {
         "last week": timedelta(days=7),
         "last month": timedelta(days=30),
@@ -294,7 +296,9 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     anchor = today or date.today()
     tracks: dict[str, dict[str, Any]] = {}
     play_events: list[dict[str, Any]] = []
-    history = extract_tracks(raw.get("history"))
+    ytmusic_history = extract_tracks(raw.get("history"))
+    takeout_history = extract_tracks(raw.get("takeout_history"))
+    history = takeout_history if takeout_history else ytmusic_history
     parsed_history_dates = [parse_played_date(item.get("played"), anchor) for item in history]
     dated_dates = [item for item in parsed_history_dates if item is not None]
     latest = max(dated_dates) if dated_dates else None
@@ -309,6 +313,10 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
             return merge_track(tracks[normalised["track_id"]], normalised)
         tracks[normalised["track_id"]] = normalised
         return normalised
+
+    if takeout_history:
+        for item in ytmusic_history:
+            upsert(item, "history_metadata")
 
     included_dated_dates: list[date] = []
     for item, played_at in zip(history, parsed_history_dates):

@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.normalizer import normalise_collection
@@ -20,9 +20,11 @@ from app.schemas.responses import (
     RefreshRequest,
     RefreshResponse,
     ReportRequest,
+    TakeoutImportResponse,
 )
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import generate_recommendations
+from app.services.takeout_service import TakeoutParseError, parse_takeout_upload
 from app.services.ytmusic_service import YTMusicService
 
 
@@ -86,6 +88,10 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         raw = ytmusic.fetch_library()
         warnings.extend(raw.get("warnings") or [])
         ytmusic.save_raw_snapshot(settings.raw_dir, raw)
+    takeout_history = repo.load_json("takeout_history")
+    if takeout_history:
+        raw["takeout_history"] = takeout_history
+        warnings.append("Google Takeout history is merged as the longest available play-history source.")
     normalised = normalise_collection(raw)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
@@ -101,6 +107,39 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         coverage=analysis["coverage"],
         track_count=normalised["metadata"]["track_count"],
         play_count=normalised["metadata"]["play_count"],
+    )
+
+
+@router.post("/data/import-takeout", response_model=TakeoutImportResponse)
+async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
+    settings.ensure_local_dirs()
+    content = await file.read()
+    try:
+        entries = parse_takeout_upload(file.filename or "takeout", content)
+    except TakeoutParseError as exc:
+        raise HTTPException(status_code=400, detail={"error": "Takeout import failed", "detail": str(exc), "code": "takeout_import_failed"}) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"error": "Takeout import failed", "detail": f"Could not parse this Takeout file: {exc}", "code": "takeout_import_failed"}) from exc
+    repo.save_json("takeout_history", entries)
+    raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
+    raw["takeout_history"] = entries
+    normalised = normalise_collection(raw)
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    normalised["refreshed_at"] = refreshed_at
+    analysis = build_analysis(normalised)
+    repo.save_json("raw", raw)
+    repo.save_json("normalised", normalised)
+    repo.save_json("analysis", analysis)
+    repo.save_json(
+        "last_refresh_meta",
+        {"refreshed_at": refreshed_at, "use_demo": False, "warnings": ["Google Takeout history imported and merged with local metadata."]},
+    )
+    dated = sorted(entry["played"] for entry in entries if entry.get("played"))
+    return TakeoutImportResponse(
+        imported_count=len(entries),
+        earliest_play=dated[0] if dated else None,
+        latest_play=dated[-1] if dated else None,
+        message="Google Takeout history imported. Dashboard analysis was rebuilt with the longest available history source.",
     )
 
 
@@ -200,4 +239,3 @@ def create_playlist(request: PlaylistCreateRequest) -> PlaylistCreateResponse:
         added_count=len(video_ids),
         message="Private YouTube Music playlist created.",
     )
-

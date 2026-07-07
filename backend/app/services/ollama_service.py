@@ -69,9 +69,9 @@ class OllamaService:
                 "prompt": prompt,
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.45, "top_p": 0.9},
+                "options": {"temperature": 0.45, "top_p": 0.9, "num_predict": 900},
             },
-            timeout=90.0,
+            timeout=self.settings.ollama_generate_timeout_seconds,
         )
         raw = data.get("response", "")
         report = self.parse_report(raw, profile)
@@ -110,9 +110,9 @@ class OllamaService:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.4},
+                    "options": {"temperature": 0.4, "num_predict": 700},
                 },
-                timeout=90.0,
+                timeout=self.settings.ollama_generate_timeout_seconds,
             )
             raw = response_data.get("response", "")
             data = self.extract_json(raw)
@@ -145,7 +145,7 @@ class OllamaService:
             f"{mode_instruction}\n"
             "Return strict JSON matching this schema: "
             '{"headline":"","summary":"","current_era":"","core_identity":"","listening_habits":"","comfort_artists":"","personality_tags":[{"tag":"","reason":""}],"report_sections":[],"recommendation_explanations":[]}.\n'
-            "The report should contain 4-6 substantial paragraphs across the fields and 3 personality tags.\n\n"
+            "The report should contain 3-5 concise paragraphs across the fields and 3 personality tags.\n\n"
             f"FACTUAL_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=True)}"
         )
 
@@ -227,21 +227,110 @@ class OllamaService:
 
     def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
         data = self.extract_json(raw)
+        fallback = self._fallback_report_data(evidence or {})
         try:
-            return PersonaReport(**data)
+            report = PersonaReport(**data)
+            return self._fill_report_gaps(report, fallback)
         except ValidationError:
             repaired = {
-                "headline": str(data.get("headline") or (evidence or {}).get("headline_persona") or "Saville Music Persona"),
-                "summary": str(data.get("summary") or "The local model returned a partial report, so this summary was repaired from available fields."),
-                "current_era": str(data.get("current_era") or ""),
-                "core_identity": str(data.get("core_identity") or ""),
-                "listening_habits": str(data.get("listening_habits") or ""),
-                "comfort_artists": str(data.get("comfort_artists") or ""),
-                "personality_tags": data.get("personality_tags") if isinstance(data.get("personality_tags"), list) else [],
-                "report_sections": data.get("report_sections") if isinstance(data.get("report_sections"), list) else [],
+                "headline": str(data.get("headline") or fallback["headline"]),
+                "summary": str(data.get("summary") or fallback["summary"]),
+                "current_era": str(data.get("current_era") or fallback["current_era"]),
+                "core_identity": str(data.get("core_identity") or fallback["core_identity"]),
+                "listening_habits": str(data.get("listening_habits") or fallback["listening_habits"]),
+                "comfort_artists": str(data.get("comfort_artists") or fallback["comfort_artists"]),
+                "personality_tags": data.get("personality_tags") if isinstance(data.get("personality_tags"), list) else fallback["personality_tags"],
+                "report_sections": data.get("report_sections") if isinstance(data.get("report_sections"), list) else fallback["report_sections"],
                 "recommendation_explanations": data.get("recommendation_explanations") if isinstance(data.get("recommendation_explanations"), list) else [],
             }
-            return PersonaReport(**repaired)
+            return self._fill_report_gaps(PersonaReport(**repaired), fallback)
+
+    def _fill_report_gaps(self, report: PersonaReport, fallback: dict[str, Any]) -> PersonaReport:
+        report.headline = report.headline or fallback["headline"]
+        report.summary = report.summary or fallback["summary"]
+        report.current_era = report.current_era or fallback["current_era"]
+        report.core_identity = report.core_identity or fallback["core_identity"]
+        report.listening_habits = report.listening_habits or fallback["listening_habits"]
+        report.comfort_artists = report.comfort_artists or fallback["comfort_artists"]
+        if not report.personality_tags:
+            report.personality_tags = [PersonalityTag(**item) for item in fallback["personality_tags"]]
+        if not report.report_sections:
+            report.report_sections = list(fallback["report_sections"])
+        return report
+
+    def _fallback_report_data(self, evidence: dict[str, Any]) -> dict[str, Any]:
+        coverage = evidence.get("coverage") if isinstance(evidence.get("coverage"), dict) else {}
+        top_artists = evidence.get("top_artists") if isinstance(evidence.get("top_artists"), list) else []
+        top_tracks = evidence.get("top_tracks") if isinstance(evidence.get("top_tracks"), list) else []
+        scores = evidence.get("scores") if isinstance(evidence.get("scores"), list) else []
+        moods = evidence.get("mood_profile") if isinstance(evidence.get("mood_profile"), list) else []
+        artist_names = [str(item.get("artist")) for item in top_artists[:3] if isinstance(item, dict) and item.get("artist")]
+        track_names = [str(item.get("title")) for item in top_tracks[:3] if isinstance(item, dict) and item.get("title")]
+        day_count = coverage.get("days_represented") or 0
+        play_count = coverage.get("history_items_returned") or coverage.get("dated_history_items") or 0
+        earliest = coverage.get("earliest_detected_play") or "the earliest detected day"
+        latest = coverage.get("latest_detected_play") or "the latest detected day"
+        confidence = self._score_by_name(scores, "Taste confidence")
+        repeat = self._score_by_name(scores, "Repeat score")
+        loyalty = self._score_by_name(scores, "Artist loyalty")
+        top_artist_text = self._join_names(artist_names) or "the available top artists"
+        top_track_text = self._join_names(track_names) or "the available recent tracks"
+        confidence_label = confidence.get("label") or "partial"
+        repeat_label = repeat.get("label") or "unknown"
+        loyalty_label = loyalty.get("label") or "unknown"
+        coverage_text = f"{play_count} detected plays from {earliest} to {latest}"
+        if day_count:
+            coverage_text = f"{coverage_text}, spanning {day_count} day(s)"
+        summary = (
+            f"This is a {confidence_label} profile based on {coverage_text}. "
+            f"The clearest artist signals are {top_artist_text}, while the top-song list is treated cautiously when every detected song has only one play."
+        )
+        current_era = (
+            f"Right now the listening window points toward {top_artist_text}. "
+            f"Because the available web history is short, this should be read as a current snapshot rather than a full-year identity."
+        )
+        core_identity = (
+            f"The profile reads as {evidence.get('headline_persona') or 'a private, pattern-seeking listener'}: "
+            f"artist loyalty is {loyalty_label}, repeat behavior is {repeat_label}, and the library spreads across many artists."
+        )
+        listening_habits = (
+            f"The recent track surface includes {top_track_text}. "
+            "The ranking is labelled low-confidence when repeat counts are flat, so Google Takeout history will make this section much stronger."
+        )
+        comfort_artists = (
+            f"{artist_names[0] if artist_names else 'The top artist'} is the strongest repeat-presence signal in the available data, "
+            f"with {top_artist_text} shaping the current comfort zone."
+        )
+        mood_tags = [str(item.get("tag")) for item in moods[:2] if isinstance(item, dict) and item.get("tag")]
+        personality_tags = [
+            {"tag": "Partial-window analyst", "reason": f"The report is honest about {day_count or 'limited'} day(s) of detected history."},
+            {"tag": "Artist-led listener", "reason": f"The strongest evidence comes from artist concentration around {top_artist_text}."},
+            {"tag": "Mood-aware explorer", "reason": f"Detected mood signals include {self._join_names(mood_tags) or 'mixed listening contexts'}."},
+        ]
+        return {
+            "headline": str(evidence.get("headline_persona") or "Saville Music Persona"),
+            "summary": summary,
+            "current_era": current_era,
+            "core_identity": core_identity,
+            "listening_habits": listening_habits,
+            "comfort_artists": comfort_artists,
+            "personality_tags": personality_tags,
+            "report_sections": [summary, current_era, core_identity, listening_habits, comfort_artists],
+        }
+
+    def _score_by_name(self, scores: list[Any], name: str) -> dict[str, Any]:
+        for score in scores:
+            if isinstance(score, dict) and score.get("name") == name:
+                return score
+        return {}
+
+    def _join_names(self, names: list[str]) -> str:
+        clean = [name for name in names if name]
+        if not clean:
+            return ""
+        if len(clean) == 1:
+            return clean[0]
+        return f"{', '.join(clean[:-1])}, and {clean[-1]}"
 
     def extract_json(self, raw: str) -> dict[str, Any]:
         try:

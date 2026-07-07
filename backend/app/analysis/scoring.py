@@ -305,7 +305,15 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         reverse=True,
     )
     result = []
+    max_play_count = max((track.get("play_count_in_period", 0) for track in tracks), default=0)
+    no_repeat_signal = max_play_count <= 1
     for index, track in enumerate([track for track in ranked if track.get("play_count_in_period", 0) > 0][:10], 1):
+        reason = f"{track.get('play_count_in_period', 0)} detected plays in the analysed period; recency only broke ties."
+        if no_repeat_signal:
+            reason = (
+                "The available YouTube Music web history has no repeated tracks, so this row is a recent detected song "
+                "rather than a meaningful top-song ranking. Import Google Takeout history for stronger counts."
+            )
         result.append(
             {
                 "rank": index,
@@ -319,8 +327,9 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "thumbnail": (track.get("thumbnails") or [{}])[-1].get("url") if track.get("thumbnails") else None,
                 "play_count": track.get("play_count_in_period", 0),
                 "last_played": track.get("last_played"),
-                "why_it_ranked": f"{track.get('play_count_in_period', 0)} detected plays in the analysed period; recency only broke ties.",
+                "why_it_ranked": reason,
                 "genre_clusters": track.get("genre_clusters", []),
+                "ranking_confidence": "low_no_repeat_signal" if no_repeat_signal else "play_count",
             }
         )
     return result
@@ -459,6 +468,11 @@ def build_analysis(normalised: dict[str, Any]) -> dict[str, Any]:
         "total_detected_plays": total_plays,
         "unique_tracks": unique_tracks,
         "unique_artists": len(artist_counts),
+        "top_tracks_ranking_note": (
+            "Available history has no repeated tracks; songs are shown as recent detected plays until longer history is imported."
+            if top_tracks and max((track.get("play_count", 0) for track in top_tracks), default=0) <= 1
+            else "Top songs are ranked by detected play count, with recency only breaking ties."
+        ),
     }
     return {
         "overview": overview,
@@ -499,4 +513,3 @@ def build_report_profile(
         "release_decades": charts.get("release_decades", []),
         "important_instruction": "Use only this JSON as evidence. Do not invent artists, tracks, dates, genres, play counts, or personal details.",
     }
-

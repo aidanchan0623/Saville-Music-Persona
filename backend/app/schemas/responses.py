@@ -47,6 +47,13 @@ class RefreshResponse(BaseModel):
     play_count: int
 
 
+class TakeoutImportResponse(BaseModel):
+    imported_count: int
+    earliest_play: str | None = None
+    latest_play: str | None = None
+    message: str
+
+
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
 
@@ -61,4 +68,3 @@ class PlaylistCreateResponse(BaseModel):
     title: str
     added_count: int
     message: str
-

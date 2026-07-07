@@ -31,6 +31,7 @@ class Settings:
         self.db_path = Path(os.getenv("SMP_DB_PATH", self.data_dir / "saville_music_persona.db"))
         self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
         self.ollama_model = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+        self.ollama_generate_timeout_seconds = float(os.getenv("OLLAMA_GENERATE_TIMEOUT_SECONDS", "240"))
         auth_default = self.private_dir / "oauth.json"
         self.ytmusic_auth_file = Path(os.getenv("YTMUSIC_AUTH_FILE", auth_default))
         if not self.ytmusic_auth_file.is_absolute():

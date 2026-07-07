@@ -123,6 +123,21 @@ export default function App() {
     }
   };
 
+  const importTakeout = async (file: File) => {
+    setBusy(true);
+    setMessage(`Importing ${file.name} from Google Takeout...`);
+    try {
+      const result = await api.importTakeout(file);
+      await loadAnalysis();
+      setMessage(`${result.message} Imported ${result.imported_count} history entries.`);
+      setPage("overview");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Takeout import failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createPlaylist = async () => {
     const confirmed = window.confirm('Create a private YouTube Music playlist named "Saville Recommendations"?');
     if (!confirmed) return;
@@ -168,8 +183,10 @@ export default function App() {
             auth={auth}
             prerequisites={prerequisites}
             useDemo={useDemo}
+            busy={busy}
             onUseDemoChange={setUseDemo}
             onCheckAuth={() => void loadStatus().catch((error) => setMessage(error.message))}
+            onImportTakeout={importTakeout}
           />
         );
     }

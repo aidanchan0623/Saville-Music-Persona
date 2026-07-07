@@ -15,6 +15,25 @@ def test_malformed_llm_json_is_repaired() -> None:
     assert report.summary == "123"
 
 
+def test_partial_llm_report_is_filled_from_evidence() -> None:
+    service = OllamaService(Settings())
+    report = service.parse_report(
+        '{"headline":"Only headline"}',
+        {
+            "headline_persona": "Fallback",
+            "coverage": {"days_represented": 7, "history_items_returned": 200, "earliest_detected_play": "2026-06-30", "latest_detected_play": "2026-07-06"},
+            "top_artists": [{"artist": "Bring Me The Horizon"}, {"artist": "My Chemical Romance"}],
+            "top_tracks": [{"title": "Drown"}],
+            "scores": [{"name": "Taste confidence", "label": "useful but partial"}],
+            "mood_profile": [{"tag": "late-night"}],
+        },
+    )
+    assert report.headline == "Only headline"
+    assert "200 detected plays" in report.summary
+    assert "Bring Me The Horizon" in report.current_era
+    assert report.personality_tags
+
+
 def test_recommendation_duplicate_removal() -> None:
     candidates = [
         {"videoId": "1", "title": "Song (Official Video)", "artists": [{"name": "Artist"}]},

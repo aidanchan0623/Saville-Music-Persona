@@ -27,3 +27,17 @@ def test_demo_analysis_has_top_tracks_and_confidence() -> None:
     confidence = next(score for score in analysis["scores"] if score["key"] == "taste_confidence")
     assert confidence["value"] > 0
 
+
+def test_top_tracks_explain_low_confidence_when_no_repeats() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "a", "title": "A", "artists": [{"name": "Artist"}], "played": "Today"},
+                {"videoId": "b", "title": "B", "artists": [{"name": "Artist"}], "played": "Yesterday"},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    analysis = build_analysis(normalised)
+    assert analysis["top_tracks"][0]["ranking_confidence"] == "low_no_repeat_signal"
+    assert "recent detected song" in analysis["top_tracks"][0]["why_it_ranked"]
