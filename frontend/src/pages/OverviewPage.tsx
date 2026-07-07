@@ -4,11 +4,13 @@ import { EmptyState } from "../components/EmptyState";
 import { MetricCard } from "../components/MetricCard";
 import { StatusPill } from "../components/StatusPill";
 import { TasteDNA } from "../components/TasteDNA";
-import type { AuthStatus, Overview, Prerequisites } from "../types/api";
-import { formatDate, formatDateTime } from "../utils/format";
+import type { AuthStatus, ListeningMinutes, Overview, Prerequisites } from "../types/api";
+import { formatDate, formatDateTime, formatMinutes } from "../utils/format";
 
 interface Props {
   overview: Overview | null;
+  thisMonthMinutes: ListeningMinutes | null;
+  rollingYearMinutes: ListeningMinutes | null;
   auth: AuthStatus | null;
   prerequisites: Prerequisites | null;
   busy: boolean;
@@ -18,7 +20,7 @@ interface Props {
   onOpenSettings: () => void;
 }
 
-export function OverviewPage({ overview, auth, prerequisites, busy, useDemo, onRefresh, onGenerateReport, onOpenSettings }: Props) {
+export function OverviewPage({ overview, thisMonthMinutes, rollingYearMinutes, auth, prerequisites, busy, useDemo, onRefresh, onGenerateReport, onOpenSettings }: Props) {
   if (!overview) {
     return (
       <EmptyState
@@ -64,6 +66,40 @@ export function OverviewPage({ overview, auth, prerequisites, busy, useDemo, onR
         <MetricCard label="Favourite decade" value={overview.favourite_decade} caption="Weighted by detected plays with usable release years." accent="magenta" />
         <MetricCard label="Taste confidence" value={`${overview.taste_confidence.value}%`} caption={overview.taste_confidence.label} accent="violet" />
       </section>
+
+      {thisMonthMinutes && rollingYearMinutes ? (
+        <section className="rounded-lg border border-violet/25 bg-[linear-gradient(135deg,rgba(139,92,246,0.16),rgba(17,17,29,0.92))] p-6 shadow-glow">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-sm uppercase tracking-[0.18em] text-violet-200">Detected Listening Time</p>
+              <h2 className="mt-2 text-3xl font-black text-white">Estimated from detected track durations</h2>
+              <p className="mt-3 text-sm leading-6 text-mist">
+                Detected listening minutes are estimated by adding the complete duration of each detected music track. Skips, partial listens and videos without duration cannot be measured exactly.
+              </p>
+            </div>
+            <span className="w-fit rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-violet-100">
+              {rollingYearMinutes.duration_quality.confidence_badge} - {rollingYearMinutes.duration_quality.duration_coverage_percent}% coverage
+            </span>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <TimeMetric label="This month" value={formatMinutes(thisMonthMinutes.metrics.current_month_total_minutes)} caption={`${thisMonthMinutes.duration_quality.duration_coverage_percent}% duration coverage`} />
+            <TimeMetric label="Rolling year" value={formatMinutes(rollingYearMinutes.metrics.rolling_365_total_minutes)} caption={`${rollingYearMinutes.duration_quality.plays_with_usable_duration} plays with usable duration`} />
+            <TimeMetric label="Average active day" value={formatMinutes(rollingYearMinutes.metrics.average_active_day_minutes)} caption={`${rollingYearMinutes.metrics.active_listening_days} active listening days`} />
+            <TimeMetric label="Current streak" value={`${rollingYearMinutes.metrics.current_listening_streak_days} day${rollingYearMinutes.metrics.current_listening_streak_days === 1 ? "" : "s"}`} caption="A day counts if at least one music play was detected." />
+          </div>
+          <details className="mt-5 rounded-md border border-white/10 bg-black/20 p-4">
+            <summary className="cursor-pointer text-sm font-semibold text-white">Method and exclusions</summary>
+            <p className="mt-3 text-sm leading-6 text-mist">{rollingYearMinutes.methodology}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-mist">
+              {rollingYearMinutes.duration_quality.main_exclusion_reasons.map((item) => (
+                <span key={item.reason} className="rounded-full bg-white/10 px-3 py-1">
+                  {item.reason.replaceAll("_", " ")}: {item.count}
+                </span>
+              ))}
+            </div>
+          </details>
+        </section>
+      ) : null}
 
       {taste ? (
         <section className="rounded-lg border border-line bg-panel/82 p-6 shadow-glow">
@@ -182,6 +218,16 @@ function Signal({ icon, label, value, detail }: { icon: ReactNode; label: string
         </span>
       </div>
       <strong className="text-xl text-white">{value}</strong>
+    </div>
+  );
+}
+
+function TimeMetric({ label, value, caption }: { label: string; value: string; caption: string }) {
+  return (
+    <div className="rounded-md bg-white/[0.06] p-4">
+      <p className="text-xs uppercase tracking-[0.16em] text-mist/70">{label}</p>
+      <p className="mt-2 text-2xl font-black text-white">{value}</p>
+      <p className="mt-1 text-sm text-mist">{caption}</p>
     </div>
   );
 }

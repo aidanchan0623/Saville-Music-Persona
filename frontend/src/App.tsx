@@ -10,7 +10,7 @@ import { ReportPage } from "./pages/ReportPage";
 import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, Charts, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, Charts, ListeningMinutes, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, TopArtist, TopTrack } from "./types/api";
 
 type Page = "overview" | "top10" | "scores" | "patterns" | "report" | "recommendations" | "settings";
 
@@ -32,6 +32,8 @@ export default function App() {
   const [artists, setArtists] = useState<TopArtist[]>([]);
   const [scores, setScores] = useState<ScoreMetric[]>([]);
   const [charts, setCharts] = useState<Charts | null>(null);
+  const [thisMonthMinutes, setThisMonthMinutes] = useState<ListeningMinutes | null>(null);
+  const [rollingYearMinutes, setRollingYearMinutes] = useState<ListeningMinutes | null>(null);
   const [report, setReport] = useState<PersonaReport | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -46,18 +48,22 @@ export default function App() {
   };
 
   const loadAnalysis = async () => {
-    const [nextOverview, nextTracks, nextArtists, nextScores, nextCharts] = await Promise.all([
+    const [nextOverview, nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.all([
       api.overview(),
       api.topTracks(),
       api.topArtists(),
       api.scores(),
       api.charts(),
+      api.listeningMinutes("this_month"),
+      api.listeningMinutes("rolling_year"),
     ]);
     setOverview(nextOverview);
     setTracks(nextTracks);
     setArtists(nextArtists);
     setScores(nextScores);
     setCharts(nextCharts);
+    setThisMonthMinutes(nextThisMonthMinutes);
+    setRollingYearMinutes(nextRollingYearMinutes);
     try {
       setReport(await api.latestReport());
     } catch {
@@ -158,6 +164,8 @@ export default function App() {
         return (
           <OverviewPage
             overview={overview}
+            thisMonthMinutes={thisMonthMinutes}
+            rollingYearMinutes={rollingYearMinutes}
             auth={auth}
             prerequisites={prerequisites}
             busy={busy}
@@ -168,7 +176,7 @@ export default function App() {
           />
         );
       case "top10":
-        return <Top10Page tracks={tracks} artists={artists} />;
+        return <Top10Page />;
       case "scores":
         return <ScoresPage scores={scores} />;
       case "patterns":
@@ -190,7 +198,7 @@ export default function App() {
           />
         );
     }
-  }, [page, overview, auth, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations]);
+  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations]);
 
   return (
     <div className="min-h-screen bg-ink text-white">

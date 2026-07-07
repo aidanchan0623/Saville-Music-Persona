@@ -62,6 +62,17 @@ export function SettingsPage({ auth, prerequisites, useDemo, busy, onUseDemoChan
       </section>
 
       <section className="rounded-lg border border-line bg-panel/82 p-5">
+        <h2 className="text-xl font-semibold text-white">Analytics timezone and duration enrichment</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
+          Calendar months, daily charts and streaks use the backend local timezone. Change <code>SMP_LOCAL_TIMEZONE</code> in the backend environment to adjust it.
+        </p>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <Info label="Analytics timezone" value={prerequisites?.local_timezone || "Asia/Kuala_Lumpur"} />
+          <Info label="Duration enrichment limit" value={`${prerequisites?.duration_enrichment_limit ?? 150} missing tracks per refresh/import`} />
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <h2 className="text-xl font-semibold text-white">Import Google Takeout history</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
           YouTube Music only exposed a short recent web history feed. Upload a Google Takeout YouTube watch-history JSON, HTML, or ZIP file to rebuild analysis with the longest account history Google provides.

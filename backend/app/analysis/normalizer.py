@@ -7,6 +7,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from app.analysis.duration import annotate_normalised_durations
+
 
 UNKNOWN_ARTIST = "Unknown Artist"
 
@@ -347,6 +349,8 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
                 "primary_artist": track["primary_artist"],
                 "artists": track["artists"],
                 "played_at": played_iso,
+                "played_date_raw": item.get("played"),
+                "source": item.get("source") or "history",
             }
         )
 
@@ -407,7 +411,7 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         "history_coverage_status": "dated_365_window" if dated_dates else "available_history_no_dates",
         "notes": notes,
     }
-    return {
+    payload = {
         "tracks": list(tracks.values()),
         "play_events": play_events,
         "coverage": coverage,
@@ -419,3 +423,4 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
             "source": raw.get("source", "ytmusicapi"),
         },
     }
+    return annotate_normalised_durations(payload)

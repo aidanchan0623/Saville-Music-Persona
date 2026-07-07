@@ -23,6 +23,8 @@ class PrerequisitesResponse(BaseModel):
     ollama_model: str
     ollama_reachable: bool
     model_installed: bool
+    local_timezone: str
+    duration_enrichment_limit: int
 
 
 class AuthStatusResponse(BaseModel):

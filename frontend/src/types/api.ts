@@ -20,6 +20,14 @@ export interface ScoreMetric {
   explanation: string;
   formula: string;
   inputs: Record<string, unknown>;
+  interpretation?: ScoreInterpretation;
+}
+
+export interface ScoreInterpretation {
+  status_title: string;
+  plain_english: string;
+  confidence: string;
+  evidence: string[];
 }
 
 export interface TasteCluster {
@@ -134,6 +142,147 @@ export interface Overview {
   warnings: string[];
 }
 
+export interface PeriodSpec {
+  period: string;
+  month: string | null;
+  label: string;
+  timezone: string;
+  start_date: string;
+  end_date: string;
+  available_months: { value: string; label: string }[];
+}
+
+export interface DurationQuality {
+  total_detected_plays: number;
+  detected_music_plays: number;
+  plays_with_usable_duration: number;
+  duration_coverage_percent: number;
+  total_minutes_included: number;
+  events_excluded_from_minutes: number;
+  main_exclusion_reasons: { reason: string; count: number }[];
+  confidence_badge: string;
+  methodology: string;
+}
+
+export interface ListeningMinutes {
+  period: PeriodSpec;
+  metrics: {
+    today_detected_minutes: number;
+    yesterday_detected_minutes: number;
+    current_week_total_minutes: number;
+    current_month_total_minutes: number;
+    rolling_365_total_minutes: number;
+    selected_period_total_minutes: number;
+    selected_period_total_formatted: string;
+    daily_average_minutes: number;
+    average_active_day_minutes: number;
+    longest_detected_listening_day: { date: string; minutes: number; formatted: string } | null;
+    quietest_active_day: { date: string; minutes: number; formatted: string } | null;
+    active_listening_days: number;
+    current_listening_streak_days: number;
+  };
+  duration_quality: DurationQuality;
+  daily: ChartPoint[];
+  weekly: ChartPoint[];
+  monthly: ChartPoint[];
+  heatmap: { date: string; week_start: string; weekday: string; weekday_index: number; value: number }[];
+  summary_sentence: string;
+  methodology: string;
+}
+
+export interface TopMovement {
+  direction: "up" | "down" | "new" | "no_change";
+  previous_rank: number | null;
+  rank_delta: number | null;
+  label: string;
+}
+
+export interface PeriodTopItem {
+  key: string;
+  rank: number;
+  track_id: string | null;
+  video_id: string | null;
+  title: string | null;
+  artist: string;
+  thumbnail: string | null;
+  play_count: number;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  share_of_period: number;
+  duration_coverage_percent: number;
+  unique_songs: number | null;
+  most_played_song: string | null;
+  last_played: string | null;
+  movement: TopMovement | null;
+  interpretation_label: string;
+}
+
+export interface PeriodTopResponse {
+  period: PeriodSpec;
+  type: "tracks" | "artists";
+  total_play_count: number;
+  ranked_music_play_count: number;
+  duration_quality: DurationQuality;
+  sample_warning: string | null;
+  items: PeriodTopItem[];
+  methodology: string;
+  classification_rules: string[];
+}
+
+export interface TasteDnaNode {
+  id: string;
+  name: string;
+  share: number;
+  size: number;
+  x: number;
+  y: number;
+  layer: string;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  top_artists: { name: string; plays: number }[];
+  top_songs: { name: string; plays: number }[];
+  canonical_genres: string[];
+  sonic_traits: string[];
+  confidence: number;
+  role: string;
+}
+
+export interface TasteTraitNode {
+  trait: string;
+  support_percent: number;
+  confidence: string;
+  supporting_artists: { name: string; plays: number }[];
+  supporting_clusters: { name: string; plays: number }[];
+  explanation: string;
+}
+
+export interface TasteDnaExplorer {
+  period: PeriodSpec;
+  summary: string;
+  core_identity: string;
+  taste_interpretation: TasteInterpretation;
+  duration_quality: DurationQuality;
+  nodes: TasteDnaNode[];
+  traits: TasteTraitNode[];
+  structured_summary: { label: string; items: string[] }[];
+  sample_warning: string | null;
+  methodology: string;
+}
+
+export interface TasteDnaComparison {
+  base_period: PeriodSpec;
+  compare_period: PeriodSpec;
+  deltas: { name: string; base_share: number; compare_share: number; delta: number }[];
+  claims: {
+    growing_cluster: { name: string; base_share: number; compare_share: number; delta: number } | null;
+    declining_cluster: { name: string; base_share: number; compare_share: number; delta: number } | null;
+    new_side_interest: { name: string; base_share: number; compare_share: number; delta: number } | null;
+    stable_core_identity: string[];
+  };
+  summary_sentence: string;
+  sample_warning: string | null;
+}
+
 export interface ChartPoint {
   name: string;
   value: number;
@@ -162,6 +311,8 @@ export interface Prerequisites {
   ollama_model: string;
   ollama_reachable: boolean;
   model_installed: boolean;
+  local_timezone: string;
+  duration_enrichment_limit: number;
 }
 
 export interface AuthStatus {

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from app.analysis.duration import extract_duration_seconds
 from app.config import Settings
 
 
@@ -155,6 +157,45 @@ class YTMusicService:
         path = raw_dir / "latest_raw_collection.json"
         path.write_text(json.dumps(raw, ensure_ascii=True, indent=2, default=str), encoding="utf-8")
 
+    def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 150) -> dict[str, Any]:
+        if limit <= 0:
+            return {"attempted": 0, "added": 0, "failed": 0}
+        yt = self.client()
+        attempted = 0
+        added = 0
+        failed = 0
+        for track in normalised.get("tracks") or []:
+            if attempted >= limit:
+                break
+            if track.get("duration_seconds"):
+                continue
+            video_id = track.get("video_id")
+            if not video_id or video_id in duration_cache:
+                continue
+            attempted += 1
+            try:
+                payload = yt.get_song(str(video_id))
+                seconds = duration_from_ytmusic_payload(payload)
+            except Exception:
+                seconds = None
+            if seconds:
+                duration_cache[str(video_id)] = {
+                    "duration_seconds": seconds,
+                    "duration_source": "ytmusicapi.get_song",
+                    "duration_confidence": "high",
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
+                }
+                added += 1
+            else:
+                duration_cache[str(video_id)] = {
+                    "duration_seconds": None,
+                    "duration_source": "ytmusicapi.get_song",
+                    "duration_confidence": "missing",
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
+                }
+                failed += 1
+        return {"attempted": attempted, "added": added, "failed": failed}
+
     def search_candidates(self, analysis: dict[str, Any], limit_per_seed: int = 8) -> list[dict[str, Any]]:
         yt = self.client()
         candidates: list[dict[str, Any]] = []
@@ -203,3 +244,22 @@ class YTMusicService:
 
 def executable_available(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def duration_from_ytmusic_payload(payload: Any) -> int | None:
+    if not isinstance(payload, (dict, list)):
+        return None
+    stack: list[Any] = [payload]
+    seen = 0
+    while stack and seen < 1000:
+        seen += 1
+        item = stack.pop()
+        if isinstance(item, dict):
+            for key in ("duration_seconds", "durationSeconds", "lengthSeconds", "length_seconds", "duration"):
+                seconds = extract_duration_seconds(item.get(key))
+                if seconds:
+                    return seconds
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return None

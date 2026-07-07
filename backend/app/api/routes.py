@@ -4,10 +4,12 @@ import shutil
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
+from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.normalizer import normalise_collection
+from app.analysis.periods import listening_minutes_payload, taste_dna_comparison_payload, taste_dna_payload, top_payload
 from app.analysis.scoring import build_analysis
 from app.config import settings
 from app.database.repository import JsonRepository
@@ -41,6 +43,27 @@ def require_cache(key: str) -> Any:
     return value
 
 
+def normalise_with_duration_cache(raw: dict[str, Any], warnings: list[str] | None = None, allow_enrichment: bool = False) -> dict[str, Any]:
+    normalised = normalise_collection(raw)
+    duration_cache = repo.load_json("duration_cache") or {}
+    if duration_cache:
+        normalised = annotate_normalised_durations(normalised, duration_cache)
+    if allow_enrichment:
+        try:
+            stats = ytmusic.enrich_duration_cache(normalised, duration_cache, settings.duration_enrichment_limit)
+            if stats.get("attempted"):
+                repo.save_json("duration_cache", duration_cache)
+                normalised = annotate_normalised_durations(normalised, duration_cache)
+                if warnings is not None:
+                    warnings.append(
+                        f"Duration enrichment checked {stats['attempted']} track(s), added {stats['added']} usable duration(s), and cached {stats['failed']} unavailable result(s)."
+                    )
+        except Exception as exc:  # noqa: BLE001
+            if warnings is not None:
+                warnings.append(f"Duration enrichment skipped: {exc}")
+    return normalised
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "app": "Saville Music Persona", "time": datetime.now(timezone.utc).isoformat()}
@@ -61,6 +84,8 @@ def prerequisites() -> PrerequisitesResponse:
         ollama_model=settings.ollama_model,
         ollama_reachable=ollama_status["reachable"],
         model_installed=ollama_status["model_installed"],
+        local_timezone=settings.local_timezone,
+        duration_enrichment_limit=settings.duration_enrichment_limit,
     )
 
 
@@ -92,9 +117,10 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     if takeout_history:
         raw["takeout_history"] = takeout_history
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
-    normalised = normalise_collection(raw)
+    normalised = normalise_with_duration_cache(raw, warnings, allow_enrichment=not request.use_demo)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
+    normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     analysis = build_analysis(normalised)
     repo.save_json("raw", raw)
     repo.save_json("normalised", normalised)
@@ -123,16 +149,17 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
     repo.save_json("takeout_history", entries)
     raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
     raw["takeout_history"] = entries
-    normalised = normalise_collection(raw)
+    normalised = normalise_with_duration_cache(raw, warnings := ["Google Takeout history imported and merged with local metadata."], allow_enrichment=ytmusic.auth_status().get("connected", False))
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
+    normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     analysis = build_analysis(normalised)
     repo.save_json("raw", raw)
     repo.save_json("normalised", normalised)
     repo.save_json("analysis", analysis)
     repo.save_json(
         "last_refresh_meta",
-        {"refreshed_at": refreshed_at, "use_demo": False, "warnings": ["Google Takeout history imported and merged with local metadata."]},
+        {"refreshed_at": refreshed_at, "use_demo": False, "warnings": warnings},
     )
     dated = sorted(entry["played"] for entry in entries if entry.get("played"))
     return TakeoutImportResponse(
@@ -177,6 +204,69 @@ def scores() -> list[dict[str, Any]]:
 @router.get("/analysis/charts")
 def charts() -> dict[str, Any]:
     return require_cache("analysis")["charts"]
+
+
+@router.get("/analytics/listening-minutes")
+def listening_minutes(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/analytics/listening-minutes/daily")
+def listening_minutes_daily(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> list[dict[str, Any]]:
+    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)["daily"]
+
+
+@router.get("/analytics/listening-minutes/heatmap")
+def listening_minutes_heatmap(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> list[dict[str, Any]]:
+    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)["heatmap"]
+
+
+@router.get("/top")
+def period_top(
+    period: str = Query("this_month"),
+    type: str = Query("tracks"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    kind = "artists" if type == "artists" else "tracks"
+    return top_payload(require_cache("normalised"), kind, period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/taste-dna")
+def taste_dna(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return taste_dna_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/taste-dna/compare")
+def taste_dna_compare(
+    base: str = Query("rolling_year"),
+    compare: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return taste_dna_comparison_payload(require_cache("normalised"), base, compare, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/scores/interpretations")
+def score_interpretations(period: str = Query("rolling_year")) -> list[dict[str, Any]]:
+    _ = period
+    return require_cache("analysis")["scores"]
 
 
 @router.post("/report/generate")

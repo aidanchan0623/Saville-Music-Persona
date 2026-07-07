@@ -18,3 +18,10 @@ export function asPercent(value: number): string {
   return `${Math.round(value)}%`;
 }
 
+export function formatMinutes(value: number | null | undefined): string {
+  const total = Math.max(0, Math.round(value ?? 0));
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (hours <= 0) return `${minutes} minutes`;
+  return `${hours.toLocaleString()} hr ${String(minutes).padStart(2, "0")} min`;
+}

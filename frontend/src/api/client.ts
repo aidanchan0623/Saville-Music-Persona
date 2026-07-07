@@ -1,11 +1,15 @@
 import type {
   AuthStatus,
   Charts,
+  ListeningMinutes,
   Overview,
   PersonaReport,
+  PeriodTopResponse,
   Prerequisites,
   Recommendation,
   ScoreMetric,
+  TasteDnaComparison,
+  TasteDnaExplorer,
   TopArtist,
   TopTrack,
 } from "../types/api";
@@ -64,6 +68,27 @@ export const api = {
   topArtists: () => request<TopArtist[]>("/analysis/top-artists"),
   scores: () => request<ScoreMetric[]>("/analysis/scores"),
   charts: () => request<Charts>("/analysis/charts"),
+  listeningMinutes: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<ListeningMinutes>(`/analytics/listening-minutes?${params.toString()}`);
+  },
+  periodTop: (period = "this_month", type: "tracks" | "artists" = "tracks", month?: string | null) => {
+    const params = new URLSearchParams({ period, type });
+    if (month) params.set("month", month);
+    return request<PeriodTopResponse>(`/top?${params.toString()}`);
+  },
+  tasteDna: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<TasteDnaExplorer>(`/taste-dna?${params.toString()}`);
+  },
+  tasteDnaCompare: (base = "rolling_year", compare = "this_month", month?: string | null) => {
+    const params = new URLSearchParams({ base, compare });
+    if (month) params.set("month", month);
+    return request<TasteDnaComparison>(`/taste-dna/compare?${params.toString()}`);
+  },
+  scoreInterpretations: (period = "rolling_year") => request<ScoreMetric[]>(`/scores/interpretations?period=${encodeURIComponent(period)}`),
   latestReport: () => request<PersonaReport>("/report/latest"),
   generateReport: (mode: "serious" | "playful" | "roast") =>
     request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode }) }),

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.analysis.normalizer import UNKNOWN_ARTIST, clamp, parse_release_year
+from app.analysis.score_interpretations import attach_score_interpretations
 from app.analysis.taste_model import build_taste_model, enrich_artist
 
 
@@ -482,7 +483,7 @@ def build_analysis(normalised: dict[str, Any]) -> dict[str, Any]:
     genre_metric = broad_cluster_diversity_metric(taste)
     within_genre_metric = within_cluster_diversity_metric(taste)
     confidence = taste_confidence_score(coverage, total_plays, len(artist_counts), tracks, genre_metric)
-    scores = [repeat, loyalty, discovery, nostalgia, mainstream, genre_metric, within_genre_metric, confidence]
+    scores = attach_score_interpretations([repeat, loyalty, discovery, nostalgia, mainstream, genre_metric, within_genre_metric, confidence])
     top_tracks = build_top_tracks(tracks)
     top_artists = build_top_artists(events, tracks, normalised.get("artist_metadata", {}))
     moods = mood_profile(tracks, events, repeat)
@@ -571,6 +572,7 @@ def build_report_profile(
                 "value": score["value"],
                 "label": score["label"],
                 "inputs": score["inputs"],
+                "interpretation": score.get("interpretation"),
             }
             for score in scores
         ],
