@@ -10,6 +10,10 @@ interface Props {
 }
 
 export function RecommendationsPage({ recommendations, busy, onGenerate, onCreatePlaylist }: Props) {
+  const groups = ["Safe bets", "One step sideways", "Worth the risk"].map((group) => ({
+    group,
+    items: recommendations.filter((item) => recommendationGroup(item) === group),
+  }));
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -29,8 +33,12 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
       {!recommendations.length ? (
         <EmptyState title="No recommendations yet" body="Generate recommendations after refreshing data. The app excludes heavily played tracks and obvious duplicates before ranking candidates." />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {recommendations.map((item) => (
+        <div className="space-y-6">
+          {groups.filter((group) => group.items.length).map(({ group, items }) => (
+            <section key={group}>
+              <h2 className="text-xl font-semibold text-white">{group}</h2>
+              <div className="mt-3 grid gap-4 lg:grid-cols-2">
+                {items.map((item) => (
             <article key={`${item.rank}-${item.track_title}-${item.artist}`} className="rounded-lg border border-line bg-panel/82 p-4 transition hover:border-magenta/40">
               <div className="flex gap-4">
                 <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md bg-white/10">
@@ -48,8 +56,12 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
                 </div>
               </div>
               <p className="mt-4 text-sm leading-6 text-mist">{item.why_this_fits}</p>
+              {item.musical_connection ? <p className="mt-2 text-xs text-violet-100">{item.musical_connection}</p> : null}
               <p className="mt-3 text-xs text-mist/70">Source reason: {item.source_reason}</p>
             </article>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
@@ -57,3 +69,10 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
   );
 }
 
+function recommendationGroup(item: Recommendation) {
+  const group = item.recommendation_group || item.recommendation_type;
+  if (group === "Safe") return "Safe bets";
+  if (group === "Adjacent") return "One step sideways";
+  if (group === "Discovery") return "Worth the risk";
+  return group;
+}

@@ -8,7 +8,9 @@ export function ScoresPage({ scores }: { scores: ScoreMetric[] }) {
     <div className="space-y-5">
       <div>
         <h1 className="text-3xl font-bold text-white">Taste Scores</h1>
-        <p className="mt-2 text-mist">Every number is calculated in the backend. Gemma only explains results when you ask for a report.</p>
+        <p className="mt-2 max-w-3xl text-mist">
+          Every number is calculated in the backend. Genre diversity now uses curated broad clusters plus within-cluster variety, so a rock-centred taste can still register as internally varied.
+        </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {scores.map((score) => (
@@ -18,4 +20,3 @@ export function ScoresPage({ scores }: { scores: ScoreMetric[] }) {
     </div>
   );
 }
-

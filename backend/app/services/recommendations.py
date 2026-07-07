@@ -7,6 +7,7 @@ from typing import Any
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.normalizer import extract_artist_names, normalise_collection, normalise_track_item, slug
 from app.analysis.scoring import build_analysis
+from app.analysis.taste_model import profile_for_artist
 
 
 def duplicate_key(title: str, artist: str) -> str:
@@ -74,26 +75,53 @@ def demo_recommendation_pool() -> list[dict[str, Any]]:
     return result
 
 
-def score_candidate(candidate: dict[str, Any], analysis: dict[str, Any], normalised: dict[str, Any]) -> tuple[float, str]:
+def score_candidate(candidate: dict[str, Any], analysis: dict[str, Any], normalised: dict[str, Any]) -> tuple[float, str, str, str]:
     top_artists = {artist["artist"]: artist["rank"] for artist in analysis.get("top_artists", [])}
-    top_genres = {item["name"] for item in analysis.get("charts", {}).get("top_genre_clusters", [])[:4]}
+    taste = analysis.get("overview", {}).get("taste_interpretation", {})
+    core_clusters = {item["name"] for item in taste.get("core_genre_families", []) if isinstance(item, dict)}
+    secondary_clusters = {item["name"] for item in taste.get("secondary_genre_families", []) if isinstance(item, dict)}
+    side_clusters = {item["name"] for item in taste.get("side_quests", []) if isinstance(item, dict)}
+    sonic_traits = [str(item) for item in taste.get("sonic_traits", [])[:4]]
     track = normalise_track_item(candidate, "recommendation")
     artist = track["primary_artist"]
+    profile = profile_for_artist(artist)
+    clusters = set(profile.get("broad_clusters") or [])
+    genres = profile.get("display_genres") or profile.get("canonical_genres") or []
     score = 40.0
     source = str(candidate.get("recommendation_source") or "search result")
+    group = "Worth the risk"
     if artist in top_artists:
         score += max(12, 32 - top_artists[artist] * 2)
-    if set(track.get("genre_clusters", [])) & top_genres:
+        group = "Safe bets"
+    if clusters & core_clusters:
         score += 14
+        group = "Safe bets" if artist in top_artists else "One step sideways"
+    elif clusters & secondary_clusters:
+        score += 10
+        group = "One step sideways"
+    elif clusters & side_clusters:
+        score += 6
+        group = "Worth the risk"
     if candidate.get("target_type") == "discovery":
         score += 4
+        group = "Worth the risk"
+    elif candidate.get("target_type") == "adjacent":
+        group = "One step sideways"
+    elif candidate.get("target_type") == "safe":
+        group = "Safe bets"
     if track.get("release_year") and track["release_year"] >= 2020:
         score += 5
     if "similar" in source or "watch playlist" in source:
         score += 8
     if "related" in source:
         score += 6
-    return min(score, 100), source
+    if genres and clusters:
+        connection = f"Connects through {', '.join(list(clusters)[:2])} and {', '.join(genres[:3])}."
+    elif sonic_traits:
+        connection = f"Selected as a cautious match to the profile's {', '.join(sonic_traits[:3])} traits."
+    else:
+        connection = "Selected as a cautious discovery because genre confidence is limited for this candidate."
+    return min(score, 100), source, group, connection
 
 
 def build_existing_sets(normalised: dict[str, Any]) -> tuple[set[str], set[str]]:
@@ -104,17 +132,6 @@ def build_existing_sets(normalised: dict[str, Any]) -> tuple[set[str], set[str]]
         if track.get("video_id"):
             videos.add(str(track["video_id"]))
     return keys, videos
-
-
-def recommendation_type(index: int, candidate: dict[str, Any]) -> str:
-    target = candidate.get("target_type")
-    if target in {"safe", "adjacent", "discovery"}:
-        return str(target).capitalize()
-    if index < 8:
-        return "Safe"
-    if index < 16:
-        return "Adjacent"
-    return "Discovery"
 
 
 def generate_recommendations(
@@ -130,13 +147,13 @@ def generate_recommendations(
     candidates = dedupe_candidates(candidates, existing_keys, existing_videos)
     scored = []
     for candidate in candidates:
-        score, source = score_candidate(candidate, analysis, normalised)
-        scored.append((score, source, candidate))
+        score, source, group, connection = score_candidate(candidate, analysis, normalised)
+        scored.append((score, source, group, connection, candidate))
     scored.sort(key=lambda item: item[0], reverse=True)
     per_artist: Counter[str] = Counter()
-    selected: list[tuple[float, str, dict[str, Any]]] = []
+    selected: list[tuple[float, str, str, str, dict[str, Any]]] = []
     for item in scored:
-        artist = extract_artist_names(item[2])[0]
+        artist = extract_artist_names(item[4])[0]
         if per_artist[artist] >= 2 and len(selected) < 16:
             continue
         per_artist[artist] += 1
@@ -145,13 +162,10 @@ def generate_recommendations(
             break
     explanations = explanation_map or {}
     output = []
-    for index, (score, source, candidate) in enumerate(selected):
+    for index, (score, source, group, connection, candidate) in enumerate(selected):
         track = normalise_track_item(candidate, "recommendation")
-        rec_type = recommendation_type(index, candidate)
         key = f"{track['title']}::{track['primary_artist']}"
-        why = explanations.get(key) or (
-            f"{rec_type} match based on {source}; it connects to your top artists, genre clusters, or listening patterns without repeating a heavily played track."
-        )
+        why = explanations.get(key) or f"{group}: {connection} It avoids tracks already heavily represented in your history."
         output.append(
             {
                 "rank": index + 1,
@@ -162,11 +176,12 @@ def generate_recommendations(
                 "album_art": (track.get("thumbnails") or [{}])[-1].get("url") if track.get("thumbnails") else None,
                 "release_year": track.get("release_year"),
                 "video_id": track.get("video_id"),
-                "recommendation_type": rec_type,
+                "recommendation_type": group,
+                "recommendation_group": group,
                 "why_this_fits": why,
+                "musical_connection": connection,
                 "source_reason": source,
                 "score": round(score, 1),
             }
         )
     return output
-

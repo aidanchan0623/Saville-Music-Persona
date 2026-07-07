@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.analysis.normalizer import UNKNOWN_ARTIST, clamp, parse_release_year
+from app.analysis.taste_model import build_taste_model, enrich_artist
 
 
 def score_label(score: float, bands: list[tuple[int, int, str]]) -> str:
@@ -193,11 +194,14 @@ def mainstream_niche_score(artist_counts: Counter[str], artist_metadata: dict[st
     metadata_coverage = (len(weighted) / total * 100) if total else 0
     score = sum(weighted) / len(weighted) if weighted else 50
     confidence_note = "Subscriber metadata covered enough artists for a cautious estimate." if metadata_coverage >= 60 else "Low subscriber metadata coverage; treat this as a rough proxy, not a judgement."
+    label = score_label(score, [(0, 25, "mainstream-facing"), (26, 50, "recognisable"), (51, 75, "niche-leaning"), (76, 100, "deep-cut territory")])
+    if metadata_coverage < 60 and label == "deep-cut territory":
+        label = "niche-leaning estimate"
     return {
         "key": "mainstream_niche",
         "name": "Mainstream-Niche Estimate",
         "value": round(clamp(score), 1),
-        "label": score_label(score, [(0, 25, "mainstream-facing"), (26, 50, "recognisable"), (51, 75, "niche-leaning"), (76, 100, "deep-cut territory")]),
+        "label": label,
         "explanation": "Uses available artist subscriber counts as a cautious popularity proxy.",
         "formula": "play-weighted artist subscriber bucket score, where higher means more niche",
         "inputs": {"artist_subscriber_metadata_coverage": round(metadata_coverage, 1), "missing_play_count": missing, "confidence_note": confidence_note},
@@ -355,7 +359,14 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
         share = count / total * 100 if total else 0
         unique_songs = len(artist_tracks[artist])
         most_played = artist_tracks[artist].most_common(1)[0][0] if artist_tracks[artist] else None
-        label = score_label(share, [(0, 10, "passing signal"), (11, 20, "repeat presence"), (21, 35, "comfort artist"), (36, 100, "core identity artist")])
+        if share >= 15:
+            label = "Dominant core influence"
+        elif share >= 6:
+            label = "Core influence"
+        elif share >= 2:
+            label = "Secondary influence"
+        else:
+            label = "Distinctive side interest"
         top_genres = [name for name, _ in artist_genres[artist].most_common(3)]
         result.append(
             {
@@ -372,7 +383,41 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
                 "observation": f"{artist} accounts for {round(share, 1)}% of detected plays across {unique_songs} song(s).",
             }
         )
-    return result
+    total_plays = len(events)
+    return [enrich_artist(item, total_plays) for item in result]
+
+
+def broad_cluster_diversity_metric(taste_model: dict[str, Any]) -> dict[str, Any]:
+    diversity = taste_model.get("diversity", {})
+    coverage = taste_model.get("coverage", {})
+    return {
+        "key": "broad_cluster_diversity",
+        "name": "Broad-cluster diversity",
+        "value": diversity.get("broad_cluster_score", 0),
+        "label": diversity.get("label", "confidence-aware taste profile"),
+        "explanation": "How varied are the major musical worlds you listen to, using curated and confidence-aware artist mappings.",
+        "formula": "normalised Shannon entropy over broad curated taste clusters, weighted by plays",
+        "inputs": {
+            "top_clusters": taste_model.get("cluster_shares", [])[:5],
+            "genre_data_coverage": coverage.get("genre_coverage_percent", 0),
+            "curated_artist_coverage_percent": coverage.get("curated_artist_coverage_percent", 0),
+        },
+    }
+
+
+def within_cluster_diversity_metric(taste_model: dict[str, Any]) -> dict[str, Any]:
+    diversity = taste_model.get("diversity", {})
+    return {
+        "key": "within_cluster_diversity",
+        "name": "Within-cluster diversity",
+        "value": diversity.get("within_cluster_score", 0),
+        "label": "internally varied" if diversity.get("within_cluster_score", 0) >= 45 else "focused within core worlds",
+        "explanation": "How much you explore within your dominant rock/alternative/soundtrack worlds.",
+        "formula": "normalised Shannon entropy over canonical genres, weighted by plays",
+        "inputs": {
+            "top_canonical_genres": taste_model.get("canonical_genre_shares", [])[:8],
+        },
+    }
 
 
 def build_charts(
@@ -428,18 +473,22 @@ def build_analysis(normalised: dict[str, Any]) -> dict[str, Any]:
 
     total_plays = len(events)
     unique_tracks = len({event["track_id"] for event in events})
+    taste = build_taste_model(normalised, artist_counts, total_plays)
     repeat = repeat_score(total_plays, unique_tracks)
     loyalty = artist_loyalty_score(artist_counts, total_plays)
     discovery = discovery_score(events, tracks_by_id)
     nostalgia = nostalgia_score(tracks, events)
     mainstream = mainstream_niche_score(artist_counts, normalised.get("artist_metadata", {}))
-    genre_metric, genre_chart = genre_diversity_score(tracks, events)
+    genre_metric = broad_cluster_diversity_metric(taste)
+    within_genre_metric = within_cluster_diversity_metric(taste)
     confidence = taste_confidence_score(coverage, total_plays, len(artist_counts), tracks, genre_metric)
-    scores = [repeat, loyalty, discovery, nostalgia, mainstream, genre_metric, confidence]
+    scores = [repeat, loyalty, discovery, nostalgia, mainstream, genre_metric, within_genre_metric, confidence]
     top_tracks = build_top_tracks(tracks)
     top_artists = build_top_artists(events, tracks, normalised.get("artist_metadata", {}))
     moods = mood_profile(tracks, events, repeat)
+    genre_chart = [{"name": item["name"], "value": item["value"]} for item in taste.get("cluster_shares", [])]
     charts = build_charts(tracks, events, artist_counts, genre_chart, coverage)
+    charts["canonical_genres"] = [{"name": item["name"], "value": item["value"]} for item in taste.get("canonical_genre_shares", [])[:12]]
 
     top_artist = top_artists[0]["artist"] if top_artists else "Unknown Artist"
     favourite_decade = nostalgia["inputs"].get("favourite_release_decade", "unknown")
@@ -468,6 +517,12 @@ def build_analysis(normalised: dict[str, Any]) -> dict[str, Any]:
         "total_detected_plays": total_plays,
         "unique_tracks": unique_tracks,
         "unique_artists": len(artist_counts),
+        "taste_interpretation": taste,
+        "taste_dna": taste.get("taste_dna", {}),
+        "genre_coverage_percent": taste.get("coverage", {}).get("genre_coverage_percent", 0),
+        "curated_artist_coverage_percent": taste.get("coverage", {}).get("curated_artist_coverage_percent", 0),
+        "inferred_artist_coverage_percent": taste.get("coverage", {}).get("inferred_artist_coverage_percent", 0),
+        "unknown_artist_coverage_percent": taste.get("coverage", {}).get("unknown_artist_coverage_percent", 0),
         "top_tracks_ranking_note": (
             "Available history has no repeated tracks; songs are shown as recent detected plays until longer history is imported."
             if top_tracks and max((track.get("play_count", 0) for track in top_tracks), default=0) <= 1
@@ -500,6 +555,14 @@ def build_report_profile(
         "total_detected_plays": overview.get("total_detected_plays", 0),
         "unique_tracks": overview.get("unique_tracks", 0),
         "unique_artists": overview.get("unique_artists", 0),
+        "taste_interpretation": overview.get("taste_interpretation", {}),
+        "taste_dna": overview.get("taste_dna", {}),
+        "genre_confidence": {
+            "genre_coverage_percent": overview.get("genre_coverage_percent", 0),
+            "curated_artist_coverage_percent": overview.get("curated_artist_coverage_percent", 0),
+            "inferred_artist_coverage_percent": overview.get("inferred_artist_coverage_percent", 0),
+            "unknown_artist_coverage_percent": overview.get("unknown_artist_coverage_percent", 0),
+        },
         "top_tracks": top_tracks[:10],
         "top_artists": top_artists[:10],
         "scores": [

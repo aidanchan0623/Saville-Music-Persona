@@ -11,6 +11,7 @@ interface Props {
 
 export function ReportPage({ report, prerequisites, busy, onGenerate }: Props) {
   const disabled = busy || !prerequisites?.model_installed;
+  const taste = report?.evidence?.taste_interpretation as { summary?: string; core_genre_families?: { name: string; share: number }[]; sonic_traits?: string[] } | undefined;
   return (
     <div className="space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
@@ -53,6 +54,24 @@ export function ReportPage({ report, prerequisites, busy, onGenerate }: Props) {
               ))}
             </aside>
             <div className="space-y-5 text-base leading-8 text-mist">
+              {taste?.summary ? (
+                <section className="rounded-lg border border-violet/20 bg-violet/10 p-4">
+                  <h3 className="text-xl font-semibold text-white">What Your Taste Sounds Like</h3>
+                  <p className="mt-2">{taste.summary}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {taste.core_genre_families?.slice(0, 3).map((item) => (
+                      <span key={item.name} className="rounded-full border border-white/10 px-3 py-1 text-xs text-violet-100">
+                        {item.name} {item.share}%
+                      </span>
+                    ))}
+                    {taste.sonic_traits?.slice(0, 5).map((trait) => (
+                      <span key={trait} className="rounded-full border border-white/10 px-3 py-1 text-xs text-mist">
+                        {trait}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <p className="text-lg text-white">{report.summary}</p>
               <Section title="Your current era" body={report.current_era} />
               <Section title="Your core identity" body={report.core_identity} />
@@ -80,4 +99,3 @@ function Section({ title, body }: { title: string; body: string }) {
     </section>
   );
 }
-

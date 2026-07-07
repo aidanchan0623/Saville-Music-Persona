@@ -22,6 +22,58 @@ export interface ScoreMetric {
   inputs: Record<string, unknown>;
 }
 
+export interface TasteCluster {
+  name: string;
+  share: number;
+  value: number;
+  play_weight?: number;
+}
+
+export interface TasteDNA {
+  core_dna: string[];
+  secondary_influences: string[];
+  sonic_traits: string[];
+  era_preference: string;
+  artist_concentration: { label: string; value: number };
+  exploration_vs_comfort: { label: string; value: number };
+}
+
+export interface TasteInterpretation {
+  core_genre_families: TasteCluster[];
+  secondary_genre_families: TasteCluster[];
+  side_quests: TasteCluster[];
+  cluster_shares: TasteCluster[];
+  canonical_genre_shares: TasteCluster[];
+  sonic_traits: string[];
+  listening_character: string[];
+  evidence: string[];
+  summary: string;
+  coverage: {
+    genre_coverage_percent: number;
+    curated_artist_coverage_percent: number;
+    inferred_artist_coverage_percent: number;
+    unknown_artist_coverage_percent: number;
+  };
+  diversity: {
+    broad_cluster_score: number;
+    within_cluster_score: number;
+    label: string;
+  };
+  taste_dna: TasteDNA;
+}
+
+export interface GenreProfile {
+  canonical_genres: string[];
+  broad_clusters: string[];
+  sonic_traits: string[];
+  confidence: string;
+  confidence_label: string;
+  source: string;
+  display_genres: string[];
+  taste_role_hint?: string;
+  is_curated: boolean;
+}
+
 export interface TopTrack {
   rank: number;
   track_id: string;
@@ -50,6 +102,12 @@ export interface TopArtist {
   artist_loyalty_label: string;
   related_genres: string[];
   observation: string;
+  genre_profile: GenreProfile;
+  broad_clusters: string[];
+  genre_confidence: string;
+  genre_confidence_label: string;
+  taste_role: string;
+  why_it_matters: string;
 }
 
 export interface Overview {
@@ -66,6 +124,12 @@ export interface Overview {
   total_detected_plays: number;
   unique_tracks: number;
   unique_artists: number;
+  taste_interpretation: TasteInterpretation;
+  taste_dna: TasteDNA;
+  genre_coverage_percent: number;
+  curated_artist_coverage_percent: number;
+  inferred_artist_coverage_percent: number;
+  unknown_artist_coverage_percent: number;
   use_demo: boolean;
   warnings: string[];
 }
@@ -83,6 +147,7 @@ export interface Charts {
   artist_concentration: ChartPoint[];
   playlist_influence: ChartPoint[];
   coverage_timeline: ChartPoint[];
+  canonical_genres: ChartPoint[];
 }
 
 export interface PrerequisiteItem {
@@ -139,8 +204,9 @@ export interface Recommendation {
   release_year: number | null;
   video_id: string | null;
   recommendation_type: "Safe" | "Adjacent" | "Discovery" | string;
+  recommendation_group: string;
   why_this_fits: string;
+  musical_connection: string;
   source_reason: string;
   score: number;
 }
-

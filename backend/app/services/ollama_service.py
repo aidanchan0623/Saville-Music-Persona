@@ -89,15 +89,16 @@ class OllamaService:
                 "track_title": item["track_title"],
                 "artist": item["artist"],
                 "recommendation_type": item["recommendation_type"],
+                "musical_connection": item.get("musical_connection"),
                 "source_reason": item["source_reason"],
                 "score": item["score"],
             }
             for item in recommendations[:20]
         ]
         prompt = (
-            "You explain YouTube Music recommendations. Use only the supplied JSON. "
+            "You explain YouTube Music recommendations as a careful music-taste analyst. Use only the supplied JSON. "
             "Return JSON with key recommendation_explanations as an array of objects containing "
-            "track_title, artist, why_this_fits. Do not invent facts.\n\n"
+            "track_title, artist, why_this_fits. Mention concrete musical connections from the supplied profile. Do not invent facts.\n\n"
             f"PROFILE:\n{json.dumps(profile, ensure_ascii=True)}\n\n"
             f"RECOMMENDATIONS:\n{json.dumps(compact, ensure_ascii=True)}"
         )
@@ -133,15 +134,18 @@ class OllamaService:
 
     def _build_report_prompt(self, profile: dict[str, Any], mode: str) -> str:
         mode_instruction = {
-            "serious": "Write a polished, serious profile.",
-            "playful": "Write a playful but still evidence-led profile.",
-            "roast": "Roast gently. Keep it affectionate and non-hateful. No slurs, sexual content, protected-characteristic insults, or genuinely demeaning language.",
+            "serious": "Write a polished, serious music-taste profile.",
+            "playful": "Make it witty and specific, but not random or insulting.",
+            "roast": "Roast gently and keep it music-focused only. No slurs, protected-characteristic insults, sexuality jokes, mental-health claims, or harsh insults.",
         }.get(mode, "Write a polished, serious profile.")
         return (
-            "You write the Saville Music Persona report for a local private music dashboard.\n"
-            "Use only the facts in the supplied JSON. Never invent artists, tracks, genres, dates, play counts, or personal life details. "
-            "Do not claim causation. Where data confidence is low, explicitly state uncertainty. "
-            "Write in clear English, polished but not overly dramatic.\n"
+            "You are a careful music critic analysing a listener's profile. Use only the supplied evidence and genre mapping. "
+            "Do not invent artists, tracks, genres, personal facts, emotional problems, or listening history. "
+            "Your job is to explain the listener's musical identity in concrete genre language.\n"
+            "You must identify core genre families; explain how the artists combine into a coherent taste; distinguish core taste from side interests; "
+            "describe sonic traits such as guitar-driven, atmospheric, melodic, heavy, cinematic, nostalgic, energetic, introspective, or experimental only when supported by evidence; "
+            "state uncertainty when genre coverage is incomplete; avoid generic phrases like 'you enjoy a mix of genres'; "
+            "avoid repeating raw play counts unless useful as evidence; never call a genre tag factual if it is low-confidence.\n"
             f"{mode_instruction}\n"
             "Return strict JSON matching this schema: "
             '{"headline":"","summary":"","current_era":"","core_identity":"","listening_habits":"","comfort_artists":"","personality_tags":[{"tag":"","reason":""}],"report_sections":[],"recommendation_explanations":[]}.\n'
@@ -260,6 +264,7 @@ class OllamaService:
 
     def _fallback_report_data(self, evidence: dict[str, Any]) -> dict[str, Any]:
         coverage = evidence.get("coverage") if isinstance(evidence.get("coverage"), dict) else {}
+        taste = evidence.get("taste_interpretation") if isinstance(evidence.get("taste_interpretation"), dict) else {}
         top_artists = evidence.get("top_artists") if isinstance(evidence.get("top_artists"), list) else []
         top_tracks = evidence.get("top_tracks") if isinstance(evidence.get("top_tracks"), list) else []
         scores = evidence.get("scores") if isinstance(evidence.get("scores"), list) else []
@@ -277,6 +282,10 @@ class OllamaService:
         loyalty = self._score_by_name(scores, "Artist loyalty")
         top_artist_text = self._join_names(artist_names) or "the available top artists"
         top_track_text = self._join_names(track_names) or "the available recent tracks"
+        core_families = [str(item.get("name")) for item in taste.get("core_genre_families", []) if isinstance(item, dict) and item.get("name")]
+        secondary_families = [str(item.get("name")) for item in taste.get("secondary_genre_families", []) if isinstance(item, dict) and item.get("name")]
+        sonic_traits = [str(item) for item in taste.get("sonic_traits", [])[:6]]
+        taste_summary = str(taste.get("summary") or "")
         confidence_label = confidence.get("label") or "partial"
         repeat_label = repeat.get("label") or "unknown"
         loyalty_label = loyalty.get("label") or "unknown"
@@ -293,31 +302,35 @@ class OllamaService:
             if full_year
             else "This should be read as a current snapshot rather than a full-year identity."
         )
-        summary = (
+        summary = taste_summary or (
             f"This is a {confidence_label} profile based on {coverage_text}. "
             f"The clearest artist signals are {top_artist_text}. {top_song_context}"
         )
         current_era = (
-            f"Right now the listening window points toward {top_artist_text}. "
-            f"{window_context}"
+            f"Right now the listening window points toward {top_artist_text}. {window_context}"
         )
+        if core_families:
+            current_era = f"Core taste: {self._join_names(core_families[:3])}. {window_context}"
         core_identity = (
             f"The profile reads as {evidence.get('headline_persona') or 'a private, pattern-seeking listener'}: "
-            f"artist loyalty is {loyalty_label}, repeat behavior is {repeat_label}, and the library spreads across many artists."
+            f"{self._join_names(core_families[:3]) or 'the strongest mapped genres'} form the centre, with "
+            f"{self._join_names(secondary_families[:2]) or 'smaller side influences'} shaping the edges."
         )
         listening_habits = (
-            f"The recent track surface includes {top_track_text}. "
-            f"{top_song_context}"
+            f"The recent track surface includes {top_track_text}. {top_song_context}"
         )
+        if sonic_traits:
+            listening_habits += f" The mapped sonic traits are {self._join_names(sonic_traits[:5])}."
         comfort_artists = (
             f"{artist_names[0] if artist_names else 'The top artist'} is the strongest repeat-presence signal in the available data, "
             f"with {top_artist_text} shaping the current comfort zone."
         )
         mood_tags = [str(item.get("tag")) for item in moods[:2] if isinstance(item, dict) and item.get("tag")]
+        profile_label = "Full-year taste profile" if full_year else "Current listening snapshot"
         personality_tags = [
-            {"tag": "Partial-window analyst", "reason": f"The report is honest about {day_count or 'limited'} day(s) of detected history."},
+            {"tag": profile_label, "reason": f"The report is based on {day_count or 'limited'} day(s) of detected history."},
             {"tag": "Artist-led listener", "reason": f"The strongest evidence comes from artist concentration around {top_artist_text}."},
-            {"tag": "Mood-aware explorer", "reason": f"Detected mood signals include {self._join_names(mood_tags) or 'mixed listening contexts'}."},
+            {"tag": "Sonic-trait profile", "reason": f"Mapped traits include {self._join_names(sonic_traits[:3] or mood_tags) or 'mixed listening contexts'}."},
         ]
         return {
             "headline": str(evidence.get("headline_persona") or "Saville Music Persona"),

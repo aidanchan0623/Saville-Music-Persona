@@ -29,16 +29,31 @@ export function ArtistCard({ artist }: { artist: TopArtist }) {
           <dd className="mt-1 font-semibold text-white">{artist.unique_songs_played}</dd>
         </div>
       </dl>
-      <p className="mt-4 text-sm leading-6 text-mist">{artist.observation}</p>
+      <p className="mt-4 text-sm font-semibold text-violet-100">{artist.taste_role || artist.artist_loyalty_label}</p>
+      <p className="mt-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.observation}</p>
       <p className="mt-3 text-xs text-mist/75">Most played: {artist.most_played_song || "Unavailable"}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {artist.related_genres.map((genre) => (
-          <span key={genre} className="rounded-full border border-white/10 px-3 py-1 text-xs text-mist">
-            {genre}
-          </span>
-        ))}
+      <div className="mt-4 space-y-3">
+        <ChipGroup title="Canonical genres" items={artist.genre_profile?.display_genres?.length ? artist.genre_profile.display_genres : ["Unavailable / low-confidence"]} muted={!artist.genre_profile?.display_genres?.length} />
+        <ChipGroup title="Broad taste cluster" items={artist.broad_clusters?.length ? artist.broad_clusters : ["Not confidently mapped"]} muted={!artist.broad_clusters?.length} />
+        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-mist">
+          Confidence: <span className="text-white">{artist.genre_confidence_label || "Unavailable / low-confidence"}</span>
+        </div>
       </div>
     </article>
   );
 }
 
+function ChipGroup({ title, items, muted = false }: { title: string; items: string[]; muted?: boolean }) {
+  return (
+    <div>
+      <p className="mb-2 text-xs uppercase tracking-[0.14em] text-mist/60">{title}</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span key={item} className={`rounded-full border px-3 py-1 text-xs ${muted ? "border-white/10 text-mist/60" : "border-violet/25 bg-violet/10 text-violet-100"}`}>
+            {item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
