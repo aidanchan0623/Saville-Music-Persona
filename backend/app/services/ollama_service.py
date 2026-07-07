@@ -267,9 +267,11 @@ class OllamaService:
         artist_names = [str(item.get("artist")) for item in top_artists[:3] if isinstance(item, dict) and item.get("artist")]
         track_names = [str(item.get("title")) for item in top_tracks[:3] if isinstance(item, dict) and item.get("title")]
         day_count = coverage.get("days_represented") or 0
-        play_count = coverage.get("history_items_returned") or coverage.get("dated_history_items") or 0
+        play_count = evidence.get("total_detected_plays") or coverage.get("history_items_returned") or coverage.get("dated_history_items") or 0
         earliest = coverage.get("earliest_detected_play") or "the earliest detected day"
         latest = coverage.get("latest_detected_play") or "the latest detected day"
+        full_year = bool(coverage.get("full_365_day_analysis"))
+        max_track_plays = max((int(item.get("play_count") or 0) for item in top_tracks if isinstance(item, dict)), default=0)
         confidence = self._score_by_name(scores, "Taste confidence")
         repeat = self._score_by_name(scores, "Repeat score")
         loyalty = self._score_by_name(scores, "Artist loyalty")
@@ -281,13 +283,23 @@ class OllamaService:
         coverage_text = f"{play_count} detected plays from {earliest} to {latest}"
         if day_count:
             coverage_text = f"{coverage_text}, spanning {day_count} day(s)"
+        top_song_context = (
+            "The top-song list now has repeat-count evidence, so it can be read as a real ranking."
+            if max_track_plays > 1
+            else "The top-song list is treated cautiously when every detected song has only one play."
+        )
+        window_context = (
+            "This should be read as a full-year listening profile."
+            if full_year
+            else "This should be read as a current snapshot rather than a full-year identity."
+        )
         summary = (
             f"This is a {confidence_label} profile based on {coverage_text}. "
-            f"The clearest artist signals are {top_artist_text}, while the top-song list is treated cautiously when every detected song has only one play."
+            f"The clearest artist signals are {top_artist_text}. {top_song_context}"
         )
         current_era = (
             f"Right now the listening window points toward {top_artist_text}. "
-            f"Because the available web history is short, this should be read as a current snapshot rather than a full-year identity."
+            f"{window_context}"
         )
         core_identity = (
             f"The profile reads as {evidence.get('headline_persona') or 'a private, pattern-seeking listener'}: "
@@ -295,7 +307,7 @@ class OllamaService:
         )
         listening_habits = (
             f"The recent track surface includes {top_track_text}. "
-            "The ranking is labelled low-confidence when repeat counts are flat, so Google Takeout history will make this section much stronger."
+            f"{top_song_context}"
         )
         comfort_artists = (
             f"{artist_names[0] if artist_names else 'The top artist'} is the strongest repeat-presence signal in the available data, "

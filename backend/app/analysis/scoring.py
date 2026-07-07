@@ -497,6 +497,9 @@ def build_report_profile(
     return {
         "headline_persona": overview["headline_persona"],
         "coverage": overview["coverage"],
+        "total_detected_plays": overview.get("total_detected_plays", 0),
+        "unique_tracks": overview.get("unique_tracks", 0),
+        "unique_artists": overview.get("unique_artists", 0),
         "top_tracks": top_tracks[:10],
         "top_artists": top_artists[:10],
         "scores": [
