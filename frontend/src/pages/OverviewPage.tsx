@@ -1,26 +1,80 @@
-import { Brain, RefreshCw, Sparkles } from "lucide-react";
-import type { ReactNode } from "react";
+import { RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
-import { MetricCard } from "../components/MetricCard";
-import { StatusPill } from "../components/StatusPill";
-import { TasteDNA } from "../components/TasteDNA";
-import type { AuthStatus, ListeningMinutes, Overview, Prerequisites } from "../types/api";
-import { formatDate, formatDateTime, formatMinutes } from "../utils/format";
+import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
+import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
+import { HeroIdentitySection } from "../components/home/HeroIdentitySection";
+import { KeySignalsStrip } from "../components/home/KeySignalsStrip";
+import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection";
+import type {
+  AuthStatus,
+  ListeningMinutes,
+  Overview,
+  PeriodTopItem,
+  Prerequisites,
+  ScoreMetric,
+  TasteDnaComparison,
+  TasteDnaExplorer,
+} from "../types/api";
 
 interface Props {
   overview: Overview | null;
   thisMonthMinutes: ListeningMinutes | null;
   rollingYearMinutes: ListeningMinutes | null;
+  scores: ScoreMetric[];
   auth: AuthStatus | null;
   prerequisites: Prerequisites | null;
   busy: boolean;
   useDemo: boolean;
   onRefresh: () => void;
-  onGenerateReport: () => void;
   onOpenSettings: () => void;
+  onOpenTop10: () => void;
+  onOpenScores: () => void;
+  onOpenPatterns: () => void;
+  onOpenReport: () => void;
 }
 
-export function OverviewPage({ overview, thisMonthMinutes, rollingYearMinutes, auth, prerequisites, busy, useDemo, onRefresh, onGenerateReport, onOpenSettings }: Props) {
+export function OverviewPage({
+  overview,
+  thisMonthMinutes,
+  rollingYearMinutes,
+  scores,
+  auth,
+  prerequisites,
+  busy,
+  useDemo,
+  onRefresh,
+  onOpenSettings,
+  onOpenTop10,
+  onOpenScores,
+  onOpenPatterns,
+  onOpenReport,
+}: Props) {
+  const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
+  const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
+  const [currentTopArtist, setCurrentTopArtist] = useState<PeriodTopItem | null>(null);
+
+  useEffect(() => {
+    if (!overview) return;
+    let cancelled = false;
+    Promise.allSettled([
+      api.tasteDna("this_month"),
+      api.tasteDnaCompare("rolling_year", "this_month"),
+      api.periodTop("this_month", "artists"),
+    ] as const).then(([tasteResult, comparisonResult, artistsResult]) => {
+      if (cancelled) return;
+      if (tasteResult.status === "fulfilled") setCurrentTaste(tasteResult.value);
+      if (comparisonResult.status === "fulfilled") setComparison(comparisonResult.value);
+      if (artistsResult.status === "fulfilled") setCurrentTopArtist(artistsResult.value.items[0] ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [overview?.last_refreshed_at]);
+
+  const scoreByKey = useMemo(() => new Map(scores.map((score) => [score.key, score])), [scores]);
+
   if (!overview) {
     return (
       <EmptyState
@@ -37,213 +91,90 @@ export function OverviewPage({ overview, thisMonthMinutes, rollingYearMinutes, a
       />
     );
   }
+
   const taste = overview.taste_interpretation;
+  const identityTitle = overview.taste_dna?.core_dna?.length
+    ? overview.taste_dna.core_dna.slice(0, 3).join(" / ")
+    : taste.core_genre_families.slice(0, 3).map((item) => item.name).join(" / ") || overview.headline_persona;
+  const nicheScore = scoreByKey.get("mainstream_niche");
+  const currentState = buildCurrentState(overview.repeat_score, overview.discovery_score, currentTopArtist?.artist);
+  const connectedLabel = useDemo ? "Demo data active" : auth?.connected ? "YouTube Music connected" : "YouTube Music not connected";
+  const modelLabel = prerequisites?.model_installed ? "Gemma ready" : "Gemma unavailable";
+
   return (
-    <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-lg border border-line bg-[radial-gradient(circle_at_20%_20%,rgba(139,92,246,0.24),transparent_35%),linear-gradient(135deg,rgba(17,17,29,0.96),rgba(7,7,13,0.98))] p-7 shadow-glow md:p-10">
-        <div className="max-w-4xl">
-          <div className="flex flex-wrap gap-2">
-            <StatusPill ok={auth?.connected || useDemo} label={useDemo ? "Demo data active" : auth?.connected ? "YouTube Music connected" : "YouTube Music not connected"} />
-            <StatusPill ok={Boolean(prerequisites?.ollama_reachable && prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma unavailable"} />
-          </div>
-          <h1 className="mt-6 text-4xl font-black text-white md:text-6xl">Saville Music Persona</h1>
-          <p className="mt-3 max-w-2xl text-lg leading-8 text-mist">A private local analysis of your YouTube Music identity.</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <button className="btn-primary" onClick={onRefresh} disabled={busy}>
-              <RefreshCw size={17} /> {busy ? "Refreshing..." : "Refresh My Music Data"}
-            </button>
-            <button className="btn-secondary" onClick={onGenerateReport} disabled={busy || !prerequisites?.model_installed}>
-              <Sparkles size={17} /> Generate Persona Report
-            </button>
-          </div>
-          <p className="mt-4 text-sm text-mist">Last refreshed: {formatDateTime(overview.last_refreshed_at)}</p>
-        </div>
-      </section>
+    <div className="space-y-14">
+      <HeroIdentitySection
+        identityTitle={identityTitle}
+        summary={buildHeroSummary(taste)}
+        currentState={currentState}
+        connectedLabel={connectedLabel}
+        modelLabel={modelLabel}
+        lastRefreshedAt={overview.last_refreshed_at}
+        busy={busy}
+        onExploreTaste={onOpenScores}
+        onViewThisMonth={onOpenTop10}
+        onRefresh={onRefresh}
+      />
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Your headline persona" value={overview.headline_persona} caption="A deterministic label from your strongest listening signals." accent="violet" />
-        <MetricCard label="Top taste family" value={overview.top_genre_cluster} caption="Built from curated artist genre mapping, not weak raw metadata." accent="indigo" />
-        <MetricCard label="Favourite decade" value={overview.favourite_decade} caption="Weighted by detected plays with usable release years." accent="magenta" />
-        <MetricCard label="Taste confidence" value={`${overview.taste_confidence.value}%`} caption={overview.taste_confidence.label} accent="violet" />
-      </section>
+      <KeySignalsStrip
+        repeatScore={overview.repeat_score}
+        discoveryScore={overview.discovery_score}
+        nicheScore={nicheScore}
+        thisMonthMinutes={thisMonthMinutes}
+        rollingYearMinutes={rollingYearMinutes}
+      />
 
-      {thisMonthMinutes && rollingYearMinutes ? (
-        <section className="rounded-lg border border-violet/25 bg-[linear-gradient(135deg,rgba(139,92,246,0.16),rgba(17,17,29,0.92))] p-6 shadow-glow">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="text-sm uppercase tracking-[0.18em] text-violet-200">Detected Listening Time</p>
-              <h2 className="mt-2 text-3xl font-black text-white">Estimated from detected track durations</h2>
-              <p className="mt-3 text-sm leading-6 text-mist">
-                Detected listening minutes are estimated by adding the complete duration of each detected music track. Skips, partial listens and videos without duration cannot be measured exactly.
-              </p>
-            </div>
-            <span className="w-fit rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-violet-100">
-              {rollingYearMinutes.duration_quality.confidence_badge} - {rollingYearMinutes.duration_quality.duration_coverage_percent}% coverage
-            </span>
-          </div>
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <TimeMetric label="This month" value={formatMinutes(thisMonthMinutes.metrics.current_month_total_minutes)} caption={`${thisMonthMinutes.duration_quality.duration_coverage_percent}% duration coverage`} />
-            <TimeMetric label="Rolling year" value={formatMinutes(rollingYearMinutes.metrics.rolling_365_total_minutes)} caption={`${rollingYearMinutes.duration_quality.plays_with_usable_duration} plays with usable duration`} />
-            <TimeMetric label="Average active day" value={formatMinutes(rollingYearMinutes.metrics.average_active_day_minutes)} caption={`${rollingYearMinutes.metrics.active_listening_days} active listening days`} />
-            <TimeMetric label="Current streak" value={`${rollingYearMinutes.metrics.current_listening_streak_days} day${rollingYearMinutes.metrics.current_listening_streak_days === 1 ? "" : "s"}`} caption="A day counts if at least one music play was detected." />
-          </div>
-          <details className="mt-5 rounded-md border border-white/10 bg-black/20 p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-white">Method and exclusions</summary>
-            <p className="mt-3 text-sm leading-6 text-mist">{rollingYearMinutes.methodology}</p>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-mist">
-              {rollingYearMinutes.duration_quality.main_exclusion_reasons.map((item) => (
-                <span key={item.reason} className="rounded-full bg-white/10 px-3 py-1">
-                  {item.reason.replaceAll("_", " ")}: {item.count}
-                </span>
-              ))}
-            </div>
-          </details>
-        </section>
-      ) : null}
+      <TasteNarrativeSection taste={taste} />
 
-      {taste ? (
-        <section className="rounded-lg border border-line bg-panel/82 p-6 shadow-glow">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-3xl">
-              <p className="text-sm uppercase tracking-[0.18em] text-violet-200">What Your Taste Sounds Like</p>
-              <h2 className="mt-2 text-3xl font-black text-white">Emotion, atmosphere, and guitar-driven pressure</h2>
-              <p className="mt-4 text-lg leading-8 text-mist">{taste.summary}</p>
-            </div>
-            <div className="grid min-w-[16rem] gap-2 text-sm">
-              <Confidence label="Genre coverage" value={overview.genre_coverage_percent} />
-              <Confidence label="Curated artist coverage" value={overview.curated_artist_coverage_percent} />
-              <Confidence label="Unknown artist coverage" value={overview.unknown_artist_coverage_percent} inverse />
-            </div>
-          </div>
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <TasteLayer title="Core taste" items={taste.core_genre_families.map((item) => `${item.name} - ${item.share}%`)} />
-            <TasteLayer title="Secondary taste" items={taste.secondary_genre_families.map((item) => `${item.name} - ${item.share}%`)} />
-            <TasteLayer title="Side quests" items={taste.side_quests.map((item) => `${item.name} - ${item.share}%`)} />
-          </div>
-          <div className="mt-5 flex flex-wrap gap-2">
-            {taste.sonic_traits.slice(0, 8).map((trait) => (
-              <span key={trait} className="rounded-full border border-violet/20 bg-violet/10 px-3 py-1 text-sm text-violet-100">
-                {trait}
-              </span>
-            ))}
-          </div>
-          {taste.coverage.unknown_artist_coverage_percent > 20 ? (
-            <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">
-              Your core genre pattern is clear from your dominant artists, but smaller artists could not be confidently classified.
-            </p>
-          ) : null}
-        </section>
-      ) : null}
+      <CurrentListeningStateSection
+        currentMinutes={thisMonthMinutes}
+        currentTaste={currentTaste}
+        comparison={comparison}
+        currentTopArtist={currentTopArtist}
+        repeatScore={overview.repeat_score}
+        discoveryScore={overview.discovery_score}
+      />
 
-      <TasteDNA dna={overview.taste_dna} interpretation={taste} />
-
-      <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="rounded-lg border border-line bg-panel/80 p-5">
-          <h2 className="text-xl font-semibold text-white">Analysis coverage</h2>
-          <dl className="mt-5 grid gap-3 sm:grid-cols-2">
-            <CoverageItem label="Earliest detected play" value={formatDate(overview.coverage.earliest_detected_play)} />
-            <CoverageItem label="Latest detected play" value={formatDate(overview.coverage.latest_detected_play)} />
-            <CoverageItem label="Days represented" value={String(overview.coverage.days_represented)} />
-            <CoverageItem label="Full 365-day analysis" value={overview.coverage.full_365_day_analysis ? "Yes" : "No"} />
-          </dl>
-          <div className="mt-4 space-y-2">
-            {overview.coverage.notes.map((note) => (
-              <p key={note} className="rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">
-                {note}
-              </p>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-lg border border-line bg-panel/80 p-5">
-          <h2 className="text-xl font-semibold text-white">Core signals</h2>
-          <div className="mt-5 grid gap-3">
-            <Signal icon={<Brain size={18} />} label="Repeat score" value={`${overview.repeat_score.value}%`} detail={overview.repeat_score.label} />
-            <Signal icon={<Sparkles size={18} />} label="Discovery score" value={`${overview.discovery_score.value}%`} detail={overview.discovery_score.label} />
-            <Signal icon={<RefreshCw size={18} />} label="Detected plays" value={String(overview.total_detected_plays)} detail={`${overview.unique_tracks} tracks, ${overview.unique_artists} artists`} />
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-5 lg:grid-cols-2">
-        <MiniRank title="Top 3 artists" items={overview.top_3_artists.map((item) => `${item.artist} - ${item.play_count} plays`)} />
-        <MiniRank title="Top 3 tracks" items={overview.top_3_tracks.map((item) => `${item.title} - ${item.artist}`)} />
-      </section>
+      <ExploreProfileSection
+        onOpenTop10={onOpenTop10}
+        onOpenScores={onOpenScores}
+        onOpenPatterns={onOpenPatterns}
+        onOpenReport={onOpenReport}
+      />
     </div>
   );
 }
 
-function Confidence({ label, value, inverse = false }: { label: string; value: number; inverse?: boolean }) {
-  const good = inverse ? 100 - value : value;
-  return (
-    <div className="rounded-md bg-white/[0.04] p-3">
-      <div className="flex items-center justify-between gap-3 text-xs text-mist">
-        <span>{label}</span>
-        <strong className="text-white">{value}%</strong>
-      </div>
-      <div className="mt-2 h-1.5 rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-violet" style={{ width: `${Math.max(0, Math.min(100, good))}%` }} />
-      </div>
-    </div>
-  );
+function buildCurrentState(
+  repeatScore: ScoreMetric,
+  discoveryScore: ScoreMetric,
+  currentArtist: string | undefined,
+) {
+  const replayPhrase = repeatScore.value >= 70
+    ? "replay-heavy"
+    : repeatScore.value >= 45
+      ? "comfort-leaning"
+      : "variety-led";
+  const discoveryPhrase = discoveryScore.value >= 55 ? "actively exploratory" : "selectively curious";
+  const anchor = currentArtist ? `, with ${currentArtist} as a current anchor` : "";
+  return `This month you are ${replayPhrase} and ${discoveryPhrase}, still anchored by emotionally charged alternative music${anchor}.`;
 }
 
-function TasteLayer({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-md bg-white/[0.04] p-4">
-      <h3 className="font-semibold text-white">{title}</h3>
-      <div className="mt-3 space-y-2">
-        {items.length ? items.map((item) => <p key={item} className="text-sm text-mist">{item}</p>) : <p className="text-sm text-mist/70">No confident signal yet</p>}
-      </div>
-    </div>
-  );
+function buildHeroSummary(taste: Overview["taste_interpretation"]) {
+  const core = taste.core_genre_families.slice(0, 3).map((item) => item.name);
+  const secondary = taste.secondary_genre_families.slice(0, 2).map((item) => item.name);
+  const traits = taste.sonic_traits.slice(0, 4);
+  const coreSentence = core.length
+    ? `Your listening centres on ${formatInlineList(core)}.`
+    : taste.summary;
+  const traitSentence = traits.length
+    ? `The strongest pattern feels ${formatInlineList(traits)}, with side colour from ${formatInlineList(secondary.length ? secondary : ["atmospheric and nostalgic listening"])}.`
+    : "The strongest pattern is emotionally charged, guitar-driven, and atmospheric.";
+  return `${coreSentence} ${traitSentence}`;
 }
 
-function CoverageItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-white/[0.04] p-4">
-      <dt className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</dt>
-      <dd className="mt-2 text-lg font-semibold text-white">{value}</dd>
-    </div>
-  );
-}
-
-function Signal({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-md bg-white/[0.04] p-4">
-      <div className="flex items-center gap-3 text-mist">
-        <span className="grid h-9 w-9 place-items-center rounded-full bg-violet/15 text-violet-100">{icon}</span>
-        <span>
-          <span className="block text-sm text-white">{label}</span>
-          <span className="text-xs">{detail}</span>
-        </span>
-      </div>
-      <strong className="text-xl text-white">{value}</strong>
-    </div>
-  );
-}
-
-function TimeMetric({ label, value, caption }: { label: string; value: string; caption: string }) {
-  return (
-    <div className="rounded-md bg-white/[0.06] p-4">
-      <p className="text-xs uppercase tracking-[0.16em] text-mist/70">{label}</p>
-      <p className="mt-2 text-2xl font-black text-white">{value}</p>
-      <p className="mt-1 text-sm text-mist">{caption}</p>
-    </div>
-  );
-}
-
-function MiniRank({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-lg border border-line bg-panel/80 p-5">
-      <h2 className="text-xl font-semibold text-white">{title}</h2>
-      <ol className="mt-4 space-y-3">
-        {items.map((item, index) => (
-          <li key={item} className="flex items-center gap-3 rounded-md bg-white/[0.04] p-3 text-sm text-mist">
-            <span className="text-lg font-black text-white/30">#{index + 1}</span>
-            <span>{item}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-  );
+function formatInlineList(items: string[]) {
+  if (items.length <= 1) return items[0] ?? "";
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }

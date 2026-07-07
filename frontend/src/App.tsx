@@ -166,13 +166,17 @@ export default function App() {
             overview={overview}
             thisMonthMinutes={thisMonthMinutes}
             rollingYearMinutes={rollingYearMinutes}
+            scores={scores}
             auth={auth}
             prerequisites={prerequisites}
             busy={busy}
             useDemo={useDemo}
             onRefresh={refresh}
-            onGenerateReport={() => generateReport("serious")}
             onOpenSettings={() => setPage("settings")}
+            onOpenTop10={() => setPage("top10")}
+            onOpenScores={() => setPage("scores")}
+            onOpenPatterns={() => setPage("patterns")}
+            onOpenReport={() => setPage("report")}
           />
         );
       case "top10":
