@@ -48,22 +48,22 @@ export default function App() {
   };
 
   const loadAnalysis = async () => {
-    const [nextOverview, nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.all([
-      api.overview(),
+    const nextOverview = await api.overview();
+    setOverview(nextOverview);
+    const [nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.allSettled([
       api.topTracks(),
       api.topArtists(),
       api.scores(),
       api.charts(),
       api.listeningMinutes("this_month"),
       api.listeningMinutes("rolling_year"),
-    ]);
-    setOverview(nextOverview);
-    setTracks(nextTracks);
-    setArtists(nextArtists);
-    setScores(nextScores);
-    setCharts(nextCharts);
-    setThisMonthMinutes(nextThisMonthMinutes);
-    setRollingYearMinutes(nextRollingYearMinutes);
+    ] as const);
+    if (nextTracks.status === "fulfilled") setTracks(nextTracks.value);
+    if (nextArtists.status === "fulfilled") setArtists(nextArtists.value);
+    if (nextScores.status === "fulfilled") setScores(nextScores.value);
+    if (nextCharts.status === "fulfilled") setCharts(nextCharts.value);
+    if (nextThisMonthMinutes.status === "fulfilled") setThisMonthMinutes(nextThisMonthMinutes.value);
+    if (nextRollingYearMinutes.status === "fulfilled") setRollingYearMinutes(nextRollingYearMinutes.value);
     try {
       setReport(await api.latestReport());
     } catch {

@@ -38,6 +38,7 @@ class AuthStatusResponse(BaseModel):
 
 class RefreshRequest(BaseModel):
     use_demo: bool = False
+    enrich_durations: bool = False
 
 
 class RefreshResponse(BaseModel):

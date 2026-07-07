@@ -117,7 +117,7 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     if takeout_history:
         raw["takeout_history"] = takeout_history
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
-    normalised = normalise_with_duration_cache(raw, warnings, allow_enrichment=not request.use_demo)
+    normalised = normalise_with_duration_cache(raw, warnings, allow_enrichment=(not request.use_demo and request.enrich_durations))
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
@@ -149,7 +149,7 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
     repo.save_json("takeout_history", entries)
     raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
     raw["takeout_history"] = entries
-    normalised = normalise_with_duration_cache(raw, warnings := ["Google Takeout history imported and merged with local metadata."], allow_enrichment=ytmusic.auth_status().get("connected", False))
+    normalised = normalise_with_duration_cache(raw, warnings := ["Google Takeout history imported and merged with local metadata."], allow_enrichment=False)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
