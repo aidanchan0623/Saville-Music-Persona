@@ -55,7 +55,27 @@ def require_cache(key: str) -> Any:
     return value
 
 
-def normalise_with_duration_cache(raw: dict[str, Any], warnings: list[str] | None = None, allow_enrichment: bool = False) -> dict[str, Any]:
+def normalise_with_duration_cache(
+    raw: dict[str, Any],
+    warnings: list[str] | None = None,
+    allow_enrichment: bool = False,
+    allow_artist_image_enrichment: bool = False,
+) -> dict[str, Any]:
+    artist_cache = repo.load_json("artist_image_cache") or {}
+    if artist_cache:
+        raw["artist_image_cache"] = {**artist_cache, **(raw.get("artist_image_cache") or {})}
+    if allow_artist_image_enrichment:
+        try:
+            stats = ytmusic.enrich_artist_image_cache(raw, artist_cache)
+            if stats.get("seeded") or stats.get("attempted"):
+                repo.save_json("artist_image_cache", artist_cache)
+                if warnings is not None:
+                    warnings.append(
+                        f"Artist image cache checked {stats['attempted']} artist(s), added {stats['added']} official image(s), and reused {stats['seeded']} library artist image(s)."
+                    )
+        except Exception as exc:  # noqa: BLE001
+            if warnings is not None:
+                warnings.append(f"Artist image enrichment skipped: {exc}")
     normalised = normalise_collection(raw)
     duration_cache = repo.load_json("duration_cache") or {}
     if duration_cache:
@@ -126,9 +146,11 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     if request.use_demo:
         raw = demo_raw_collection()
         warnings.append("Demo data is enabled; no private account data was fetched.")
+        live_connected = False
     else:
         takeout_history = repo.load_json("takeout_history")
         status = ytmusic.auth_status()
+        live_connected = bool(status["connected"])
         if not status["connected"] and not takeout_history:
             raise HTTPException(status_code=400, detail={"error": "YouTube Music is not connected", "detail": status["message"], "code": "ytmusic_not_connected"})
         if status["connected"]:
@@ -142,7 +164,12 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     if takeout_history:
         raw["takeout_history"] = takeout_history
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
-    normalised = normalise_with_duration_cache(raw, warnings, allow_enrichment=(not request.use_demo and request.enrich_durations))
+    normalised = normalise_with_duration_cache(
+        raw,
+        warnings,
+        allow_enrichment=(not request.use_demo and request.enrich_durations),
+        allow_artist_image_enrichment=live_connected,
+    )
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
@@ -174,7 +201,13 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
     repo.save_json("takeout_history", entries)
     raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
     raw["takeout_history"] = entries
-    normalised = normalise_with_duration_cache(raw, warnings := ["Google Takeout history imported and merged with local metadata."], allow_enrichment=False)
+    ytmusic_connected = bool(ytmusic.auth_status()["connected"])
+    normalised = normalise_with_duration_cache(
+        raw,
+        warnings := ["Google Takeout history imported and merged with local metadata."],
+        allow_enrichment=False,
+        allow_artist_image_enrichment=ytmusic_connected,
+    )
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})

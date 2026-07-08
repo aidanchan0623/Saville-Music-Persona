@@ -193,6 +193,28 @@ def test_artist_songs_drilldown_matches_featured_artists() -> None:
     assert payload["songs"][0]["share_of_artist_plays"] == 100.0
 
 
+def test_top_artists_use_official_metadata_not_track_art() -> None:
+    raw = {
+        "history": [
+            _history_item("official-song", "Official Song", "Official Artist", "2026-07-02", 180),
+            _history_item("official-song", "Official Song", "Official Artist", "2026-07-03", 180),
+            _history_item("plain-song", "Plain Song", "Plain Artist", "2026-07-02", 180),
+        ],
+        "artist_image_cache": {
+            "Official Artist": {
+                "artist": "Official Artist",
+                "artist_id": "UC-official",
+                "thumbnails": [{"url": "https://yt.example/official.jpg", "width": 512, "height": 512}],
+            }
+        },
+    }
+    normalised = normalise_collection(raw, today=date(2026, 7, 7))
+    artists = top_payload(normalised, "artists", "month", "2026-07", today=date(2026, 7, 7))["items"]
+    by_artist = {item["artist"]: item for item in artists}
+    assert by_artist["Official Artist"]["thumbnail"] == "https://yt.example/official.jpg"
+    assert by_artist["Plain Artist"]["thumbnail"] is None
+
+
 def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
     normalised = normalise_collection(
         {

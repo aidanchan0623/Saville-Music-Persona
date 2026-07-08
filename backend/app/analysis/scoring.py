@@ -357,13 +357,9 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
     artist_counts: Counter[str] = Counter()
     artist_tracks: dict[str, Counter[str]] = defaultdict(Counter)
     artist_genres: dict[str, Counter[str]] = defaultdict(Counter)
-    artist_images: dict[str, str] = {}
     for event in events:
         track = tracks_by_id.get(event["track_id"], {})
         artist = track.get("primary_artist", event.get("primary_artist", UNKNOWN_ARTIST))
-        image = thumbnail_url(track.get("thumbnails"), track.get("video_id"))
-        if image and artist not in artist_images:
-            artist_images[artist] = image
         artist_counts[artist] += 1
         artist_tracks[artist][track.get("title", event.get("title", "Unknown track"))] += 1
         for genre in track.get("genre_clusters", []):
@@ -390,7 +386,7 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
                 "rank": index,
                 "artist": artist,
                 "artist_id": meta.get("artist_id"),
-                "image": thumbnail_url(meta.get("thumbnails")) or artist_images.get(artist),
+                "image": thumbnail_url(meta.get("thumbnails")),
                 "play_count": count,
                 "share_of_listens": round(share, 1),
                 "unique_songs_played": unique_songs,

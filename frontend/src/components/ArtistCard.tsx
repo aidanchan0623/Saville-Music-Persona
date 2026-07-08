@@ -2,15 +2,15 @@ import type { TopArtist } from "../types/api";
 
 export function ArtistCard({ artist }: { artist: TopArtist }) {
   return (
-    <article className="rounded-lg border border-line bg-panel/80 p-5 transition hover:border-indigo/40 hover:bg-panelSoft/85">
+    <article className="rounded-2xl border border-line bg-panel/80 p-5 transition hover:border-red-400/40 hover:bg-panelSoft/85">
       <div className="flex items-start gap-4">
-        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-full bg-indigo/20 text-lg font-bold text-white">
-          {artist.image ? <img className="h-full w-full object-cover" src={artist.image} alt="" /> : artist.artist.slice(0, 2).toUpperCase()}
+        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white shadow-[0_16px_42px_rgba(0,0,0,0.3)]">
+          {artist.image ? <img className="h-full w-full object-cover object-center" src={artist.image} alt="" /> : artist.artist.slice(0, 2).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <span className="text-2xl font-black text-white/20">#{artist.rank}</span>
-            <h3 className="truncate text-lg font-semibold text-white">{artist.artist}</h3>
+            <h3 className="truncate text-2xl font-black text-white">{artist.artist}</h3>
           </div>
           <p className="mt-1 text-sm text-violet-200">{artist.artist_loyalty_label}</p>
         </div>

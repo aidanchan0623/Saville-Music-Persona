@@ -280,17 +280,38 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
 
 def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     metadata: dict[str, dict[str, Any]] = {}
+
+    def store_artist(name: Any, artist_id: Any = None, subscribers: Any = None, thumbnails: Any = None) -> None:
+        if not name:
+            return
+        key = str(name).strip()
+        if not key:
+            return
+        existing = metadata.setdefault(key, {"artist_id": None, "subscribers": None, "thumbnails": []})
+        if not existing.get("artist_id") and artist_id:
+            existing["artist_id"] = artist_id
+        if not existing.get("subscribers") and subscribers:
+            existing["subscribers"] = subscribers
+        if not existing.get("thumbnails") and thumbnails:
+            existing["thumbnails"] = thumbnails
+
     for artist in raw.get("library_artists") or []:
         if not isinstance(artist, dict):
             continue
         name = artist.get("artist") or artist.get("name")
-        if not name:
-            continue
-        metadata[str(name)] = {
-            "artist_id": artist.get("browseId") or artist.get("id"),
-            "subscribers": artist.get("subscribers"),
-            "thumbnails": artist.get("thumbnails") or [],
-        }
+        store_artist(name, artist.get("browseId") or artist.get("id"), artist.get("subscribers"), artist.get("thumbnails") or [])
+
+    image_cache = raw.get("artist_image_cache")
+    if isinstance(image_cache, dict):
+        for name, artist in image_cache.items():
+            if not isinstance(artist, dict):
+                continue
+            store_artist(
+                artist.get("artist") or artist.get("name") or name,
+                artist.get("browseId") or artist.get("artist_id") or artist.get("id"),
+                artist.get("subscribers"),
+                artist.get("thumbnails") or [],
+            )
     return metadata
 
 

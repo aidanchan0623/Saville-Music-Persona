@@ -5,7 +5,6 @@ import { EmptyState } from "../components/EmptyState";
 import { TasteDNA } from "../components/TasteDNA";
 import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
 import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
-import { HeroIdentitySection } from "../components/home/HeroIdentitySection";
 import { KeySignalsStrip } from "../components/home/KeySignalsStrip";
 import { MusicCharacterSection } from "../components/home/MusicCharacterSection";
 import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection";
@@ -42,7 +41,6 @@ export function OverviewPage({
   thisMonthMinutes,
   rollingYearMinutes,
   scores,
-  auth,
   prerequisites,
   busy,
   useDemo,
@@ -95,28 +93,13 @@ export function OverviewPage({
   }
 
   const taste = overview.taste_interpretation;
-  const identityTitle = overview.taste_dna?.core_dna?.length
-    ? overview.taste_dna.core_dna.slice(0, 3).join(" / ")
-    : taste.core_genre_families.slice(0, 3).map((item) => item.name).join(" / ") || overview.headline_persona;
   const nicheScore = scoreByKey.get("mainstream_niche");
-  const currentState = buildCurrentState(overview.repeat_score, overview.discovery_score, currentTopArtist?.artist);
-  const connectedLabel = useDemo ? "Demo data active" : auth?.connected ? "YouTube Music connected" : "YouTube Music not connected";
-  const modelLabel = prerequisites?.model_installed ? "Gemma ready" : "Gemma unavailable";
 
   return (
     <div className="space-y-14">
-      <HeroIdentitySection
-        identityTitle={identityTitle}
-        summary={buildHeroSummary(taste)}
-        currentState={currentState}
-        connectedLabel={connectedLabel}
-        modelLabel={modelLabel}
-        lastRefreshedAt={overview.last_refreshed_at}
-        busy={busy}
-        onExploreTaste={onOpenScores}
-        onViewThisMonth={onOpenTop10}
-        onRefresh={onRefresh}
-      />
+      <TasteDNA dna={overview.taste_dna} interpretation={taste} />
+
+      <MusicCharacterSection prerequisites={prerequisites} />
 
       <KeySignalsStrip
         repeatScore={overview.repeat_score}
@@ -126,11 +109,7 @@ export function OverviewPage({
         rollingYearMinutes={rollingYearMinutes}
       />
 
-      <MusicCharacterSection prerequisites={prerequisites} />
-
       <TasteNarrativeSection taste={taste} />
-
-      <TasteDNA dna={overview.taste_dna} interpretation={taste} />
 
       <CurrentListeningStateSection
         currentMinutes={thisMonthMinutes}
@@ -149,38 +128,4 @@ export function OverviewPage({
       />
     </div>
   );
-}
-
-function buildCurrentState(
-  repeatScore: ScoreMetric,
-  discoveryScore: ScoreMetric,
-  currentArtist: string | undefined,
-) {
-  const replayPhrase = repeatScore.value >= 70
-    ? "replay-heavy"
-    : repeatScore.value >= 45
-      ? "comfort-leaning"
-      : "variety-led";
-  const discoveryPhrase = discoveryScore.value >= 55 ? "actively exploratory" : "selectively curious";
-  const anchor = currentArtist ? `, with ${currentArtist} as a current anchor` : "";
-  return `This month you are ${replayPhrase} and ${discoveryPhrase}, still anchored by emotionally charged alternative music${anchor}.`;
-}
-
-function buildHeroSummary(taste: Overview["taste_interpretation"]) {
-  const core = taste.core_genre_families.slice(0, 3).map((item) => item.name);
-  const secondary = taste.secondary_genre_families.slice(0, 2).map((item) => item.name);
-  const traits = taste.sonic_traits.slice(0, 4);
-  const coreSentence = core.length
-    ? `Your listening centres on ${formatInlineList(core)}.`
-    : taste.summary;
-  const traitSentence = traits.length
-    ? `The strongest pattern feels ${formatInlineList(traits)}, with side colour from ${formatInlineList(secondary.length ? secondary : ["atmospheric and nostalgic listening"])}.`
-    : "The strongest pattern is emotionally charged, guitar-driven, and atmospheric.";
-  return `${coreSentence} ${traitSentence}`;
-}
-
-function formatInlineList(items: string[]) {
-  if (items.length <= 1) return items[0] ?? "";
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
 }

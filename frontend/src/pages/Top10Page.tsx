@@ -112,15 +112,17 @@ export function Top10Page() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Top 10</h1>
-          <p className="mt-2 max-w-3xl text-mist">
-            Songs, artists, and albums shaping this period of your listening.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
+    <div className="space-y-10">
+      <header className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(37,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(17,8,8,0.98))] p-6 shadow-glow lg:p-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-4xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
+            <h1 className="mt-3 text-5xl font-black leading-none text-white md:text-7xl">Top 10</h1>
+            <p className="mt-4 max-w-3xl text-lg leading-8 text-mist">
+              The songs, artists, and albums currently defining this slice of your listening.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
           <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
           <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
@@ -135,38 +137,41 @@ export function Top10Page() {
               ))}
             </select>
           ) : null}
-        </div>
-      </div>
-
-      <section className="rounded-lg border border-line bg-panel/82 p-5">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.16em] text-violet-200">Analysing</p>
-            <h2 className="mt-1 text-2xl font-black text-white">{activeLabel}</h2>
-            <p className="mt-1 text-sm text-mist">
-              {tracks?.period.start_date} to {tracks?.period.end_date}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2 text-xs text-mist">
-            <span className="rounded-full bg-white/10 px-3 py-1">{tracks?.total_play_count ?? 0} detected plays</span>
           </div>
         </div>
-        {tracks?.sample_warning ? <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
-        {albums?.sample_warning ? <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{albums.sample_warning}</p> : null}
-        {error ? <p className="mt-4 rounded-md border border-red-300/10 bg-red-400/10 p-3 text-sm text-red-100">{error}</p> : null}
-      </section>
 
-      <section className="grid gap-7 xl:grid-cols-2">
-        <TopList title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`} response={tracks} loading={loading} />
-        <TopList
-          title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
-          response={artists}
-          loading={loading}
-          artistList
-          selectedArtist={selectedArtist}
-          onViewSongs={setSelectedArtist}
-        />
-      </section>
+        <div className="mt-7 flex flex-wrap gap-3 text-sm">
+          <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{activeLabel}</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{(tracks?.total_play_count ?? 0).toLocaleString()} detected plays</span>
+          {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
+        </div>
+      </header>
+
+      {(tracks?.sample_warning || albums?.sample_warning || error) ? (
+        <section className="space-y-3">
+          {tracks?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
+          {albums?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{albums.sample_warning}</p> : null}
+          {error ? <p className="rounded-xl border border-red-300/10 bg-red-400/10 p-4 text-sm text-red-100">{error}</p> : null}
+        </section>
+      ) : null}
+
+      <TopList
+        title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`}
+        caption="Your clearest song leaders, ranked by local play history."
+        response={tracks}
+        loading={loading}
+      />
+
+      <TopList
+        title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
+        caption="The artists pulling the most attention in this period."
+        response={artists}
+        loading={loading}
+        artistList
+        selectedArtist={selectedArtist}
+        onViewSongs={setSelectedArtist}
+      />
 
       {selectedArtist ? (
         <ArtistDrilldownPanel artist={selectedArtist} response={artistSongs} loading={artistLoading} onClose={() => setSelectedArtist(null)} />
@@ -183,7 +188,7 @@ export function Top10Page() {
 
 function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
-    <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
+    <button className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${active ? "bg-red-600 text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -191,6 +196,7 @@ function PeriodButton({ active, label, onClick }: { active: boolean; label: stri
 
 function TopList({
   title,
+  caption,
   response,
   loading,
   artistList = false,
@@ -198,6 +204,7 @@ function TopList({
   onViewSongs,
 }: {
   title: string;
+  caption: string;
   response: PeriodTopResponse | null;
   loading: boolean;
   artistList?: boolean;
@@ -205,12 +212,15 @@ function TopList({
   onViewSongs?: (artist: string) => void;
 }) {
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold text-white">{title}</h2>
+    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">{title}</h2>
+          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{caption}</p>
+        </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}
       </div>
-      <div className="space-y-3">
+      <div className={artistList ? "grid gap-4 xl:grid-cols-2" : "space-y-4"}>
         {response?.items.length ? (
           response.items.map((item) => (
             <PeriodTopCard
@@ -222,49 +232,67 @@ function TopList({
             />
           ))
         ) : (
-          <div className="rounded-lg border border-line bg-panel/80 p-5 text-sm text-mist">No detected plays in this period.</div>
+          <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">No detected plays in this period.</div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: PeriodTopItem; artistList: boolean; selected?: boolean; onViewSongs?: (artist: string) => void }) {
   const title = artistList ? item.artist : item.title ?? "Unknown track";
-  const subtitle = artistList
-    ? `${item.unique_songs ?? 0} unique songs${item.most_played_song ? ` - top: ${item.most_played_song}` : ""}`
-    : `${item.artist}${item.album ? ` - ${item.album}` : ""}`;
+  const rank = `#${String(item.rank).padStart(2, "0")}`;
+
+  if (artistList) {
+    return (
+      <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
+        <div className="grid gap-5 sm:grid-cols-[7rem_1fr]">
+          <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-28 w-28" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-2xl font-black text-red-200">{rank}</span>
+              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, true)}</span>
+            </div>
+            <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
+            <p className="mt-2 text-sm leading-6 text-mist">
+              {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
+            </p>
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <span className="text-2xl font-black text-white">{item.play_count.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
+              <Movement movement={item.movement} />
+            </div>
+            {onViewSongs ? (
+              <button
+                aria-label={`View songs by ${item.artist}`}
+                className="mt-5 rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
+                type="button"
+                onClick={() => onViewSongs(item.artist)}
+              >
+                View songs
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </article>
+    );
+  }
 
   return (
-    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`} data-testid={artistList ? "top-artist-card" : "top-song-card"}>
-      <div className="grid gap-4 sm:grid-cols-[4.5rem_1fr_auto]">
-        <Artwork src={item.thumbnail} label={title} fallback={artistList ? initials(item.artist) : `#${item.rank}`} icon={artistList ? UserRound : Music2} rounded={artistList ? "rounded-full" : "rounded-lg"} />
+    <article className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
+      <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto] lg:items-center">
+        <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{item.rank}</span>
-            <span className="rounded-full border border-violet/30 bg-violet/10 px-3 py-1 text-xs font-semibold text-violet-100">{displayListLabel(item.interpretation_label, artistList)}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-3xl font-black text-red-200">{rank}</span>
+            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, false)}</span>
           </div>
-          <h3 className="mt-2 truncate text-lg font-semibold text-white">{title}</h3>
-          <p className="mt-1 truncate text-sm text-mist">{subtitle}</p>
-          <MetricPills
-            items={[
-              `${item.play_count} plays`,
-              item.last_played ? `Last ${formatDate(item.last_played)}` : null,
-            ]}
-          />
+          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
+          <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
+          {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
         </div>
-        <div className="flex flex-row items-center gap-2 sm:flex-col sm:items-end">
+        <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
+          <span className="text-2xl font-black text-white">{item.play_count.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
           <Movement movement={item.movement} />
-          {artistList && onViewSongs ? (
-            <button
-              aria-label={`View songs by ${item.artist}`}
-              className="w-full whitespace-nowrap rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15 sm:w-auto"
-              type="button"
-              onClick={() => onViewSongs(item.artist)}
-            >
-              View songs
-            </button>
-          ) : null}
         </div>
       </div>
     </article>
@@ -273,52 +301,51 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
 
 function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void }) {
   return (
-    <section>
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Favourite Albums</h2>
-          <p className="mt-1 text-sm text-mist">Album-level signals from tracks that have usable album metadata.</p>
+          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">Favourite Albums</h2>
+          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">Projects with the strongest pull across your local plays.</p>
         </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}
       </div>
       {response?.albums.length ? (
-        <div className="grid gap-3 xl:grid-cols-2">
+        <div className="grid gap-4 xl:grid-cols-2">
           {response.albums.map((album) => (
             <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} />
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-line bg-panel/80 p-5 text-sm text-mist">Album data is unavailable for this period.</div>
+        <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">Album data is unavailable for this period.</div>
       )}
     </section>
   );
 }
 
 function AlbumCard({ album, selected, onViewSongs }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void }) {
+  const rank = `#${String(album.rank).padStart(2, "0")}`;
   return (
-    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`} data-testid="top-album-card">
-      <div className="grid gap-4 sm:grid-cols-[4.5rem_1fr_auto]">
-        <Artwork src={album.thumbnail} label={album.album} fallback={`#${album.rank}`} icon={Album} />
+    <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
+      <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto]">
+        <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{album.rank}</span>
-            <span className="rounded-full border border-violet/30 bg-violet/10 px-3 py-1 text-xs font-semibold text-violet-100">{album.label}</span>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-2xl font-black text-red-200">{rank}</span>
+            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{album.label}</span>
           </div>
-          <h3 className="mt-2 truncate text-lg font-semibold text-white">{album.album}</h3>
-          <p className="mt-1 truncate text-sm text-mist">{album.artist}</p>
-          <MetricPills
-            items={[
-              `${album.plays} plays`,
-              `${album.unique_songs} unique songs`,
-            ]}
-          />
+          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{album.album}</h3>
+          <p className="mt-2 truncate text-base font-semibold text-mist">{album.artist}</p>
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <span className="text-2xl font-black text-white">{album.plays.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{album.unique_songs} songs</span>
+          </div>
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
           {album.most_played_song ? <p className="mt-2 text-xs text-mist/75">Most played: {album.most_played_song}</p> : null}
         </div>
         <div className="flex items-start justify-end">
           <button
             aria-label={`View songs from ${album.album}`}
-            className="whitespace-nowrap rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15"
+            className="whitespace-nowrap rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
             type="button"
             onClick={() => onViewSongs(album)}
           >
@@ -384,14 +411,14 @@ function DrilldownShell({
   songs: TopDrilldownSong[];
 }) {
   return (
-    <section className="rounded-lg border border-line bg-panel/85 p-5 shadow-glow" data-testid="songs-drilldown">
+    <section className="rounded-[1.5rem] border border-line bg-panel/85 p-5 shadow-glow lg:p-6" data-testid="songs-drilldown">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">Drilldown</p>
-          <h2 className="mt-2 text-2xl font-black text-white">{title}</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Drilldown</p>
+          <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
           <p className="mt-1 text-sm text-mist">{subtitle}</p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-violet/50 hover:bg-white/10" onClick={onClose}>
+        <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-red-400/50 hover:bg-white/10" onClick={onClose}>
           <X size={16} /> Close
         </button>
       </div>
@@ -409,8 +436,8 @@ function DrilldownShell({
 
 function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
-    <article className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[3.5rem_1fr]">
-      <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} />
+    <article className="grid gap-4 rounded-xl border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[4.5rem_1fr]">
+      <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} rounded="rounded-xl" sizeClass="h-16 w-16" />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{song.rank}</span>
@@ -435,19 +462,22 @@ function Artwork({
   fallback,
   icon: Icon = Music2,
   rounded = "rounded-lg",
+  sizeClass = "h-16 w-16",
 }: {
   src: string | null | undefined;
   label: string;
   fallback?: string;
   icon?: typeof Music2;
   rounded?: string;
+  sizeClass?: string;
 }) {
   const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
   return (
-    <div className={`relative grid h-16 w-16 shrink-0 place-items-center overflow-hidden border border-white/10 bg-[linear-gradient(135deg,rgba(127,29,29,0.9),rgba(5,5,5,0.95))] text-white shadow-[0_12px_35px_rgba(0,0,0,0.28)] ${rounded}`}>
-      {src && !failed ? <img className="h-full w-full object-cover" src={src} alt={label} onError={() => setFailed(true)} /> : (
+    <div className={`relative grid shrink-0 place-items-center overflow-hidden border border-white/10 bg-[linear-gradient(135deg,rgba(127,29,29,0.9),rgba(5,5,5,0.95))] text-white shadow-[0_18px_50px_rgba(0,0,0,0.32)] ${sizeClass} ${rounded}`}>
+      {src && !failed ? <img className="h-full w-full object-cover object-center" src={src} alt={label} onError={() => setFailed(true)} /> : (
         <div className="grid h-full w-full place-items-center">
-          {fallback ? <span className="text-sm font-black text-white/80">{fallback}</span> : <Icon size={22} />}
+          {fallback ? <span className="text-base font-black text-white/85">{fallback}</span> : <Icon size={24} />}
         </div>
       )}
     </div>

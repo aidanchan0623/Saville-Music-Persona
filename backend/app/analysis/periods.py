@@ -527,9 +527,10 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             key = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         else:
             key = str(event.get("track_id"))
-        image = thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
-        if image and key not in image_candidates:
-            image_candidates[key] = image
+        if kind != "artists":
+            image = thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
+            if image and key not in image_candidates:
+                image_candidates[key] = image
         counts[key] += 1
         sec = usable_duration_seconds(event) or 0
         seconds[key] += sec
@@ -553,7 +554,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             artist = key
             meta_track = None
             title = None
-            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails")) or image_candidates.get(key)
+            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails"))
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
             album = None
         else:

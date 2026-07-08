@@ -60,17 +60,18 @@ export function TasteDNA({ dna, interpretation }: Props) {
   if (!dna && !interpretation && !explorer) return null;
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-line bg-[linear-gradient(135deg,rgba(20,16,16,0.94),rgba(5,5,5,0.98))] shadow-glow">
-      <div className="border-b border-white/10 p-5 lg:p-7">
+    <section className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(33,10,10,0.96),rgba(5,5,5,0.99)_58%,rgba(18,7,7,0.98))] shadow-glow">
+      <div className="relative border-b border-white/10 p-6 lg:p-9">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(239,68,68,0.22),transparent_34%)]" />
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-4xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Sound Profile</p>
-            <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-5xl">{identity}</h2>
-            <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
+          <div className="relative max-w-5xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Sound Profile</p>
+            <h2 className="mt-4 text-4xl font-black leading-[0.98] text-white md:text-6xl xl:text-7xl">{identity}</h2>
+            <p className="mt-5 max-w-3xl text-lg leading-8 text-mist md:text-xl">
               {buildIdentitySentence(identity, nodes, traits)}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.035] p-2">
+          <div className="relative flex flex-wrap gap-2 rounded-xl border border-white/10 bg-black/25 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.2)]">
             <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
             <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
             <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
@@ -89,23 +90,23 @@ export function TasteDNA({ dna, interpretation }: Props) {
         ) : null}
       </div>
 
-      <div className="grid gap-0 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="border-b border-white/10 p-5 lg:p-7 xl:border-b-0 xl:border-r">
+      <div className="grid gap-0 xl:grid-cols-[1.18fr_0.82fr]">
+        <div className="border-b border-white/10 p-6 lg:p-9 xl:border-b-0 xl:border-r">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Core Sound Breakdown</p>
-              <h3 className="mt-2 text-2xl font-black text-white">{activeLabel}</h3>
+              <h3 className="mt-2 text-3xl font-black text-white">{activeLabel}</h3>
             </div>
           </div>
 
-          <div className="mt-5 space-y-4">
+          <div className="mt-6 space-y-4">
             {nodes.length ? nodes.map((node) => <SoundFamilyRow key={node.id} node={node} maxShare={maxShare} />) : (
               <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Sound-family data is unavailable for this period.</div>
             )}
           </div>
         </div>
 
-        <div className="p-5 lg:p-7">
+        <div className="p-6 lg:p-9">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Sonic Traits</p>
           <div className="mt-4 space-y-5">
             {groupedTraits.map((group) => (
@@ -113,8 +114,8 @@ export function TasteDNA({ dna, interpretation }: Props) {
             ))}
           </div>
 
-          <div className="mt-7 rounded-xl border border-white/10 bg-white/[0.04] p-5">
-            <h3 className="text-lg font-black text-white">How to read it</h3>
+          <div className="mt-7 rounded-2xl border border-red-500/15 bg-white/[0.045] p-5">
+            <h3 className="text-lg font-black text-white">What this means</h3>
             <p className="mt-3 text-sm leading-7 text-mist">{buildProfileExplanation(nodes, traits, explorer?.summary)}</p>
           </div>
         </div>
@@ -125,7 +126,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
 
 function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
-    <button className={`rounded-md px-3 py-2 text-sm font-semibold ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
+    <button className={`rounded-lg px-3 py-2 text-sm font-semibold ${active ? "bg-red-600 text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -135,22 +136,22 @@ function SoundFamilyRow({ node, maxShare }: { node: TasteDnaNode; maxShare: numb
   const width = Math.max(8, (node.share / maxShare) * 100);
   const artists = node.top_artists.slice(0, 3).map((artist) => artist.name).join(", ");
   return (
-    <article className="rounded-xl border border-white/10 bg-white/[0.045] p-4">
+    <article className="rounded-2xl border border-white/10 bg-white/[0.045] p-5">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-lg font-black text-white">{node.name}</h4>
-            <span className="rounded-full border border-violet/30 bg-violet/10 px-2.5 py-1 text-xs font-semibold text-violet-100">{roleLabel(node.layer)}</span>
+            <h4 className="text-xl font-black text-white">{node.name}</h4>
+            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-100">{roleLabel(node.layer)}</span>
           </div>
           <p className="mt-2 text-sm leading-6 text-mist">{artists ? `Top contributors: ${artists}.` : "Top contributing artists are unavailable for this period."}</p>
         </div>
         <div className="shrink-0 text-left md:text-right">
-          <p className="text-2xl font-black text-white">{node.share}%</p>
-          <p className="text-xs text-mist">{node.detected_minutes_formatted}</p>
+          <p className="text-3xl font-black text-white">{node.share}%</p>
+          <p className="text-xs uppercase tracking-[0.14em] text-mist/70">of profile</p>
         </div>
       </div>
       <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10">
-        <div className="h-full rounded-full bg-gradient-to-r from-violet via-red-500 to-red-300" style={{ width: `${width}%` }} />
+        <div className="h-full rounded-full bg-gradient-to-r from-red-700 via-red-500 to-red-200" style={{ width: `${width}%` }} />
       </div>
     </article>
   );
@@ -215,7 +216,7 @@ function buildProfileExplanation(nodes: TasteDnaNode[], traits: TasteTraitNode[]
     const core = nodes[0].name;
     const branches = nodes.slice(1, 5).map((node) => node.name);
     const traitText = traits.slice(0, 3).map((trait) => trait.trait);
-    return `You are not listening across random categories. The profile is centred around ${core}, then branches into ${formatInlineList(branches.length ? branches : traitText)}. It reads like a sound world with a clear home base, not a pile of unrelated genres.`;
+    return `Your profile has a clear ${core} home base, with ${formatInlineList(branches.length ? branches : traitText)} adding shape around it.`;
   }
   return fallback || "The app needs more mapped listening data before it can describe a reliable sound profile for this period.";
 }
