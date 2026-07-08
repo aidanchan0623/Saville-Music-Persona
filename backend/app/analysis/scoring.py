@@ -17,6 +17,18 @@ def score_label(score: float, bands: list[tuple[int, int, str]]) -> str:
     return bands[-1][2]
 
 
+def thumbnail_url(thumbnails: Any, video_id: Any = None) -> str | None:
+    if isinstance(thumbnails, str) and thumbnails:
+        return thumbnails
+    if isinstance(thumbnails, list):
+        candidates = [item for item in thumbnails if isinstance(item, dict) and item.get("url")]
+        if candidates:
+            return str(candidates[-1]["url"])
+    if video_id:
+        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+    return None
+
+
 def repeat_score(total_track_plays: int, unique_tracks: int) -> dict[str, Any]:
     score = clamp(100 * (1 - unique_tracks / total_track_plays)) if total_track_plays else 0
     return {
@@ -329,7 +341,7 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "artists": track["artists"],
                 "album": track.get("album"),
                 "release_year": track.get("release_year"),
-                "thumbnail": (track.get("thumbnails") or [{}])[-1].get("url") if track.get("thumbnails") else None,
+                "thumbnail": thumbnail_url(track.get("thumbnails"), track.get("video_id")),
                 "play_count": track.get("play_count_in_period", 0),
                 "last_played": track.get("last_played"),
                 "why_it_ranked": reason,
@@ -345,9 +357,13 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
     artist_counts: Counter[str] = Counter()
     artist_tracks: dict[str, Counter[str]] = defaultdict(Counter)
     artist_genres: dict[str, Counter[str]] = defaultdict(Counter)
+    artist_images: dict[str, str] = {}
     for event in events:
         track = tracks_by_id.get(event["track_id"], {})
         artist = track.get("primary_artist", event.get("primary_artist", UNKNOWN_ARTIST))
+        image = thumbnail_url(track.get("thumbnails"), track.get("video_id"))
+        if image and artist not in artist_images:
+            artist_images[artist] = image
         artist_counts[artist] += 1
         artist_tracks[artist][track.get("title", event.get("title", "Unknown track"))] += 1
         for genre in track.get("genre_clusters", []):
@@ -374,7 +390,7 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
                 "rank": index,
                 "artist": artist,
                 "artist_id": meta.get("artist_id"),
-                "image": (meta.get("thumbnails") or [{}])[-1].get("url") if meta.get("thumbnails") else None,
+                "image": thumbnail_url(meta.get("thumbnails")) or artist_images.get(artist),
                 "play_count": count,
                 "share_of_listens": round(share, 1),
                 "unique_songs_played": unique_songs,

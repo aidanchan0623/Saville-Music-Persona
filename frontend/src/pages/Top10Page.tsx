@@ -117,7 +117,7 @@ export function Top10Page() {
         <div>
           <h1 className="text-3xl font-bold text-white">Top 10</h1>
           <p className="mt-2 max-w-3xl text-mist">
-            Songs, artists, and albums ranked from local play history for the selected period, with detected minutes and coverage shown beside the counts.
+            Songs, artists, and albums shaping this period of your listening.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
@@ -149,9 +149,6 @@ export function Top10Page() {
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-mist">
             <span className="rounded-full bg-white/10 px-3 py-1">{tracks?.total_play_count ?? 0} detected plays</span>
-            <span className="rounded-full bg-white/10 px-3 py-1">{tracks?.ranked_music_play_count ?? 0} ranked music plays</span>
-            <span className="rounded-full bg-white/10 px-3 py-1">{tracks?.duration_quality.duration_coverage_percent ?? 0}% duration coverage</span>
-            <span className="rounded-full bg-white/10 px-3 py-1">{tracks?.duration_quality.confidence_badge}</span>
           </div>
         </div>
         {tracks?.sample_warning ? <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
@@ -239,22 +236,19 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
     : `${item.artist}${item.album ? ` - ${item.album}` : ""}`;
 
   return (
-    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`}>
+    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`} data-testid={artistList ? "top-artist-card" : "top-song-card"}>
       <div className="grid gap-4 sm:grid-cols-[4.5rem_1fr_auto]">
         <Artwork src={item.thumbnail} label={title} fallback={artistList ? initials(item.artist) : `#${item.rank}`} icon={artistList ? UserRound : Music2} rounded={artistList ? "rounded-full" : "rounded-lg"} />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{item.rank}</span>
-            <span className="rounded-full border border-violet/30 bg-violet/10 px-3 py-1 text-xs font-semibold text-violet-100">{item.interpretation_label}</span>
+            <span className="rounded-full border border-violet/30 bg-violet/10 px-3 py-1 text-xs font-semibold text-violet-100">{displayListLabel(item.interpretation_label, artistList)}</span>
           </div>
           <h3 className="mt-2 truncate text-lg font-semibold text-white">{title}</h3>
           <p className="mt-1 truncate text-sm text-mist">{subtitle}</p>
           <MetricPills
             items={[
               `${item.play_count} plays`,
-              item.detected_minutes_formatted,
-              `${item.share_of_period}% share`,
-              `${item.duration_coverage_percent}% duration coverage`,
               item.last_played ? `Last ${formatDate(item.last_played)}` : null,
             ]}
           />
@@ -262,7 +256,12 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
         <div className="flex flex-row items-center gap-2 sm:flex-col sm:items-end">
           <Movement movement={item.movement} />
           {artistList && onViewSongs ? (
-            <button className="rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15" onClick={() => onViewSongs(item.artist)}>
+            <button
+              aria-label={`View songs by ${item.artist}`}
+              className="w-full whitespace-nowrap rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15 sm:w-auto"
+              type="button"
+              onClick={() => onViewSongs(item.artist)}
+            >
               View songs
             </button>
           ) : null}
@@ -297,7 +296,7 @@ function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs 
 
 function AlbumCard({ album, selected, onViewSongs }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void }) {
   return (
-    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`}>
+    <article className={`rounded-lg border bg-panel/80 p-3 transition hover:border-violet/45 ${selected ? "border-violet/60" : "border-line"}`} data-testid="top-album-card">
       <div className="grid gap-4 sm:grid-cols-[4.5rem_1fr_auto]">
         <Artwork src={album.thumbnail} label={album.album} fallback={`#${album.rank}`} icon={Album} />
         <div className="min-w-0">
@@ -310,17 +309,19 @@ function AlbumCard({ album, selected, onViewSongs }: { album: TopAlbumItem; sele
           <MetricPills
             items={[
               `${album.plays} plays`,
-              album.detected_minutes_formatted,
               `${album.unique_songs} unique songs`,
-              `${album.share}% share`,
-              `${album.duration_coverage_percent}% duration coverage`,
             ]}
           />
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
           {album.most_played_song ? <p className="mt-2 text-xs text-mist/75">Most played: {album.most_played_song}</p> : null}
         </div>
         <div className="flex items-start justify-end">
-          <button className="rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15" onClick={() => onViewSongs(album)}>
+          <button
+            aria-label={`View songs from ${album.album}`}
+            className="whitespace-nowrap rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-violet/50 hover:bg-violet/15"
+            type="button"
+            onClick={() => onViewSongs(album)}
+          >
             View songs
           </button>
         </div>
@@ -340,12 +341,9 @@ function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: 
       summary={response ? [
         `${response.total_plays} total plays`,
         `${response.unique_songs} unique songs`,
-        response.detected_minutes_formatted,
-        `${response.duration_coverage_percent}% duration coverage`,
         response.most_replayed_song ? `Most replayed: ${response.most_replayed_song}` : null,
       ] : []}
       songs={response?.songs ?? []}
-      shareLabel="artist plays"
     />
   );
 }
@@ -361,12 +359,9 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
       summary={response ? [
         `${response.total_plays} total plays`,
         `${response.unique_songs} unique songs`,
-        response.detected_minutes_formatted,
-        `${response.duration_coverage_percent}% duration coverage`,
         response.most_played_song ? `Most played: ${response.most_played_song}` : null,
       ] : []}
       songs={response?.songs ?? []}
-      shareLabel="album plays"
     />
   );
 }
@@ -379,7 +374,6 @@ function DrilldownShell({
   emptyMessage,
   summary,
   songs,
-  shareLabel,
 }: {
   title: string;
   subtitle: string;
@@ -388,10 +382,9 @@ function DrilldownShell({
   emptyMessage: string;
   summary: (string | null)[];
   songs: TopDrilldownSong[];
-  shareLabel: string;
 }) {
   return (
-    <section className="rounded-lg border border-line bg-panel/85 p-5 shadow-glow">
+    <section className="rounded-lg border border-line bg-panel/85 p-5 shadow-glow" data-testid="songs-drilldown">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">Drilldown</p>
@@ -406,7 +399,7 @@ function DrilldownShell({
       {loading ? <p className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Loading songs...</p> : null}
       {!loading && songs.length ? (
         <div className="mt-5 space-y-2">
-          {songs.map((song) => <DrilldownSongRow key={`${song.rank}-${song.track_id ?? song.title}`} song={song} shareLabel={shareLabel} />)}
+          {songs.map((song) => <DrilldownSongRow key={`${song.rank}-${song.track_id ?? song.title}`} song={song} />)}
         </div>
       ) : null}
       {!loading && !songs.length ? <p className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">{emptyMessage}</p> : null}
@@ -414,8 +407,7 @@ function DrilldownShell({
   );
 }
 
-function DrilldownSongRow({ song, shareLabel }: { song: TopDrilldownSong; shareLabel: string }) {
-  const share = song.share_of_artist_plays ?? song.share_of_album_plays ?? 0;
+function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
     <article className="grid gap-3 rounded-lg border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[3.5rem_1fr]">
       <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} />
@@ -428,9 +420,6 @@ function DrilldownSongRow({ song, shareLabel }: { song: TopDrilldownSong; shareL
         <MetricPills
           items={[
             `${song.plays} plays`,
-            song.detected_minutes_formatted,
-            `${share}% of ${shareLabel}`,
-            `${song.duration_coverage_percent}% duration coverage`,
             song.last_played ? `Last ${formatDate(song.last_played)}` : null,
             song.first_played ? `First ${formatDate(song.first_played)}` : null,
           ]}
@@ -490,6 +479,11 @@ function Movement({ movement }: { movement: PeriodTopItem["movement"] }) {
 function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
   if (period === "rolling_year") return "Rolling Year";
   return label ?? "Selected Period";
+}
+
+function displayListLabel(label: string, artistList: boolean) {
+  if (artistList && label === "Comfort favourite") return "Stable favourite";
+  return label;
 }
 
 function initials(value: string) {

@@ -33,11 +33,8 @@ export function ArtistCard({ artist }: { artist: TopArtist }) {
       <p className="mt-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.observation}</p>
       <p className="mt-3 text-xs text-mist/75">Most played: {artist.most_played_song || "Unavailable"}</p>
       <div className="mt-4 space-y-3">
-        <ChipGroup title="Canonical genres" items={artist.genre_profile?.display_genres?.length ? artist.genre_profile.display_genres : ["Unavailable / low-confidence"]} muted={!artist.genre_profile?.display_genres?.length} />
-        <ChipGroup title="Broad taste cluster" items={artist.broad_clusters?.length ? artist.broad_clusters : ["Not confidently mapped"]} muted={!artist.broad_clusters?.length} />
-        <div className="rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-mist">
-          Confidence: <span className="text-white">{artist.genre_confidence_label || "Unavailable / low-confidence"}</span>
-        </div>
+        <ChipGroup title="Genre tags" items={artist.genre_profile?.display_genres?.length ? artist.genre_profile.display_genres : ["Still learning"]} muted={!artist.genre_profile?.display_genres?.length} />
+        <ChipGroup title="Sound family" items={artist.broad_clusters?.length ? artist.broad_clusters : ["Still learning"]} muted={!artist.broad_clusters?.length} />
       </div>
     </article>
   );

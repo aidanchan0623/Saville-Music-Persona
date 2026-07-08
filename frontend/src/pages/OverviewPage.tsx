@@ -7,6 +7,7 @@ import { CurrentListeningStateSection } from "../components/home/CurrentListenin
 import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
 import { HeroIdentitySection } from "../components/home/HeroIdentitySection";
 import { KeySignalsStrip } from "../components/home/KeySignalsStrip";
+import { MusicCharacterSection } from "../components/home/MusicCharacterSection";
 import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection";
 import type {
   AuthStatus,
@@ -124,6 +125,8 @@ export function OverviewPage({
         thisMonthMinutes={thisMonthMinutes}
         rollingYearMinutes={rollingYearMinutes}
       />
+
+      <MusicCharacterSection prerequisites={prerequisites} />
 
       <TasteNarrativeSection taste={taste} />
 

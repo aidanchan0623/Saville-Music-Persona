@@ -127,6 +127,7 @@ def test_long_videos_and_podcasts_are_not_counted_as_music_minutes() -> None:
     assert "non_music_content" in reasons
     ranked = top_payload(normalised, "tracks", "month", "2026-07", today=date(2026, 7, 7))
     assert [item["title"] for item in ranked["items"]] == ["Real Song"]
+    assert ranked["items"][0]["thumbnail"] == "https://i.ytimg.com/vi/song1/hqdefault.jpg"
 
 
 def test_period_resolution_for_current_month_selected_month_and_rolling_year() -> None:
@@ -210,9 +211,10 @@ def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
     )
     albums = albums_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))["albums"]
     assert albums[0]["album"] == "Real Album"
+    assert albums[0]["thumbnail"] == "https://i.ytimg.com/vi/a1/hqdefault.jpg"
     assert albums[0]["unique_songs"] == 2
-    assert "real album-level signal" in albums[0]["album_signal_note"]
-    assert albums[1]["label"] == "Single-heavy, album-light"
+    assert albums[0]["album_signal_note"] == "Real album-level signal."
+    assert albums[1]["label"] == "Single-led album signal"
     assert all(item["album"] != "Unknown Album" for item in albums)
 
     drilldown = album_songs_payload(normalised, "Real Album", "Album Artist", "month", "2026-07", today=date(2026, 7, 7))

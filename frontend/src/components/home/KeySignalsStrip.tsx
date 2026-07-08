@@ -30,8 +30,8 @@ export function KeySignalsStrip({ repeatScore, discoveryScore, nicheScore, thisM
       label: "Detected listening time",
       value: thisMonthMinutes ? formatMinutes(thisMonthMinutes.metrics.current_month_total_minutes) : rollingYearMinutes ? formatMinutes(rollingYearMinutes.metrics.rolling_365_total_minutes) : "Unavailable",
       text: thisMonthMinutes
-        ? `This month, estimated from detected track durations with ${thisMonthMinutes.duration_quality.duration_coverage_percent}% coverage.`
-        : "Estimated from detected track durations when duration data is available.",
+        ? "This month, based on local listening history."
+        : "Based on local listening history when track length is available.",
     },
   ];
 

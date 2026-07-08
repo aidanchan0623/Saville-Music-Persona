@@ -41,7 +41,7 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
     <div className="space-y-5">
       <div>
         <h1 className="text-3xl font-bold text-white">Listening Patterns</h1>
-        <p className="mt-2 text-mist">Charts stay tied to real available fields; the timeline appears only when play dates are parseable.</p>
+        <p className="mt-2 text-mist">Charts follow the dates and music details available in your local history.</p>
       </div>
 
       <section className="rounded-lg border border-violet/20 bg-panel/82 p-5 shadow-glow">
@@ -50,7 +50,7 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
             <p className="text-sm uppercase tracking-[0.16em] text-violet-200">Daily Listening Minutes</p>
             <h2 className="mt-1 text-2xl font-black text-white">{activeLabel}</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
-              Detected listening minutes are estimated from full track durations. Missing days are preserved as zero so quiet periods stay visible.
+              A practical view of when you listened most, with quiet days kept visible instead of smoothed away.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -73,9 +73,9 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
         {minutes ? (
           <>
             <div className="mt-5 grid gap-3 md:grid-cols-4">
-              <MinuteStat label="Selected total" value={formatMinutes(minutes.metrics.selected_period_total_minutes)} caption={`${minutes.duration_quality.duration_coverage_percent}% duration coverage`} />
+              <MinuteStat label="Selected total" value={formatMinutes(minutes.metrics.selected_period_total_minutes)} caption="Across the selected period" />
               <MinuteStat label="Average active day" value={formatMinutes(minutes.metrics.average_active_day_minutes)} caption={`${minutes.metrics.active_listening_days} active days`} />
-              <MinuteStat label="Longest day" value={minutes.metrics.longest_detected_listening_day?.formatted ?? "Unavailable"} caption={minutes.metrics.longest_detected_listening_day?.date ?? "No usable duration"} />
+              <MinuteStat label="Longest day" value={minutes.metrics.longest_detected_listening_day?.formatted ?? "Unavailable"} caption={minutes.metrics.longest_detected_listening_day?.date ?? "No listening time yet"} />
               <MinuteStat label="Current streak" value={`${minutes.metrics.current_listening_streak_days} days`} caption="Active day = at least one detected music play" />
             </div>
             <p className="mt-4 rounded-md bg-white/[0.04] p-3 text-sm text-mist">{minutes.summary_sentence}</p>
@@ -92,14 +92,14 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
       </section>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <ChartPanel title={`Listening by release decade — ${activeLabel}`} data={activeCharts.release_decades} />
-        <ChartPanel title={`Dominant genre families — ${activeLabel}`} data={activeCharts.top_genre_clusters} type="pie" />
-        <ChartPanel title={`Top artists by detected plays — ${activeLabel}`} data={activeCharts.top_artists} />
-        <ChartPanel title={`Most repeated songs — ${activeLabel}`} data={activeCharts.most_repeated_songs} />
-        <ChartPanel title={`Artist concentration — ${activeLabel}`} data={activeCharts.artist_concentration} type="pie" />
-        <ChartPanel title={`Playlist influence — ${activeLabel}`} data={activeCharts.playlist_influence} />
+        <ChartPanel title={`Listening by release decade - ${activeLabel}`} data={activeCharts.release_decades} />
+        <ChartPanel title={`Dominant genre families - ${activeLabel}`} data={activeCharts.top_genre_clusters} type="pie" />
+        <ChartPanel title={`Top artists by plays - ${activeLabel}`} data={activeCharts.top_artists} />
+        <ChartPanel title={`Most repeated songs - ${activeLabel}`} data={activeCharts.most_repeated_songs} />
+        <ChartPanel title={`Artist concentration - ${activeLabel}`} data={activeCharts.artist_concentration} type="pie" />
+        <ChartPanel title={`Playlist influence - ${activeLabel}`} data={activeCharts.playlist_influence} />
         <div className="xl:col-span-2">
-          <ChartPanel title={`Data coverage timeline — ${activeLabel}`} data={activeCharts.coverage_timeline} type="line" />
+          <ChartPanel title={`Listening history timeline - ${activeLabel}`} data={activeCharts.coverage_timeline} type="line" />
         </div>
       </div>
     </div>
@@ -123,7 +123,7 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
     <div className="mt-5 rounded-md bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-white">Recent daily intensity</h3>
-        <p className="text-xs text-mist">Darker cells mean more detected minutes.</p>
+        <p className="text-xs text-mist">Darker cells mean more listening time.</p>
       </div>
       <div className="grid gap-1 overflow-x-auto pb-1" style={{ gridTemplateColumns: "repeat(20, minmax(1rem, 1rem))" }}>
         {values.map((item) => {

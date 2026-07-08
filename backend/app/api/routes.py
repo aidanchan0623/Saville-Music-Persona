@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
+from app.analysis.music_character import character_payload
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
     album_songs_payload,
@@ -341,6 +342,27 @@ def score_interpretations(
     timezone_name: str | None = Query(None, alias="timezone"),
 ) -> list[dict[str, Any]]:
     return scores(period, month, timezone_name)
+
+
+@router.get("/persona/character")
+def persona_character(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return character_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+
+
+@router.post("/persona/character/rewrite")
+def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
+    period = str(payload.get("period") or "rolling_year")
+    month = payload.get("month")
+    mode = str(payload.get("mode") or "playful")
+    profile = character_payload(require_cache("normalised"), period, str(month) if month else None, settings.local_timezone)
+    status = ollama.status()
+    if not status["reachable"] or not status["model_installed"]:
+        raise HTTPException(status_code=503, detail={"error": "Ollama rewrite unavailable", "detail": status["message"], "code": "ollama_unavailable"})
+    return ollama.generate_character_rewrite(profile, mode)
 
 
 @router.post("/report/generate")

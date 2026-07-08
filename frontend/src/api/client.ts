@@ -2,6 +2,8 @@ import type {
   AuthStatus,
   Charts,
   ListeningMinutes,
+  MusicCharacterResponse,
+  MusicCharacterRewrite,
   Overview,
   PersonaReport,
   TopAlbumSongsResponse,
@@ -120,6 +122,16 @@ export const api = {
     if (month) params.set("month", month);
     return request<ScoreMetric[]>(`/scores/interpretations?${params.toString()}`);
   },
+  musicCharacter: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<MusicCharacterResponse>(`/persona/character?${params.toString()}`);
+  },
+  rewriteMusicCharacter: (period = "rolling_year", month?: string | null, mode = "playful") =>
+    request<MusicCharacterRewrite>("/persona/character/rewrite", {
+      method: "POST",
+      body: JSON.stringify({ period, month, mode }),
+    }),
   latestReport: () => request<PersonaReport>("/report/latest"),
   generateReport: (mode: "serious" | "playful" | "roast") =>
     request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode }) }),

@@ -132,6 +132,67 @@ class OllamaService:
             return []
         return []
 
+    def generate_character_rewrite(self, profile: dict[str, Any], mode: str = "playful") -> dict[str, Any]:
+        status = self.status()
+        if not status["reachable"]:
+            raise RuntimeError(status["message"])
+        if not status["model_installed"]:
+            raise RuntimeError(status["message"])
+        primary = profile.get("primary") if isinstance(profile.get("primary"), dict) else {}
+        secondary = profile.get("secondary") if isinstance(profile.get("secondary"), dict) else None
+        modifier = profile.get("modifier") if isinstance(profile.get("modifier"), dict) else None
+        compact = {
+            "period": (profile.get("period") or {}).get("label") if isinstance(profile.get("period"), dict) else None,
+            "mode": mode,
+            "primary_character": primary,
+            "secondary_character": secondary,
+            "modifier": modifier,
+            "evidence_chips": profile.get("evidence_chips", [])[:8],
+            "top_artists": profile.get("top_artists", [])[:5],
+            "top_clusters": profile.get("top_clusters", [])[:5],
+            "sonic_traits": profile.get("sonic_traits", [])[:8],
+            "key_scores": profile.get("key_scores", {}),
+        }
+        prompt = (
+            "You are a witty but careful music-profile writer. You are not calculating the profile. "
+            "The character and evidence have already been selected by deterministic rules. Your job is to turn the supplied profile into a more personal, natural, music-focused paragraph.\n\n"
+            "Rules:\n"
+            "- Use only the supplied evidence.\n"
+            "- Do not invent artists, tracks, genres, listening habits, personal facts, or emotional states.\n"
+            "- Do not repeat raw statistics unless they support the joke.\n"
+            "- Keep the tone playful, specific and human.\n"
+            "- Avoid generic lines like 'you enjoy a diverse range of music'.\n"
+            "- Avoid therapy language or serious mental-health claims.\n"
+            "- Keep roasts light and music-focused.\n"
+            "- No slurs, protected-characteristic insults, sexual jokes, or cruel insults.\n"
+            "- The output should sound like a funny friend who actually understands music.\n\n"
+            'Return strict JSON: {"headline":"","one_liner":"","profile_paragraph":"","friendly_roast":"","why_it_fits":["","",""]}.\n\n'
+            f"SUPPLIED_PROFILE_JSON:\n{json.dumps(compact, ensure_ascii=True)}"
+        )
+        data = self._request_json(
+            "POST",
+            "/api/generate",
+            {
+                "model": self.settings.ollama_model,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.65, "top_p": 0.9, "num_predict": 650},
+            },
+            timeout=self.settings.ollama_generate_timeout_seconds,
+        )
+        parsed = self.extract_json(str(data.get("response", "")))
+        why = parsed.get("why_it_fits") if isinstance(parsed.get("why_it_fits"), list) else []
+        return {
+            "headline": str(parsed.get("headline") or primary.get("name") or "Music Character"),
+            "one_liner": str(parsed.get("one_liner") or primary.get("roast") or ""),
+            "profile_paragraph": str(parsed.get("profile_paragraph") or primary.get("profile") or ""),
+            "friendly_roast": str(parsed.get("friendly_roast") or primary.get("roast") or ""),
+            "why_it_fits": [str(item) for item in why[:3] if item],
+            "mode": mode,
+            "model": self.settings.ollama_model,
+        }
+
     def _build_report_prompt(self, profile: dict[str, Any], mode: str) -> str:
         mode_instruction = {
             "serious": "Write a polished, serious music-taste profile.",

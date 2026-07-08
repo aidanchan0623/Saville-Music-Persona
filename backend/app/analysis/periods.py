@@ -449,14 +449,20 @@ def normalise_match_text(value: Any) -> str:
     return " ".join(str(value or "").strip().lower().split())
 
 
-def thumbnail_url(thumbnails: Any) -> str | None:
+def youtube_video_thumbnail(video_id: Any) -> str | None:
+    if not video_id:
+        return None
+    return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+
+
+def thumbnail_url(thumbnails: Any, video_id: Any = None) -> str | None:
     if isinstance(thumbnails, str):
         return thumbnails or None
     if not isinstance(thumbnails, list):
-        return None
+        return youtube_video_thumbnail(video_id)
     candidates = [item for item in thumbnails if isinstance(item, dict) and item.get("url")]
     if not candidates:
-        return None
+        return youtube_video_thumbnail(video_id)
     return str(candidates[-1]["url"])
 
 
@@ -512,6 +518,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     usable_counts: Counter[str] = Counter()
     unique_tracks: dict[str, set[str]] = defaultdict(set)
     top_song: dict[str, Counter[str]] = defaultdict(Counter)
+    image_candidates: dict[str, str] = {}
     last_played: dict[str, str] = {}
     total = len(events)
     for event in events:
@@ -520,6 +527,9 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             key = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         else:
             key = str(event.get("track_id"))
+        image = thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
+        if image and key not in image_candidates:
+            image_candidates[key] = image
         counts[key] += 1
         sec = usable_duration_seconds(event) or 0
         seconds[key] += sec
@@ -543,14 +553,14 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             artist = key
             meta_track = None
             title = None
-            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails"))
+            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails")) or image_candidates.get(key)
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
             album = None
         else:
             meta_track = track_lookup.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
             title = str(meta_track.get("title") or "Unknown track")
-            image = thumbnail_url(meta_track.get("thumbnails"))
+            image = thumbnail_url(meta_track.get("thumbnails"), meta_track.get("video_id"))
             most_played_song = None
             album = meta_track.get("album")
         play_count = counts[key]
@@ -660,7 +670,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
         stat["album"] = stat["album"] or group["album"]
         stat["artist"] = stat["artist"] if stat["artist"] != UNKNOWN_ARTIST else group["artist"]
         stat["album_id"] = stat["album_id"] or group["album_id"] or None
-        stat["thumbnail"] = stat["thumbnail"] or thumbnail_url(track.get("thumbnails"))
+        stat["thumbnail"] = stat["thumbnail"] or thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
         stat["plays"] += 1
         sec = usable_duration_seconds(event) or 0
         stat["seconds"] += sec
@@ -712,7 +722,7 @@ def album_label(album: str, unique_songs: int, play_count: int, spec: dict[str, 
     if "soundtrack" in lowered or lowered in {"ost", "score"}:
         return "Soundtrack side quest"
     if unique_songs <= 1 and play_count >= 3:
-        return "Single-heavy, album-light"
+        return "Single-led album signal"
     if unique_songs >= 5:
         return "Album anchor"
     if spec["period"] in {"this_month", "month"} and play_count >= 3:
@@ -726,8 +736,8 @@ def album_signal_note(most_played_song: str | None, most_played_count: int, play
     if not most_played_song:
         return "Album signal is based on available track metadata for this period."
     if unique_songs <= 1 or (play_count and most_played_count / play_count >= 0.65):
-        return f"This album ranks here mainly because of repeated plays from {most_played_song}."
-    return "This looks like a real album-level signal because multiple songs from the album appear in the period."
+        return f"Mostly driven by {most_played_song}."
+    return "Real album-level signal."
 
 
 def album_songs_payload(

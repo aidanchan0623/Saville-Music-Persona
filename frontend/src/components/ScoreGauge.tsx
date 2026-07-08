@@ -24,8 +24,6 @@ interface ScorePresentation {
 export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; featured?: boolean }) {
   const presentation = getScorePresentation(score);
   const degree = Math.min(100, Math.max(0, score.value)) * 3.6;
-  const confidenceNote = score.interpretation?.confidence;
-  const confidenceInput = typeof score.inputs.confidence_note === "string" ? score.inputs.confidence_note : null;
   return (
     <article
       className={`relative overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.065),rgba(255,255,255,0.025))] p-5 shadow-[0_18px_70px_rgba(0,0,0,0.22)] transition hover:border-violet/25 hover:bg-white/[0.055] md:p-6 ${
@@ -51,11 +49,6 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
       <div className="relative mt-5 max-w-3xl">
         <p className="text-base leading-7 text-mist">{presentation.body}</p>
         <p className="mt-4 border-l border-violet/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
-      </div>
-
-      <div className="relative mt-5 flex flex-wrap gap-2 text-xs">
-        {confidenceNote ? <span className="rounded-full bg-white/[0.06] px-3 py-1.5 text-mist">Confidence: {confidenceNote}</span> : null}
-        {confidenceInput ? <span className="rounded-full bg-violet/10 px-3 py-1.5 text-violet-100">{confidenceInput}</span> : null}
       </div>
     </article>
   );
@@ -153,11 +146,11 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
   if (kind === "tasteConfidence") {
     return {
       kind,
-      displayName: "Taste confidence",
+      displayName: "Profile signal",
       tag: "Strong profile signal",
       headline: "Strong profile signal",
       body: "The app has enough listening and metadata signal to make a coherent profile, while still keeping uncertainty visible where the source data is thin.",
-      evidenceLine: "This is a data-quality score, not a judgement of your taste.",
+      evidenceLine: "Based on how much listening history and music metadata is available.",
     };
   }
   return {

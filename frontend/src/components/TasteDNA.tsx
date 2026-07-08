@@ -96,7 +96,6 @@ export function TasteDNA({ dna, interpretation }: Props) {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Core Sound Breakdown</p>
               <h3 className="mt-2 text-2xl font-black text-white">{activeLabel}</h3>
             </div>
-            <p className="text-sm text-mist">{explorer?.duration_quality.duration_coverage_percent ?? 0}% duration coverage</p>
           </div>
 
           <div className="mt-5 space-y-4">
@@ -216,7 +215,7 @@ function buildProfileExplanation(nodes: TasteDnaNode[], traits: TasteTraitNode[]
     const core = nodes[0].name;
     const branches = nodes.slice(1, 5).map((node) => node.name);
     const traitText = traits.slice(0, 3).map((trait) => trait.trait);
-    return `You are not listening across random categories. The profile is centred around ${core}, then branches into ${formatInlineList(branches.length ? branches : traitText)}. The percentages come from detected plays mapped to sound families, with duration coverage shown where track lengths are available.`;
+    return `You are not listening across random categories. The profile is centred around ${core}, then branches into ${formatInlineList(branches.length ? branches : traitText)}. It reads like a sound world with a clear home base, not a pile of unrelated genres.`;
   }
   return fallback || "The app needs more mapped listening data before it can describe a reliable sound profile for this period.";
 }

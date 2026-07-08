@@ -214,7 +214,7 @@ export default function App() {
           </div>
           <div>
             <p className="font-bold">Saville Music</p>
-            <p className="text-xs text-mist">Persona dashboard</p>
+            <p className="text-xs text-mist">Music identity</p>
           </div>
         </div>
         <nav className="mt-8 space-y-2">

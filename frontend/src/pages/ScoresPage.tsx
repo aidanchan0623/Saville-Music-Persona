@@ -77,7 +77,6 @@ export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] })
           <span className="font-semibold text-white">Analysing {periodLabel}</span>
           {loading ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Updating...</span> : null}
           {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{playCount.toLocaleString()} detected plays</span> : null}
-          {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{minutes.duration_quality.duration_coverage_percent}% duration coverage</span> : null}
           {limitedSample ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">Limited sample for this month</span> : null}
         </div>
       </section>

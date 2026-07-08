@@ -358,6 +358,44 @@ export interface TasteDnaComparison {
   sample_warning: string | null;
 }
 
+export interface MusicCharacter {
+  id: string;
+  name: string;
+  category: string;
+  roast: string;
+  profile: string;
+  match_score: number;
+  confidence: string;
+  priority: number;
+  evidence: string[];
+  trigger_rules: string[];
+}
+
+export interface MusicCharacterResponse {
+  period: PeriodSpec;
+  primary: MusicCharacter;
+  secondary: MusicCharacter | null;
+  modifier: MusicCharacter | null;
+  evidence_chips: string[];
+  top_artists: { name: string; plays: number }[];
+  top_clusters: { name: string; share: number }[];
+  sonic_traits: string[];
+  key_scores: Record<string, number>;
+  sample_warning: string | null;
+  deterministic: boolean;
+  methodology: string;
+}
+
+export interface MusicCharacterRewrite {
+  headline: string;
+  one_liner: string;
+  profile_paragraph: string;
+  friendly_roast: string;
+  why_it_fits: string[];
+  mode: string;
+  model: string;
+}
+
 export interface ChartPoint {
   name: string;
   value: number;
