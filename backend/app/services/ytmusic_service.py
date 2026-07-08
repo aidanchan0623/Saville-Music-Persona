@@ -40,7 +40,7 @@ class YTMusicService:
                     "auth_file_path": str(self.settings.ytmusic_browser_auth_file),
                     "oauth_client_configured": oauth_configured,
                     "account_name": None,
-                    "message": f"Browser-header authentication check failed: {exc}",
+                    "message": f"Browser-header authentication check failed: {friendly_auth_error(exc, is_browser=True)}",
                 }
         if not auth_file_exists:
             return {
@@ -81,7 +81,7 @@ class YTMusicService:
                 "auth_file_path": str(self.settings.ytmusic_auth_file),
                 "oauth_client_configured": True,
                 "account_name": None,
-                "message": f"Authentication check failed: {exc}",
+                "message": f"Authentication check failed: {friendly_auth_error(exc)}",
             }
 
     def setup_instructions(self) -> dict[str, Any]:
@@ -244,6 +244,23 @@ class YTMusicService:
 
 def executable_available(name: str) -> bool:
     return shutil.which(name) is not None
+
+
+def friendly_auth_error(exc: Exception, is_browser: bool = False) -> str:
+    text = str(exc)
+    if "Unable to find 'header'" in text and "multiPageMenuRenderer" in text:
+        return (
+            "YouTube responded, but the account menu did not expose account details. "
+            "Saved browser headers may be stale; imported Google Takeout data can still be used."
+        )
+    if "invalid argument" in text.lower():
+        return "Google rejected the OAuth token or client configuration as invalid."
+    if is_browser:
+        return "YouTube Music rejected the saved browser headers. Copy fresh request headers from a logged-in music.youtube.com tab."
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return exc.__class__.__name__
+    return cleaned[:240]
 
 
 def duration_from_ytmusic_payload(payload: Any) -> int | None:

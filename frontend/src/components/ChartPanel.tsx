@@ -1,7 +1,7 @@
 import type { ChartPoint } from "../types/api";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const colors = ["#8b5cf6", "#6366f1", "#d946ef", "#22d3ee", "#f59e0b", "#34d399", "#f472b6", "#a3e635"];
+const colors = ["#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#f87171", "#7f1d1d", "#fecaca", "#451a1a"];
 
 interface Props {
   title: string;
@@ -25,22 +25,22 @@ export function ChartPanel({ title, data, type = "bar" }: Props) {
                     <Cell key={entry.name} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "#11111d", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
               </PieChart>
             ) : type === "line" ? (
               <LineChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
                 <XAxis dataKey="name" stroke="#c7c4dc" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#c7c4dc" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#11111d", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }} />
-                <Line type="monotone" dataKey="value" stroke="#a78bfa" strokeWidth={3} dot={false} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
+                <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={3} dot={false} />
               </LineChart>
             ) : (
               <BarChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
                 <XAxis dataKey="name" stroke="#c7c4dc" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#c7c4dc" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#11111d", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {data.map((entry, index) => (
                     <Cell key={entry.name} fill={colors[index % colors.length]} />
@@ -54,4 +54,3 @@ export function ChartPanel({ title, data, type = "bar" }: Props) {
     </section>
   );
 }
-

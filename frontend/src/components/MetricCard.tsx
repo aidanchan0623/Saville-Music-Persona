@@ -11,7 +11,7 @@ export function MetricCard({ label, value, caption, accent = "violet" }: Props) 
   const accents = {
     violet: "from-violet/20 to-violet/0 text-violet-100",
     indigo: "from-indigo/20 to-indigo/0 text-indigo-100",
-    magenta: "from-magenta/20 to-magenta/0 text-fuchsia-100",
+    magenta: "from-magenta/20 to-magenta/0 text-red-100",
   };
   return (
     <section className={`rounded-lg border border-line bg-gradient-to-br ${accents[accent]} p-5 shadow-glow`}>
@@ -21,4 +21,3 @@ export function MetricCard({ label, value, caption, accent = "violet" }: Props) 
     </section>
   );
 }
-

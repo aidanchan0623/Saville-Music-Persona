@@ -38,7 +38,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    api.tasteDnaCompare("rolling_year", "this_month")
+    api.tasteDnaCompare("rolling_year", period === "rolling_year" ? "this_month" : period, period === "month" ? selectedMonth : null)
       .then((next) => {
         if (!cancelled) setComparison(next);
       })
@@ -48,15 +48,17 @@ export function TasteDNA({ dna, interpretation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [period, selectedMonth]);
 
   const fallbackCore = dna?.core_dna?.length ? dna.core_dna.join(" / ") : interpretation?.core_genre_families?.map((item) => item.name).join(" / ");
   const months = explorer?.period.available_months ?? [];
   const nodes = explorer?.nodes ?? [];
-  const traits = explorer?.traits ?? [];
+  const visibleNodes = nodes.slice(0, 6);
+  const traits = (explorer?.traits ?? []).slice(0, 6);
   const activeNode = selectedNode ?? nodes[0] ?? null;
   const activeTrait = selectedTrait ?? traits[0] ?? null;
-  const maxShare = useMemo(() => Math.max(...nodes.map((node) => node.share), 1), [nodes]);
+  const maxShare = useMemo(() => Math.max(...visibleNodes.map((node) => node.share), 1), [visibleNodes]);
+  const activeLabel = period === "rolling_year" ? "Rolling Year" : explorer?.period.label ?? "Selected period";
 
   if (!dna && !interpretation && !explorer) return null;
 
@@ -67,12 +69,12 @@ export function TasteDNA({ dna, interpretation }: Props) {
           <p className="text-sm uppercase tracking-[0.18em] text-violet-200">Taste DNA Explorer</p>
           <h2 className="mt-1 text-2xl font-black text-white">{explorer?.core_identity ?? fallbackCore ?? "Mapped listening core"}</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
-            Interactive music analysis from detected plays and curated genre mappings. This explains sound patterns, not personality or psychology.
+            {activeLabel} sound-family map from detected plays and curated genre mappings. This explains music patterns, not personality or psychology.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
-          <PeriodButton active={period === "month"} label="Selected Month" onClick={() => setPeriod("month")} />
+          <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
           <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
           {period === "month" ? (
             <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months[months.length - 1]?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
@@ -85,7 +87,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
       {explorer?.sample_warning ? <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{explorer.sample_warning}</p> : null}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative min-h-[440px] overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_center,rgba(139,92,246,0.24),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))]">
+        <div className="relative min-h-[440px] overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.22),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(20,10,10,0.72))]">
           <button
             className="absolute left-1/2 top-1/2 z-10 grid h-40 w-40 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-violet/40 bg-ink/88 p-5 text-center shadow-glow focus:outline-none focus:ring-2 focus:ring-violet"
             onClick={() => setSelectedNode(nodes[0] ?? null)}
@@ -95,7 +97,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
               <span className="mt-2 block text-base font-black leading-6 text-white">{explorer?.core_identity ?? fallbackCore ?? "Mapped core"}</span>
             </span>
           </button>
-          {nodes.map((node) => {
+          {visibleNodes.map((node) => {
             const intensity = Math.max(0.22, node.share / maxShare);
             return (
               <button
@@ -107,7 +109,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
                   minWidth: node.size,
                   minHeight: Math.max(42, node.size * 0.58),
                   transform: "translate(-50%, -50%)",
-                  boxShadow: `0 0 ${20 + node.share}px rgba(167,139,250,${intensity})`,
+                  boxShadow: `0 0 ${20 + node.share}px rgba(239,68,68,${intensity})`,
                 }}
                 onClick={() => setSelectedNode(node)}
               >
@@ -142,7 +144,7 @@ export function TasteDNA({ dna, interpretation }: Props) {
         <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="font-semibold text-white">Compare Current Month vs Rolling Year</h3>
+              <h3 className="font-semibold text-white">Compare {comparison.compare_period.label} vs Rolling Year</h3>
               <p className="mt-1 text-sm text-mist">{comparison.summary_sentence}</p>
             </div>
             {comparison.sample_warning ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">{comparison.sample_warning}</span> : null}
@@ -155,17 +157,6 @@ export function TasteDNA({ dna, interpretation }: Props) {
           </div>
         </div>
       ) : null}
-
-      <div className="mt-5 grid gap-3 md:grid-cols-4">
-        {(explorer?.structured_summary ?? []).map((section) => (
-          <div key={section.label} className="rounded-md bg-white/[0.04] p-4">
-            <h3 className="text-sm font-semibold text-white">{section.label}</h3>
-            <div className="mt-2 space-y-1 text-sm text-mist">
-              {section.items.length ? section.items.map((item) => <p key={item}>{item}</p>) : <p>Not enough evidence</p>}
-            </div>
-          </div>
-        ))}
-      </div>
     </section>
   );
 }
@@ -193,10 +184,10 @@ function DetailPanel({ node }: { node: TasteDnaNode | null }) {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <MiniList title="Detected minutes" items={[node.detected_minutes_formatted]} />
         <MiniList title="Confidence" items={[`${node.confidence}% genre coverage`]} />
-        <MiniList title="Top artists" items={node.top_artists.map((item) => `${item.name} (${item.plays})`)} />
-        <MiniList title="Top songs" items={node.top_songs.map((item) => `${item.name} (${item.plays})`)} />
-        <MiniList title="Canonical genres" items={node.canonical_genres} />
-        <MiniList title="Sonic traits" items={node.sonic_traits} />
+        <MiniList title="Top artists" items={node.top_artists.slice(0, 3).map((item) => `${item.name} (${item.plays})`)} />
+        <MiniList title="Top songs" items={node.top_songs.slice(0, 3).map((item) => `${item.name} (${item.plays})`)} />
+        <MiniList title="Canonical genres" items={node.canonical_genres.slice(0, 4)} />
+        <MiniList title="Sonic traits" items={node.sonic_traits.slice(0, 4)} />
       </div>
     </div>
   );

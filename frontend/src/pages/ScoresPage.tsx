@@ -1,25 +1,86 @@
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
-import type { ScoreMetric } from "../types/api";
+import type { ListeningMinutes, ScoreMetric } from "../types/api";
 import { asPercent } from "../utils/format";
 
-export function ScoresPage({ scores }: { scores: ScoreMetric[] }) {
+type ScorePeriod = "this_month" | "month" | "rolling_year";
+
+export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] }) {
+  const [period, setPeriod] = useState<ScorePeriod>("rolling_year");
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [scores, setScores] = useState<ScoreMetric[]>(initialScores);
+  const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => setScores(initialScores), [initialScores]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      api.scoreInterpretations(period, period === "month" ? selectedMonth : null),
+      api.listeningMinutes(period, period === "month" ? selectedMonth : null),
+    ])
+      .then(([nextScores, nextMinutes]) => {
+        if (cancelled) return;
+        setScores(nextScores);
+        setMinutes(nextMinutes);
+        if (!selectedMonth && nextMinutes.period.available_months.length) {
+          setSelectedMonth(nextMinutes.period.available_months[nextMinutes.period.available_months.length - 1].value);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, selectedMonth]);
+
   if (!scores.length) return <EmptyState title="No scorecard yet" body="Refresh data to calculate deterministic scores with transparent formulas." />;
   const groups = buildScoreGroups(scores);
   const glanceScores = getAtAGlanceScores(scores);
+  const months = minutes?.period.available_months ?? [];
+  const periodLabel = displayPeriodLabel(minutes?.period.label, period);
+  const playCount = minutes?.duration_quality.total_detected_plays ?? 0;
+  const limitedSample = period !== "rolling_year" && playCount < 50;
 
   return (
     <div className="space-y-12">
-      <header className="max-w-5xl py-3">
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-200">Music listening profile</p>
-        <h1 className="mt-4 text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl">Taste Scores</h1>
-        <p className="mt-5 max-w-3xl text-2xl font-semibold leading-snug text-violet-100">
-          A clearer read on how you listen &mdash; not just what you play.
-        </p>
-        <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
-          These scores translate your listening habits into a music profile: how you replay, explore, roam across artists, and shape your own sound world.
-        </p>
+      <header className="flex flex-col gap-6 py-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-5xl">
+          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-200">Music listening profile</p>
+          <h1 className="mt-4 text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl">Taste Scores</h1>
+          <p className="mt-5 max-w-3xl text-2xl font-semibold leading-snug text-violet-100">
+            {periodLabel} read on how you listen &mdash; not just what you play.
+          </p>
+          <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
+            These scores translate the selected period into a music profile: replay, discovery, artist pull, and the shape of your sound world.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
+          <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
+          <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
+          <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
+          {period === "month" ? (
+            <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months.at(-1)?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
+              {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
+            </select>
+          ) : null}
+        </div>
       </header>
+
+      <section className="rounded-lg border border-line bg-panel/80 p-4 text-sm text-mist">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-semibold text-white">Analysing {periodLabel}</span>
+          {loading ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Updating...</span> : null}
+          {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{playCount.toLocaleString()} detected plays</span> : null}
+          {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{minutes.duration_quality.duration_coverage_percent}% duration coverage</span> : null}
+          {limitedSample ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">Limited sample for this month</span> : null}
+        </div>
+      </section>
 
       <section className="flex flex-col gap-4 border-y border-white/10 py-5 lg:flex-row lg:items-center">
         <div className="lg:w-44">
@@ -45,6 +106,19 @@ export function ScoresPage({ scores }: { scores: ScoreMetric[] }) {
       </div>
     </div>
   );
+}
+
+function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
+      {label}
+    </button>
+  );
+}
+
+function displayPeriodLabel(label: string | undefined, period: ScorePeriod) {
+  if (period === "rolling_year") return "Rolling Year";
+  return label ?? "Selected Period";
 }
 
 function ScoreSection({ title, description, scores }: { title: string; description: string; scores: ScoreMetric[] }) {

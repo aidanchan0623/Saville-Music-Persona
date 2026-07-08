@@ -80,10 +80,6 @@ export function ReportPage({ report, prerequisites, busy, onGenerate }: Props) {
               {report.report_sections.map((section) => <p key={section}>{section}</p>)}
             </div>
           </div>
-          <details className="mt-6 rounded-lg border border-white/10 bg-black/20 p-4">
-            <summary className="cursor-pointer font-medium text-white">Report evidence</summary>
-            <pre className="mt-4 max-h-96 overflow-auto text-xs leading-5 text-mist">{JSON.stringify(report.evidence, null, 2)}</pre>
-          </details>
         </article>
       )}
     </div>

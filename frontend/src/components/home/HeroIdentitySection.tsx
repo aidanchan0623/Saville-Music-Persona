@@ -27,8 +27,8 @@ export function HeroIdentitySection({
   onRefresh,
 }: Props) {
   return (
-    <section className="relative isolate min-h-[30rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#080812] px-6 py-8 shadow-glow md:px-10 lg:px-12">
-      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(139,92,246,0.28),transparent_30%),radial-gradient(circle_at_78%_12%,rgba(99,102,241,0.22),transparent_26%),linear-gradient(140deg,rgba(7,7,13,0.96),rgba(16,12,32,0.96)_52%,rgba(7,7,13,0.98))]" />
+    <section className="relative isolate min-h-[30rem] overflow-hidden rounded-[2rem] border border-white/10 bg-[#090505] px-6 py-8 shadow-glow md:px-10 lg:px-12">
+      <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_18%,rgba(239,68,68,0.24),transparent_30%),radial-gradient(circle_at_78%_12%,rgba(153,27,27,0.28),transparent_26%),linear-gradient(140deg,rgba(5,5,5,0.96),rgba(28,12,12,0.96)_52%,rgba(5,5,5,0.98))]" />
       <div className="absolute -right-28 top-10 -z-10 h-96 w-96 rounded-full bg-violet/20 blur-3xl" />
       <div className="absolute bottom-0 left-0 -z-10 h-44 w-full bg-gradient-to-t from-black/40 to-transparent" />
 
@@ -91,7 +91,7 @@ export function HeroIdentitySection({
 function SoundBar({ className, delay = false }: { className: string; delay?: boolean }) {
   return (
     <span
-      className={`absolute w-2 rounded-full bg-gradient-to-t from-magenta via-violet to-indigo opacity-80 shadow-[0_0_24px_rgba(167,139,250,0.45)] ${className} ${delay ? "animate-[pulse_3s_ease-in-out_infinite]" : "animate-[pulse_4s_ease-in-out_infinite]"}`}
+      className={`absolute w-2 rounded-full bg-gradient-to-t from-magenta via-violet to-indigo opacity-80 shadow-[0_0_24px_rgba(239,68,68,0.45)] ${className} ${delay ? "animate-[pulse_3s_ease-in-out_infinite]" : "animate-[pulse_4s_ease-in-out_infinite]"}`}
     />
   );
 }

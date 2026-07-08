@@ -6,16 +6,23 @@ import type { Charts, ListeningMinutes } from "../types/api";
 import { formatMinutes } from "../utils/format";
 
 export function PatternsPage({ charts }: { charts: Charts | null }) {
-  const [period, setPeriod] = useState("last_30");
+  const [period, setPeriod] = useState<"this_month" | "month" | "rolling_year">("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
+  const [periodCharts, setPeriodCharts] = useState<Charts | null>(charts);
+
+  useEffect(() => setPeriodCharts(charts), [charts]);
 
   useEffect(() => {
     let cancelled = false;
-    api.listeningMinutes(period, period === "month" ? selectedMonth : null)
-      .then((next) => {
+    Promise.all([
+      api.listeningMinutes(period, period === "month" ? selectedMonth : null),
+      api.charts(period, period === "month" ? selectedMonth : null),
+    ])
+      .then(([next, nextCharts]) => {
         if (cancelled) return;
         setMinutes(next);
+        setPeriodCharts(nextCharts);
         if (!selectedMonth && next.period.available_months.length) setSelectedMonth(next.period.available_months[next.period.available_months.length - 1].value);
       })
       .catch(() => {
@@ -28,6 +35,8 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
 
   if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." />;
   const months = minutes?.period.available_months ?? [];
+  const activeCharts = periodCharts ?? charts;
+  const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? "Selected period";
   return (
     <div className="space-y-5">
       <div>
@@ -39,20 +48,17 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.16em] text-violet-200">Daily Listening Minutes</p>
-            <h2 className="mt-1 text-2xl font-black text-white">{minutes?.period.label ?? "Selected period"}</h2>
+            <h2 className="mt-1 text-2xl font-black text-white">{activeLabel}</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
               Detected listening minutes are estimated from full track durations. Missing days are preserved as zero so quiet periods stay visible.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            {[
-              ["last_7", "Last 7 days"],
-              ["last_30", "Last 30 days"],
-              ["this_month", "Current month"],
-              ["month", "Select month"],
-              ["rolling_year", "Rolling 365"],
-              ["all", "All history"],
-            ].map(([value, label]) => (
+            {([
+              ["this_month", "This Month"],
+              ["month", "Select Month"],
+              ["rolling_year", "Rolling Year"],
+            ] as const).map(([value, label]) => (
               <button key={value} className={`rounded-md px-3 py-2 text-sm font-semibold ${period === value ? "bg-violet text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => setPeriod(value)}>
                 {label}
               </button>
@@ -86,14 +92,14 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
       </section>
 
       <div className="grid gap-5 xl:grid-cols-2">
-        <ChartPanel title="Listening by release decade" data={charts.release_decades} />
-        <ChartPanel title="Top genre clusters" data={charts.top_genre_clusters} type="pie" />
-        <ChartPanel title="Top artists by detected plays" data={charts.top_artists} />
-        <ChartPanel title="Most repeated songs" data={charts.most_repeated_songs} />
-        <ChartPanel title="Artist concentration" data={charts.artist_concentration} type="pie" />
-        <ChartPanel title="Playlist influence" data={charts.playlist_influence} />
+        <ChartPanel title={`Listening by release decade — ${activeLabel}`} data={activeCharts.release_decades} />
+        <ChartPanel title={`Dominant genre families — ${activeLabel}`} data={activeCharts.top_genre_clusters} type="pie" />
+        <ChartPanel title={`Top artists by detected plays — ${activeLabel}`} data={activeCharts.top_artists} />
+        <ChartPanel title={`Most repeated songs — ${activeLabel}`} data={activeCharts.most_repeated_songs} />
+        <ChartPanel title={`Artist concentration — ${activeLabel}`} data={activeCharts.artist_concentration} type="pie" />
+        <ChartPanel title={`Playlist influence — ${activeLabel}`} data={activeCharts.playlist_influence} />
         <div className="xl:col-span-2">
-          <ChartPanel title="Data coverage timeline" data={charts.coverage_timeline} type="line" />
+          <ChartPanel title={`Data coverage timeline — ${activeLabel}`} data={activeCharts.coverage_timeline} type="line" />
         </div>
       </div>
     </div>
@@ -127,7 +133,7 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
               key={item.date}
               title={`${item.date}: ${item.value} detected minutes`}
               className="h-4 min-w-4 rounded-sm border border-white/5"
-              style={{ backgroundColor: `rgba(167, 139, 250, ${opacity})` }}
+              style={{ backgroundColor: `rgba(239, 68, 68, ${opacity})` }}
             />
           );
         })}

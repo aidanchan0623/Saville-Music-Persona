@@ -9,7 +9,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.normalizer import normalise_collection
-from app.analysis.periods import listening_minutes_payload, taste_dna_comparison_payload, taste_dna_payload, top_payload
+from app.analysis.periods import filter_events, listening_minutes_payload, normalised_for_events, resolve_period, taste_dna_comparison_payload, taste_dna_payload, top_payload
 from app.analysis.scoring import build_analysis
 from app.config import settings
 from app.database.repository import JsonRepository
@@ -64,6 +64,14 @@ def normalise_with_duration_cache(raw: dict[str, Any], warnings: list[str] | Non
     return normalised
 
 
+def analysis_for_period(period: str, month: str | None, timezone_name: str | None) -> tuple[dict[str, Any], dict[str, Any], int]:
+    normalised = require_cache("normalised")
+    spec = resolve_period(normalised, period, month, timezone_name or settings.local_timezone)
+    events = filter_events(normalised, spec)
+    period_normalised = normalised_for_events(normalised, events, spec)
+    return build_analysis(period_normalised), spec, len(events)
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "app": "Saville Music Persona", "time": datetime.now(timezone.utc).isoformat()}
@@ -107,12 +115,17 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         raw = demo_raw_collection()
         warnings.append("Demo data is enabled; no private account data was fetched.")
     else:
+        takeout_history = repo.load_json("takeout_history")
         status = ytmusic.auth_status()
-        if not status["connected"]:
+        if not status["connected"] and not takeout_history:
             raise HTTPException(status_code=400, detail={"error": "YouTube Music is not connected", "detail": status["message"], "code": "ytmusic_not_connected"})
-        raw = ytmusic.fetch_library()
-        warnings.extend(raw.get("warnings") or [])
-        ytmusic.save_raw_snapshot(settings.raw_dir, raw)
+        if status["connected"]:
+            raw = ytmusic.fetch_library()
+            warnings.extend(raw.get("warnings") or [])
+            ytmusic.save_raw_snapshot(settings.raw_dir, raw)
+        else:
+            raw = {"source": "google_takeout", "history": [], "warnings": []}
+            warnings.append(f"Live YouTube Music sync skipped: {status['message']}")
     takeout_history = repo.load_json("takeout_history")
     if takeout_history:
         raw["takeout_history"] = takeout_history
@@ -197,13 +210,30 @@ def top_artists() -> list[dict[str, Any]]:
 
 
 @router.get("/analysis/scores")
-def scores() -> list[dict[str, Any]]:
-    return require_cache("analysis")["scores"]
+def scores(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> list[dict[str, Any]]:
+    analysis, spec, event_count = analysis_for_period(period, month, timezone_name)
+    scores_payload = analysis["scores"]
+    if spec["period"] in {"this_month", "month"} and event_count < 50:
+        for score in scores_payload:
+            score.setdefault("inputs", {})["confidence_note"] = "Limited sample for this month"
+    for score in scores_payload:
+        score.setdefault("inputs", {})["period_label"] = spec["label"]
+        score.setdefault("inputs", {})["period_detected_plays"] = event_count
+    return scores_payload
 
 
 @router.get("/analysis/charts")
-def charts() -> dict[str, Any]:
-    return require_cache("analysis")["charts"]
+def charts(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    analysis, _, _ = analysis_for_period(period, month, timezone_name)
+    return analysis["charts"]
 
 
 @router.get("/analytics/listening-minutes")
@@ -264,9 +294,12 @@ def taste_dna_compare(
 
 
 @router.get("/scores/interpretations")
-def score_interpretations(period: str = Query("rolling_year")) -> list[dict[str, Any]]:
-    _ = period
-    return require_cache("analysis")["scores"]
+def score_interpretations(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> list[dict[str, Any]]:
+    return scores(period, month, timezone_name)
 
 
 @router.post("/report/generate")

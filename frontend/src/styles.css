@@ -5,13 +5,13 @@
 :root {
   color-scheme: dark;
   font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
-  background: #07070d;
+  background: #050505;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  background: #07070d;
+  background: #050505;
 }
 
 button,
@@ -25,14 +25,14 @@ select {
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-violet/40 hover:bg-white/[0.09] disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-violet/40 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nav-item {
-    @apply flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-mist transition hover:bg-white/[0.06] hover:text-white;
+    @apply flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-mist transition hover:bg-red-950/30 hover:text-white;
   }
 
   .nav-item-active {
-    @apply bg-white/[0.08] text-white ring-1 ring-white/10;
+    @apply bg-violet/15 text-white ring-1 ring-violet/30;
   }
 }

@@ -41,7 +41,7 @@ function SoundList({ title, items, accent }: { title: string; items: string[]; a
   const accentClass = {
     violet: "bg-violet/15 text-violet-100 border-violet/20",
     indigo: "bg-indigo/15 text-indigo-100 border-indigo/20",
-    magenta: "bg-magenta/15 text-fuchsia-100 border-magenta/20",
+    magenta: "bg-magenta/15 text-red-100 border-magenta/20",
   }[accent];
   return (
     <div className="relative mt-6 first:mt-0">

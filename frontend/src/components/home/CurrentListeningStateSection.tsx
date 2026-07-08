@@ -32,10 +32,10 @@ export function CurrentListeningStateSection({ currentMinutes, currentTaste, com
       : "Your recent listening still sits inside your established emotional alternative world.";
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(17,17,29,0.92),rgba(10,10,18,0.96))]">
+    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(20,16,16,0.92),rgba(5,5,5,0.96))]">
       <div className="grid gap-0 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="relative min-h-[20rem] border-b border-white/10 p-6 lg:border-b-0 lg:border-r lg:p-8">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(217,70,239,0.18),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(99,102,241,0.18),transparent_30%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(239,68,68,0.18),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(153,27,27,0.22),transparent_30%)]" />
           <div className="relative">
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Your Current Listening State</p>
             <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-4xl">{lead}</h2>

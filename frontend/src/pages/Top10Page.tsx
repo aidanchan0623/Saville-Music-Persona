@@ -43,7 +43,7 @@ export function Top10Page() {
   }, [period, selectedMonth]);
 
   const months = tracks?.period.available_months ?? artists?.period.available_months ?? [];
-  const activeLabel = tracks?.period.label ?? "Selected period";
+  const activeLabel = displayPeriodLabel(tracks?.period.label, period);
 
   if (!tracks && !artists && !loading) {
     return <EmptyState title="No rankings yet" body="Refresh your music data to build period rankings from detected plays." />;
@@ -97,8 +97,8 @@ export function Top10Page() {
       </section>
 
       <section className="grid gap-7 xl:grid-cols-2">
-        <TopList title="Top 10 Songs" response={tracks} loading={loading} />
-        <TopList title="Top 10 Artists" response={artists} loading={loading} artistList />
+        <TopList title={`Top Songs — ${displayPeriodLabel(tracks?.period.label, period)}`} response={tracks} loading={loading} />
+        <TopList title={`Top Artists — ${displayPeriodLabel(artists?.period.label, period)}`} response={artists} loading={loading} artistList />
       </section>
     </div>
   );
@@ -158,11 +158,16 @@ function PeriodTopCard({ item, artistList }: { item: PeriodTopItem; artistList: 
 }
 
 function Movement({ movement }: { movement: PeriodTopItem["movement"] }) {
-  if (!movement) return <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">No prior comparison</span>;
+  if (!movement) return null;
   const Icon = movement.direction === "up" ? ArrowUp : movement.direction === "down" ? ArrowDown : movement.direction === "new" ? Sparkles : Minus;
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs text-mist">
       <Icon size={13} /> {movement.label}
     </span>
   );
+}
+
+function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
+  if (period === "rolling_year") return "Rolling Year";
+  return label ?? "Selected period";
 }

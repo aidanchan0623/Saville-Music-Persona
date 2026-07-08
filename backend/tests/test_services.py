@@ -5,7 +5,7 @@ from pathlib import Path
 from app.config import Settings
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import dedupe_candidates
-from app.services.ytmusic_service import YTMusicService
+from app.services.ytmusic_service import YTMusicService, friendly_auth_error
 
 
 def test_malformed_llm_json_is_repaired() -> None:
@@ -55,3 +55,9 @@ def test_no_authenticated_youtube_music_account(tmp_path: Path) -> None:
     status = service.auth_status()
     assert status["connected"] is False
     assert status["auth_file_exists"] is False
+
+
+def test_verbose_youtube_account_menu_error_is_sanitized() -> None:
+    message = friendly_auth_error(KeyError("Unable to find 'header' on {'multiPageMenuRenderer': {'secret': 'value'}}"), is_browser=True)
+    assert "account menu" in message
+    assert "secret" not in message

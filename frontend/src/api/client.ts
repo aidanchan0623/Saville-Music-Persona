@@ -66,8 +66,16 @@ export const api = {
   overview: () => request<Overview>("/analysis/overview"),
   topTracks: () => request<TopTrack[]>("/analysis/top-tracks"),
   topArtists: () => request<TopArtist[]>("/analysis/top-artists"),
-  scores: () => request<ScoreMetric[]>("/analysis/scores"),
-  charts: () => request<Charts>("/analysis/charts"),
+  scores: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<ScoreMetric[]>(`/analysis/scores?${params.toString()}`);
+  },
+  charts: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<Charts>(`/analysis/charts?${params.toString()}`);
+  },
   listeningMinutes: (period = "rolling_year", month?: string | null) => {
     const params = new URLSearchParams({ period });
     if (month) params.set("month", month);
@@ -88,7 +96,11 @@ export const api = {
     if (month) params.set("month", month);
     return request<TasteDnaComparison>(`/taste-dna/compare?${params.toString()}`);
   },
-  scoreInterpretations: (period = "rolling_year") => request<ScoreMetric[]>(`/scores/interpretations?period=${encodeURIComponent(period)}`),
+  scoreInterpretations: (period = "rolling_year", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<ScoreMetric[]>(`/scores/interpretations?${params.toString()}`);
+  },
   latestReport: () => request<PersonaReport>("/report/latest"),
   generateReport: (mode: "serious" | "playful" | "roast") =>
     request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode }) }),

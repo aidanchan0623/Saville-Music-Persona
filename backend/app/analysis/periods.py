@@ -521,7 +521,7 @@ def movement_payload(current_rank: int, previous_rank: int | None, comparison_al
         label = f"Down {abs(delta)}"
     else:
         direction = "no_change"
-        label = "No change"
+        label = "Stable"
     return {"direction": direction, "previous_rank": previous_rank, "rank_delta": delta, "label": label}
 
 

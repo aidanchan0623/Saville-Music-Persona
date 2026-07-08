@@ -39,12 +39,12 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
           <h3 className="mt-3 text-2xl font-black leading-tight text-white md:text-3xl">{presentation.headline}</h3>
         </div>
         <div
-          className="grid h-20 w-20 shrink-0 place-items-center rounded-full shadow-[0_0_40px_rgba(139,92,246,0.2)] md:h-24 md:w-24"
+          className="grid h-20 w-20 shrink-0 place-items-center rounded-full shadow-[0_0_40px_rgba(239,68,68,0.2)] md:h-24 md:w-24"
           style={{
-            background: `conic-gradient(#d946ef 0deg, #a78bfa ${degree}deg, rgba(255,255,255,0.09) ${degree}deg)`,
+            background: `conic-gradient(#ef4444 0deg, #dc2626 ${degree}deg, rgba(255,255,255,0.09) ${degree}deg)`,
           }}
         >
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-[#0b0b15] text-sm font-black text-white md:h-16 md:w-16">{asPercent(score.value)}</div>
+          <div className="grid h-14 w-14 place-items-center rounded-full bg-[#090505] text-sm font-black text-white md:h-16 md:w-16">{asPercent(score.value)}</div>
         </div>
       </div>
 
@@ -67,28 +67,6 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
         {confidenceNote ? <span className="rounded-full bg-white/[0.06] px-3 py-1.5 text-mist">Confidence: {confidenceNote}</span> : null}
         {confidenceInput ? <span className="rounded-full bg-violet/10 px-3 py-1.5 text-violet-100">{confidenceInput}</span> : null}
       </div>
-
-      <details className="relative mt-5 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-        <summary className="cursor-pointer text-sm font-semibold text-white">Why this score landed here</summary>
-        <p className="mt-3 text-sm leading-6 text-mist">{score.formula}</p>
-        {score.interpretation?.evidence?.length ? (
-          <ul className="mt-3 space-y-2 text-sm leading-6 text-mist">
-            {score.interpretation.evidence.map((item) => (
-              <li key={item}>- {item}</li>
-            ))}
-          </ul>
-        ) : null}
-        {Object.keys(score.inputs).length ? (
-          <dl className="mt-4 grid gap-2 text-xs text-mist sm:grid-cols-2">
-            {Object.entries(score.inputs).map(([key, value]) => (
-              <div key={key} className="rounded-xl bg-white/[0.04] p-3">
-                <dt className="uppercase tracking-[0.14em] text-mist/60">{formatInputLabel(key)}</dt>
-                <dd className="mt-1 break-words text-white/85">{formatInputValue(value)}</dd>
-              </div>
-            ))}
-          </dl>
-        ) : null}
-      </details>
     </article>
   );
 }
@@ -162,7 +140,7 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       bullets: [
         "The read depends on available release-year metadata.",
         "Older songs can still matter without becoming the main centre.",
-        "The details panel keeps the era-evidence limits visible.",
+        "Confidence stays visible when era metadata is thin.",
       ],
     };
   }
@@ -230,19 +208,7 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
     summary: score.interpretation?.plain_english ?? score.explanation,
     bullets: [
       score.explanation,
-      score.interpretation?.confidence ? `Confidence: ${score.interpretation.confidence}` : "Open the details panel for the exact evidence.",
+      score.interpretation?.confidence ? `Confidence: ${score.interpretation.confidence}` : "This uses the available listening profile evidence.",
     ].filter(Boolean),
   };
-}
-
-function formatInputLabel(value: string) {
-  return value.replaceAll("_", " ");
-}
-
-function formatInputValue(value: unknown) {
-  if (value === null || value === undefined) return "Unavailable";
-  if (typeof value === "number") return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1);
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  return JSON.stringify(value);
 }

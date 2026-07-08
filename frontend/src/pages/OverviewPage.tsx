@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
+import { TasteDNA } from "../components/TasteDNA";
 import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
 import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
 import { HeroIdentitySection } from "../components/home/HeroIdentitySection";
@@ -125,6 +126,8 @@ export function OverviewPage({
       />
 
       <TasteNarrativeSection taste={taste} />
+
+      <TasteDNA dna={overview.taste_dna} interpretation={taste} />
 
       <CurrentListeningStateSection
         currentMinutes={thisMonthMinutes}

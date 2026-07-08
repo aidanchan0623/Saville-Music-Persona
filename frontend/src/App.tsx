@@ -206,7 +206,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-ink text-white">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(99,102,241,0.18),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(217,70,239,0.12),transparent_25%)]" />
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,68,68,0.18),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(153,27,27,0.16),transparent_25%)]" />
       <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-line bg-ink/85 p-5 backdrop-blur-xl lg:block">
         <div className="flex items-center gap-3">
           <div className="grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-br from-violet to-magenta">
