@@ -34,6 +34,8 @@ class AuthStatusResponse(BaseModel):
     oauth_client_configured: bool
     account_name: str | None = None
     message: str
+    cached_data_available: bool = False
+    last_refreshed_at: str | None = None
 
 
 class RefreshRequest(BaseModel):

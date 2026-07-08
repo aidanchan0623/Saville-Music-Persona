@@ -29,7 +29,7 @@ export default function App() {
   const [source, setSource] = useState<MusicSource>(() => {
     const querySource = new URLSearchParams(window.location.search).get("source");
     if (querySource === "spotify") return "spotify";
-    return localStorage.getItem("smp_music_source") === "spotify" ? "spotify" : "youtube";
+    return "youtube";
   });
   const [useDemo, setUseDemo] = useState(() => localStorage.getItem("smp_use_demo") === "true");
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -108,7 +108,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("smp_music_source", source);
     void loadAnalysis(source).catch((error) => {
       clearAnalysis();
       if (source === "spotify") {
@@ -272,7 +271,15 @@ export default function App() {
             useDemo={useDemo}
             busy={busy}
             onUseDemoChange={setUseDemo}
-            onCheckAuth={() => void loadStatus().catch((error) => setMessage(error.message))}
+            onCheckAuth={async () => {
+              try {
+                const liveAuth = await api.authStatus(true);
+                setAuth(liveAuth);
+                setMessage(liveAuth.message);
+              } catch (error) {
+                setMessage(error instanceof Error ? error.message : "YouTube live auth check failed.");
+              }
+            }}
             onImportTakeout={importTakeout}
             spotifyStatus={spotifyStatus}
             onConnectSpotify={connectSpotify}
@@ -282,6 +289,9 @@ export default function App() {
         );
     }
   }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
+
+  const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
+  const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
 
   return (
     <div className="min-h-screen bg-ink text-white">
@@ -308,7 +318,7 @@ export default function App() {
           })}
         </nav>
         <div className="absolute bottom-5 left-5 right-5 space-y-2">
-          <StatusPill ok={auth?.connected || useDemo} label={useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : "YouTube offline"} />
+          <StatusPill ok={youtubeReady} label={youtubeLabel} />
           <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} />
           <StatusPill ok={Boolean(prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma offline"} />
         </div>

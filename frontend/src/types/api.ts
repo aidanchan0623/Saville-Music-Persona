@@ -466,6 +466,8 @@ export interface AuthStatus {
   oauth_client_configured: boolean;
   account_name: string | null;
   message: string;
+  cached_data_available: boolean;
+  last_refreshed_at: string | null;
 }
 
 export interface PersonaTag {

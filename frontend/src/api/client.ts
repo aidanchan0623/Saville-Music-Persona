@@ -55,7 +55,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
   prerequisites: () => request<Prerequisites>("/prerequisites"),
-  authStatus: () => request<AuthStatus>("/auth/status"),
+  authStatus: (live = false) => request<AuthStatus>(`/auth/status${live ? "?live=true" : ""}`),
   authSetup: () => request<Record<string, unknown>>("/auth/setup", { method: "POST", body: "{}" }),
   spotifyStatus: () => request<SpotifyStatus>("/spotify/status"),
   spotifyLoginUrl: () => `${API_BASE}/spotify/login`,

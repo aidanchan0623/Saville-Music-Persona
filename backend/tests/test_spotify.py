@@ -3,10 +3,13 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 from app.analysis.normalizer import normalise_collection
 from app.analysis.spotify_adapter import spotify_raw_to_collection
 from app.config import Settings
 from app.database.repository import JsonRepository
+from app.main import app
 from app.services.spotify_service import SpotifyService
 
 
@@ -50,6 +53,16 @@ def test_spotify_cache_keys_do_not_overwrite_youtube_data(tmp_path: Path) -> Non
     repo.delete_json_many(["spotify_normalised"])
     assert repo.load_json("normalised")["tracks"][0]["title"] == "YouTube"
     assert repo.load_json("spotify_normalised") is None
+
+
+def test_spotify_routes_are_registered() -> None:
+    client = TestClient(app)
+    health = client.get("/api/spotify/health")
+    assert health.status_code == 200
+    assert health.json() == {"ok": True, "spotify_router": "registered"}
+
+    login = client.get("/api/spotify/login", follow_redirects=False)
+    assert login.status_code != 404
 
 
 def test_spotify_track_and_artist_normalisation() -> None:

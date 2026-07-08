@@ -208,6 +208,30 @@ def rebuild_spotify_cache() -> dict[str, Any]:
     }
 
 
+def quick_youtube_auth_status() -> dict[str, Any]:
+    browser_file_exists = settings.ytmusic_browser_auth_file.exists()
+    oauth_file_exists = settings.ytmusic_auth_file.exists()
+    cached_data_available = repo.load_json("normalised") is not None
+    if browser_file_exists:
+        auth_file_path = settings.ytmusic_browser_auth_file
+    else:
+        auth_file_path = settings.ytmusic_auth_file
+    if cached_data_available:
+        message = "Cached YouTube Music profile is available. Use Recheck Connection to test live YouTube auth."
+    elif browser_file_exists or oauth_file_exists:
+        message = "Saved YouTube auth file exists. Use Recheck Connection to verify live YouTube access."
+    else:
+        message = "No YouTube auth file found. Import Google Takeout or set up YouTube Music auth in Settings."
+    return {
+        "connected": False,
+        "auth_file_exists": browser_file_exists or oauth_file_exists,
+        "auth_file_path": str(auth_file_path),
+        "oauth_client_configured": bool(settings.ytmusic_client_id and settings.ytmusic_client_secret),
+        "account_name": None,
+        "message": message,
+    }
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
     return {"ok": True, "app": "Saville Music Persona", "time": datetime.now(timezone.utc).isoformat()}
@@ -234,8 +258,14 @@ def prerequisites() -> PrerequisitesResponse:
 
 
 @router.get("/auth/status", response_model=AuthStatusResponse)
-def auth_status() -> AuthStatusResponse:
-    return AuthStatusResponse(**ytmusic.auth_status())
+def auth_status(live: bool = Query(False)) -> AuthStatusResponse:
+    status = ytmusic.auth_status() if live else quick_youtube_auth_status()
+    meta = repo.load_json("last_refresh_meta") or {}
+    return AuthStatusResponse(
+        **status,
+        cached_data_available=repo.load_json("normalised") is not None,
+        last_refreshed_at=meta.get("refreshed_at"),
+    )
 
 
 @router.post("/auth/setup")
@@ -248,6 +278,11 @@ def spotify_status() -> dict[str, Any]:
     return spotify.status(repo)
 
 
+@router.get("/spotify/health")
+def spotify_health() -> dict[str, Any]:
+    return {"ok": True, "spotify_router": "registered"}
+
+
 @router.get("/spotify/login")
 def spotify_login() -> RedirectResponse:
     state = spotify.new_state()
@@ -255,7 +290,13 @@ def spotify_login() -> RedirectResponse:
     try:
         return RedirectResponse(spotify.login_url(state))
     except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail={"error": "Spotify is not configured", "detail": str(exc), "code": "spotify_not_configured"}) from exc
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Spotify is not configured. Set SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, "
+                "and SPOTIFY_REDIRECT_URI in backend/private/.env."
+            ),
+        ) from exc
 
 
 @router.get("/spotify/callback")

@@ -44,12 +44,13 @@ export function SettingsPage({
               Preferred setup uses ytmusicapi OAuth. Credentials stay in <code>backend/private/</code>, which is ignored by Git.
             </p>
           </div>
-          <StatusPill ok={auth?.connected} label={auth?.connected ? "Connected" : "Not connected"} />
+          <StatusPill ok={auth?.connected || auth?.cached_data_available} label={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data" : "Not connected"} />
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="Auth file" value={auth?.auth_file_path || "Unknown"} />
           <Info label="OAuth client configured" value={auth?.oauth_client_configured ? "Yes" : "No"} />
           <Info label="Account" value={auth?.account_name || "Unavailable"} />
+          <Info label="Cached YouTube profile" value={auth?.cached_data_available ? `Available${auth.last_refreshed_at ? `, refreshed ${auth.last_refreshed_at}` : ""}` : "Unavailable"} />
           <Info label="Status" value={auth?.message || "Not checked yet"} />
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
