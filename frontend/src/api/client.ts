@@ -4,6 +4,9 @@ import type {
   ListeningMinutes,
   Overview,
   PersonaReport,
+  TopAlbumSongsResponse,
+  TopAlbumsResponse,
+  TopArtistSongsResponse,
   PeriodTopResponse,
   Prerequisites,
   Recommendation,
@@ -85,6 +88,22 @@ export const api = {
     const params = new URLSearchParams({ period, type });
     if (month) params.set("month", month);
     return request<PeriodTopResponse>(`/top?${params.toString()}`);
+  },
+  topAlbums: (period = "this_month", month?: string | null) => {
+    const params = new URLSearchParams({ period });
+    if (month) params.set("month", month);
+    return request<TopAlbumsResponse>(`/top/albums?${params.toString()}`);
+  },
+  artistSongs: (artist: string, period = "this_month", month?: string | null) => {
+    const params = new URLSearchParams({ artist, period });
+    if (month) params.set("month", month);
+    return request<TopArtistSongsResponse>(`/top/artist-songs?${params.toString()}`);
+  },
+  albumSongs: (album: string, artist: string | null | undefined, period = "this_month", month?: string | null) => {
+    const params = new URLSearchParams({ album, period });
+    if (artist) params.set("artist", artist);
+    if (month) params.set("month", month);
+    return request<TopAlbumSongsResponse>(`/top/album-songs?${params.toString()}`);
   },
   tasteDna: (period = "rolling_year", month?: string | null) => {
     const params = new URLSearchParams({ period });

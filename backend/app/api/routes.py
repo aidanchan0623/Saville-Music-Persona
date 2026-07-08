@@ -9,7 +9,18 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.normalizer import normalise_collection
-from app.analysis.periods import filter_events, listening_minutes_payload, normalised_for_events, resolve_period, taste_dna_comparison_payload, taste_dna_payload, top_payload
+from app.analysis.periods import (
+    album_songs_payload,
+    albums_payload,
+    artist_songs_payload,
+    filter_events,
+    listening_minutes_payload,
+    normalised_for_events,
+    resolve_period,
+    taste_dna_comparison_payload,
+    taste_dna_payload,
+    top_payload,
+)
 from app.analysis.scoring import build_analysis
 from app.config import settings
 from app.database.repository import JsonRepository
@@ -272,6 +283,36 @@ def period_top(
 ) -> dict[str, Any]:
     kind = "artists" if type == "artists" else "tracks"
     return top_payload(require_cache("normalised"), kind, period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/top/artist-songs")
+def period_artist_songs(
+    artist: str = Query(...),
+    period: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return artist_songs_payload(require_cache("normalised"), artist, period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/top/albums")
+def period_albums(
+    period: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return albums_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+
+
+@router.get("/top/album-songs")
+def period_album_songs(
+    album: str = Query(...),
+    artist: str | None = Query(None),
+    period: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+) -> dict[str, Any]:
+    return album_songs_payload(require_cache("normalised"), album, artist, period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/taste-dna")

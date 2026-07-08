@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { TasteDNA as TasteDNAType, TasteDnaComparison, TasteDnaExplorer, TasteDnaNode, TasteInterpretation, TasteTraitNode } from "../types/api";
+import type { TasteDNA as TasteDNAType, TasteDnaExplorer, TasteDnaNode, TasteInterpretation, TasteTraitNode } from "../types/api";
 
 type TastePeriod = "this_month" | "month" | "rolling_year";
 
@@ -9,13 +9,25 @@ interface Props {
   interpretation?: TasteInterpretation | null;
 }
 
+const TRAIT_GROUPS = [
+  {
+    label: "Energy",
+    patterns: ["energy", "anthem", "cathartic", "heavy", "aggression", "driving", "fast", "punchy", "festival", "restless"],
+  },
+  {
+    label: "Texture",
+    patterns: ["atmospheric", "guitar", "polished", "production", "electronic", "cinematic", "hazy", "textural", "orchestral", "dreamy"],
+  },
+  {
+    label: "Mood",
+    patterns: ["dramatic", "nostalgic", "melodic", "melancholic", "romantic", "sentimental", "introspective", "late-night", "emotional"],
+  },
+];
+
 export function TasteDNA({ dna, interpretation }: Props) {
   const [period, setPeriod] = useState<TastePeriod>("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [explorer, setExplorer] = useState<TasteDnaExplorer | null>(null);
-  const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
-  const [selectedNode, setSelectedNode] = useState<TasteDnaNode | null>(null);
-  const [selectedTrait, setSelectedTrait] = useState<TasteTraitNode | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,7 +35,6 @@ export function TasteDNA({ dna, interpretation }: Props) {
       .then((next) => {
         if (cancelled) return;
         setExplorer(next);
-        setSelectedNode(next.nodes[0] ?? null);
         if (!selectedMonth && next.period.available_months.length) {
           setSelectedMonth(next.period.available_months[next.period.available_months.length - 1].value);
         }
@@ -36,127 +47,79 @@ export function TasteDNA({ dna, interpretation }: Props) {
     };
   }, [period, selectedMonth]);
 
-  useEffect(() => {
-    let cancelled = false;
-    api.tasteDnaCompare("rolling_year", period === "rolling_year" ? "this_month" : period, period === "month" ? selectedMonth : null)
-      .then((next) => {
-        if (!cancelled) setComparison(next);
-      })
-      .catch(() => {
-        if (!cancelled) setComparison(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [period, selectedMonth]);
-
   const fallbackCore = dna?.core_dna?.length ? dna.core_dna.join(" / ") : interpretation?.core_genre_families?.map((item) => item.name).join(" / ");
+  const nodes = (explorer?.nodes ?? []).slice(0, 6);
+  const traits = (explorer?.traits ?? []).slice(0, 12);
   const months = explorer?.period.available_months ?? [];
-  const nodes = explorer?.nodes ?? [];
-  const visibleNodes = nodes.slice(0, 6);
-  const traits = (explorer?.traits ?? []).slice(0, 6);
-  const activeNode = selectedNode ?? nodes[0] ?? null;
-  const activeTrait = selectedTrait ?? traits[0] ?? null;
-  const maxShare = useMemo(() => Math.max(...visibleNodes.map((node) => node.share), 1), [visibleNodes]);
+  const identity = explorer?.core_identity ?? fallbackCore ?? "Mapped listening core";
   const activeLabel = period === "rolling_year" ? "Rolling Year" : explorer?.period.label ?? "Selected period";
+  const maxShare = useMemo(() => Math.max(...nodes.map((node) => node.share), 1), [nodes]);
+  const groupedTraits = useMemo(() => groupTraits(traits), [traits]);
+  const limitedMonthlySample = Boolean(explorer?.sample_warning && period !== "rolling_year");
 
   if (!dna && !interpretation && !explorer) return null;
 
   return (
-    <section className="rounded-lg border border-line bg-panel/82 p-5 shadow-glow">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm uppercase tracking-[0.18em] text-violet-200">Taste DNA Explorer</p>
-          <h2 className="mt-1 text-2xl font-black text-white">{explorer?.core_identity ?? fallbackCore ?? "Mapped listening core"}</h2>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
-            {activeLabel} sound-family map from detected plays and curated genre mappings. This explains music patterns, not personality or psychology.
+    <section className="overflow-hidden rounded-[1.5rem] border border-line bg-[linear-gradient(135deg,rgba(20,16,16,0.94),rgba(5,5,5,0.98))] shadow-glow">
+      <div className="border-b border-white/10 p-5 lg:p-7">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-4xl">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Sound Profile</p>
+            <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-5xl">{identity}</h2>
+            <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
+              {buildIdentitySentence(identity, nodes, traits)}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.035] p-2">
+            <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
+            <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
+            <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
+            {period === "month" ? (
+              <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months[months.length - 1]?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
+                {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
+              </select>
+            ) : null}
+          </div>
+        </div>
+
+        {limitedMonthlySample ? (
+          <p className="mt-5 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">
+            Limited monthly sample - this view may be shaped by short-term spikes.
           </p>
-        </div>
-        <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.03] p-2">
-          <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
-          <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
-          <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
-          {period === "month" ? (
-            <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months[months.length - 1]?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
-              {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
-            </select>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
-      {explorer?.sample_warning ? <p className="mt-4 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{explorer.sample_warning}</p> : null}
-
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative min-h-[440px] overflow-hidden rounded-lg border border-white/10 bg-[radial-gradient(circle_at_center,rgba(239,68,68,0.22),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.05),rgba(20,10,10,0.72))]">
-          <button
-            className="absolute left-1/2 top-1/2 z-10 grid h-40 w-40 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border border-violet/40 bg-ink/88 p-5 text-center shadow-glow focus:outline-none focus:ring-2 focus:ring-violet"
-            onClick={() => setSelectedNode(nodes[0] ?? null)}
-          >
-            <span>
-              <span className="block text-xs uppercase tracking-[0.18em] text-violet-200">Core Identity</span>
-              <span className="mt-2 block text-base font-black leading-6 text-white">{explorer?.core_identity ?? fallbackCore ?? "Mapped core"}</span>
-            </span>
-          </button>
-          {visibleNodes.map((node) => {
-            const intensity = Math.max(0.22, node.share / maxShare);
-            return (
-              <button
-                key={node.id}
-                className={`absolute rounded-full border px-3 py-2 text-center text-xs font-semibold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-violet ${activeNode?.id === node.id ? "border-white bg-violet text-white" : "border-white/15 bg-black/45 text-mist hover:border-violet/60 hover:text-white"}`}
-                style={{
-                  left: `${node.x}%`,
-                  top: `${node.y}%`,
-                  minWidth: node.size,
-                  minHeight: Math.max(42, node.size * 0.58),
-                  transform: "translate(-50%, -50%)",
-                  boxShadow: `0 0 ${20 + node.share}px rgba(239,68,68,${intensity})`,
-                }}
-                onClick={() => setSelectedNode(node)}
-              >
-                <span className="block">{node.name}</span>
-                <span className="block text-[11px] opacity-80">{node.share}% - {node.layer}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="space-y-4">
-          <DetailPanel node={activeNode} />
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-            <h3 className="text-sm font-semibold text-white">Sonic-trait orbit</h3>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {traits.map((trait) => (
-                <button
-                  key={trait.trait}
-                  className={`rounded-full border px-3 py-1 text-sm ${activeTrait?.trait === trait.trait ? "border-violet bg-violet/30 text-white" : "border-white/10 text-mist hover:text-white"}`}
-                  onClick={() => setSelectedTrait(trait)}
-                >
-                  {trait.trait}
-                </button>
-              ))}
-            </div>
-            {activeTrait ? <TraitDetail trait={activeTrait} /> : <p className="mt-3 text-sm text-mist">Trait evidence appears after a refresh with mapped artists.</p>}
-          </div>
-        </div>
-      </div>
-
-      {comparison ? (
-        <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.03] p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+      <div className="grid gap-0 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="border-b border-white/10 p-5 lg:p-7 xl:border-b-0 xl:border-r">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="font-semibold text-white">Compare {comparison.compare_period.label} vs Rolling Year</h3>
-              <p className="mt-1 text-sm text-mist">{comparison.summary_sentence}</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Core Sound Breakdown</p>
+              <h3 className="mt-2 text-2xl font-black text-white">{activeLabel}</h3>
             </div>
-            {comparison.sample_warning ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">{comparison.sample_warning}</span> : null}
+            <p className="text-sm text-mist">{explorer?.duration_quality.duration_coverage_percent ?? 0}% duration coverage</p>
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
-            <CompareClaim label="Growing cluster" value={comparison.claims.growing_cluster ? `${comparison.claims.growing_cluster.name} +${comparison.claims.growing_cluster.delta}` : "No strong claim"} />
-            <CompareClaim label="Declining cluster" value={comparison.claims.declining_cluster ? `${comparison.claims.declining_cluster.name} ${comparison.claims.declining_cluster.delta}` : "No strong claim"} />
-            <CompareClaim label="New side interest" value={comparison.claims.new_side_interest?.name ?? "None detected"} />
-            <CompareClaim label="Stable core" value={comparison.claims.stable_core_identity.join(", ") || "Still forming"} />
+
+          <div className="mt-5 space-y-4">
+            {nodes.length ? nodes.map((node) => <SoundFamilyRow key={node.id} node={node} maxShare={maxShare} />) : (
+              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Sound-family data is unavailable for this period.</div>
+            )}
           </div>
         </div>
-      ) : null}
+
+        <div className="p-5 lg:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Sonic Traits</p>
+          <div className="mt-4 space-y-5">
+            {groupedTraits.map((group) => (
+              <TraitGroup key={group.label} label={group.label} traits={group.traits} />
+            ))}
+          </div>
+
+          <div className="mt-7 rounded-xl border border-white/10 bg-white/[0.04] p-5">
+            <h3 className="text-lg font-black text-white">How to read it</h3>
+            <p className="mt-3 text-sm leading-7 text-mist">{buildProfileExplanation(nodes, traits, explorer?.summary)}</p>
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
@@ -169,62 +132,98 @@ function PeriodButton({ active, label, onClick }: { active: boolean; label: stri
   );
 }
 
-function DetailPanel({ node }: { node: TasteDnaNode | null }) {
-  if (!node) return <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-mist">No cluster selected.</div>;
+function SoundFamilyRow({ node, maxShare }: { node: TasteDnaNode; maxShare: number }) {
+  const width = Math.max(8, (node.share / maxShare) * 100);
+  const artists = node.top_artists.slice(0, 3).map((artist) => artist.name).join(", ");
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.16em] text-violet-200">{node.layer}</p>
-          <h3 className="mt-1 text-xl font-black text-white">{node.name}</h3>
+    <article className="rounded-xl border border-white/10 bg-white/[0.045] p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="text-lg font-black text-white">{node.name}</h4>
+            <span className="rounded-full border border-violet/30 bg-violet/10 px-2.5 py-1 text-xs font-semibold text-violet-100">{roleLabel(node.layer)}</span>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-mist">{artists ? `Top contributors: ${artists}.` : "Top contributing artists are unavailable for this period."}</p>
         </div>
-        <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{node.share}% share</span>
+        <div className="shrink-0 text-left md:text-right">
+          <p className="text-2xl font-black text-white">{node.share}%</p>
+          <p className="text-xs text-mist">{node.detected_minutes_formatted}</p>
+        </div>
       </div>
-      <p className="mt-3 text-sm leading-6 text-mist">{node.role}</p>
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <MiniList title="Detected minutes" items={[node.detected_minutes_formatted]} />
-        <MiniList title="Confidence" items={[`${node.confidence}% genre coverage`]} />
-        <MiniList title="Top artists" items={node.top_artists.slice(0, 3).map((item) => `${item.name} (${item.plays})`)} />
-        <MiniList title="Top songs" items={node.top_songs.slice(0, 3).map((item) => `${item.name} (${item.plays})`)} />
-        <MiniList title="Canonical genres" items={node.canonical_genres.slice(0, 4)} />
-        <MiniList title="Sonic traits" items={node.sonic_traits.slice(0, 4)} />
+      <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10">
+        <div className="h-full rounded-full bg-gradient-to-r from-violet via-red-500 to-red-300" style={{ width: `${width}%` }} />
+      </div>
+    </article>
+  );
+}
+
+function TraitGroup({ label, traits }: { label: string; traits: TasteTraitNode[] }) {
+  if (!traits.length) return null;
+  return (
+    <div>
+      <h4 className="text-sm font-semibold text-white">{label}</h4>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {traits.map((trait) => (
+          <span
+            key={`${label}-${trait.trait}`}
+            title={trait.explanation || undefined}
+            className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1.5 text-sm text-mist"
+          >
+            {trait.trait}
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function TraitDetail({ trait }: { trait: TasteTraitNode }) {
-  return (
-    <div className="mt-4 rounded-md bg-black/20 p-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-mist">
-        <span className="rounded-full bg-white/10 px-3 py-1">{trait.support_percent}% of classified listening</span>
-        <span className="rounded-full bg-white/10 px-3 py-1">{trait.confidence} confidence</span>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-mist">{trait.explanation}</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-        <MiniList title="Supporting clusters" items={trait.supporting_clusters.map((item) => `${item.name} (${item.plays})`)} />
-        <MiniList title="Supporting artists" items={trait.supporting_artists.map((item) => `${item.name} (${item.plays})`)} />
-      </div>
-    </div>
-  );
+function groupTraits(traits: TasteTraitNode[]) {
+  const used = new Set<string>();
+  const groups = TRAIT_GROUPS.map((group) => {
+    const matched = traits.filter((trait) => {
+      const text = trait.trait.toLowerCase();
+      return group.patterns.some((pattern) => text.includes(pattern));
+    });
+    matched.forEach((trait) => used.add(trait.trait));
+    return { label: group.label, traits: matched.slice(0, 5) };
+  });
+  const remaining = traits.filter((trait) => !used.has(trait.trait)).slice(0, 5);
+  if (remaining.length) {
+    const mood = groups.find((group) => group.label === "Mood");
+    if (mood) mood.traits = [...mood.traits, ...remaining].slice(0, 6);
+  }
+  return groups.filter((group) => group.traits.length);
 }
 
-function MiniList({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div className="rounded-md bg-white/[0.04] p-3">
-      <h4 className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/70">{title}</h4>
-      <div className="mt-2 space-y-1 text-sm text-mist">
-        {items.length ? items.slice(0, 5).map((item) => <p key={item}>{item}</p>) : <p>Unavailable</p>}
-      </div>
-    </div>
-  );
+function roleLabel(layer: string) {
+  if (layer === "Side Quest" || layer === "Trace") return "Side Interest";
+  return layer || "Signal";
 }
 
-function CompareClaim({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md bg-white/[0.04] p-3">
-      <p className="text-xs uppercase tracking-[0.14em] text-mist/60">{label}</p>
-      <p className="mt-2 text-sm font-semibold text-white">{value}</p>
-    </div>
-  );
+function buildIdentitySentence(identity: string, nodes: TasteDnaNode[], traits: TasteTraitNode[]) {
+  const core = nodes[0]?.name ?? identity;
+  const secondary = nodes.slice(1, 4).map((node) => node.name);
+  const topTraits = traits.slice(0, 2).map((trait) => trait.trait);
+  if (secondary.length || topTraits.length) {
+    const branches = secondary.length ? secondary : topTraits;
+    return `Your listening has a clear ${core} centre, with ${formatInlineList(branches)} shaping the profile.`;
+  }
+  return "Your listening profile is still forming from the available mapped artists and detected plays.";
+}
+
+function buildProfileExplanation(nodes: TasteDnaNode[], traits: TasteTraitNode[], fallback?: string | null) {
+  if (nodes.length) {
+    const core = nodes[0].name;
+    const branches = nodes.slice(1, 5).map((node) => node.name);
+    const traitText = traits.slice(0, 3).map((trait) => trait.trait);
+    return `You are not listening across random categories. The profile is centred around ${core}, then branches into ${formatInlineList(branches.length ? branches : traitText)}. The percentages come from detected plays mapped to sound families, with duration coverage shown where track lengths are available.`;
+  }
+  return fallback || "The app needs more mapped listening data before it can describe a reliable sound profile for this period.";
+}
+
+function formatInlineList(items: string[]) {
+  const clean = items.filter(Boolean);
+  if (clean.length <= 1) return clean[0] ?? "nearby sound families";
+  if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
+  return `${clean.slice(0, -1).join(", ")} and ${clean[clean.length - 1]}`;
 }

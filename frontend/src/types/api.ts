@@ -204,6 +204,7 @@ export interface PeriodTopItem {
   video_id: string | null;
   title: string | null;
   artist: string;
+  album: string | null;
   thumbnail: string | null;
   play_count: number;
   detected_minutes: number;
@@ -227,6 +228,80 @@ export interface PeriodTopResponse {
   items: PeriodTopItem[];
   methodology: string;
   classification_rules: string[];
+}
+
+export interface TopAlbumItem {
+  rank: number;
+  key: string;
+  album: string;
+  artist: string;
+  album_id: string | null;
+  thumbnail: string | null;
+  plays: number;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  unique_songs: number;
+  most_played_song: string | null;
+  share: number;
+  duration_coverage_percent: number;
+  last_played: string | null;
+  label: string;
+  album_signal_note: string;
+}
+
+export interface TopAlbumsResponse {
+  period: PeriodSpec;
+  period_label: string;
+  total_play_count: number;
+  duration_quality: DurationQuality;
+  sample_warning: string | null;
+  albums: TopAlbumItem[];
+  methodology: string;
+}
+
+export interface TopDrilldownSong {
+  rank: number;
+  track_id: string | null;
+  video_id: string | null;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  thumbnail: string | null;
+  plays: number;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  last_played: string | null;
+  first_played: string | null;
+  duration_coverage_percent: number;
+  share_of_artist_plays?: number;
+  share_of_album_plays?: number;
+}
+
+export interface TopArtistSongsResponse {
+  artist: string;
+  period_label: string;
+  period: PeriodSpec;
+  total_plays: number;
+  unique_songs: number;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  duration_coverage_percent: number;
+  most_replayed_song: string | null;
+  songs: TopDrilldownSong[];
+}
+
+export interface TopAlbumSongsResponse {
+  album: string;
+  artist: string | null;
+  period_label: string;
+  period: PeriodSpec;
+  total_plays: number;
+  unique_songs: number;
+  detected_minutes: number;
+  detected_minutes_formatted: string;
+  duration_coverage_percent: number;
+  most_played_song: string | null;
+  songs: TopDrilldownSong[];
 }
 
 export interface TasteDnaNode {

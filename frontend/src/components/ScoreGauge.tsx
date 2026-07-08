@@ -17,8 +17,8 @@ interface ScorePresentation {
   displayName: string;
   tag: string;
   headline: string;
-  summary: string;
-  bullets: string[];
+  body: string;
+  evidenceLine: string;
 }
 
 export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; featured?: boolean }) {
@@ -49,18 +49,8 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
       </div>
 
       <div className="relative mt-5 max-w-3xl">
-        <p className="text-base leading-7 text-mist">{presentation.summary}</p>
-        <div className="mt-5 border-l border-violet/35 pl-4">
-          <p className="text-sm font-semibold text-violet-100">What this means</p>
-          <ul className="mt-3 space-y-2 text-sm leading-6 text-mist">
-            {presentation.bullets.map((item) => (
-              <li key={item} className="flex gap-2">
-                <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet" />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <p className="text-base leading-7 text-mist">{presentation.body}</p>
+        <p className="mt-4 border-l border-violet/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
       </div>
 
       <div className="relative mt-5 flex flex-wrap gap-2 text-xs">
@@ -94,12 +84,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Repeat score",
       tag: "Replay-heavy listener",
       headline: "Replay-heavy listener",
-      summary: "Songs stay in rotation once they hit.",
-      bullets: [
-        "Favourites are allowed to build weight instead of being replaced instantly.",
-        "The score reads repetition as a listening habit, not as a value judgement.",
-        "The ring uses the existing repeat score from your listening profile.",
-      ],
+      body: "You come back to songs strongly once they land. Your listening is less about constantly chasing new tracks and more about finding songs that fit your mood, then keeping them in rotation.",
+      evidenceLine: "Based on repeated tracks across the selected period.",
     };
   }
   if (kind === "artistLoyalty") {
@@ -108,12 +94,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Artist loyalty",
       tag: "Broadly roaming",
       headline: "Broadly roaming, not artist-locked",
-      summary: "You follow a sound more than a tiny roster of artists.",
-      bullets: [
-        "The profile is not dependent on only one or two artist obsessions.",
-        "Your centre appears more sonic than roster-bound.",
-        "Artist attachment is read from the existing play distribution.",
-      ],
+      body: "You are not built around only one or two artists. The sound world is consistent, but the artists rotate enough that your profile feels sound-led rather than fandom-led.",
+      evidenceLine: "Based on how plays are distributed across your top artists.",
     };
   }
   if (kind === "discovery") {
@@ -122,12 +104,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Discovery score",
       tag: "Selective explorer",
       headline: "Selective explorer",
-      summary: "New music appears, but trusted favourites still lead.",
-      bullets: [
-        "You make room for newer or less familiar tracks.",
-        "Exploration does not overpower the comfort layer of the profile.",
-        "The score balances recent arrivals against established listening.",
-      ],
+      body: "New music appears in your listening, but trusted favourites still lead. You explore, just not at the expense of the songs and artists that already work for you.",
+      evidenceLine: "Based on newer listening signals compared with established repeats.",
     };
   }
   if (kind === "nostalgia") {
@@ -136,12 +114,10 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Nostalgia score",
       tag: hasWeakEraMetadata ? "Era preference unclear" : "Mostly current-facing",
       headline: hasWeakEraMetadata ? "Era preference unclear" : "Mostly current-facing",
-      summary: hasWeakEraMetadata ? "Release-year evidence is too partial to read this strongly." : "Newer music shapes more of your detected listening.",
-      bullets: [
-        "The read depends on available release-year metadata.",
-        "Older songs can still matter without becoming the main centre.",
-        "Confidence stays visible when era metadata is thin.",
-      ],
+      body: hasWeakEraMetadata
+        ? "Release-year evidence is too partial to read this strongly, so this score stays cautious instead of pretending to know your era preference."
+        : "Newer music shapes more of your detected listening, while older songs can still matter as part of the profile without becoming the main centre.",
+      evidenceLine: "Based on release-year metadata where it is available.",
     };
   }
   if (kind === "broadCluster") {
@@ -150,12 +126,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Broad-cluster diversity",
       tag: "Rock-centred, internally varied",
       headline: "Rock-centred, internally varied",
-      summary: "Your taste has a clear home base, but several connected substyles.",
-      bullets: [
-        "The profile has a recognisable centre instead of scattered randomness.",
-        "Variation happens through connected rock and alternative-adjacent worlds.",
-        "Genre coverage shapes how confidently the breadth can be read.",
-      ],
+      body: "Your taste has a clear home base, but it is not one-dimensional. The variation happens inside connected alternative, rock, emo, heavy and atmospheric worlds.",
+      evidenceLine: "Based on the spread across mapped broad sound families.",
     };
   }
   if (kind === "withinCluster") {
@@ -164,12 +136,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Within-cluster diversity",
       tag: "Deep within your lane",
       headline: "Deep within your lane",
-      summary: "Focused, but not one-dimensional.",
-      bullets: [
-        "Your listening stays inside recognisable lanes.",
-        "Those lanes still contain multiple textures and substyles.",
-        "The score reads variety inside the strongest taste families.",
-      ],
+      body: "Your listening stays inside recognisable lanes, but those lanes still contain multiple textures and substyles. It reads as focus with depth, not a flat one-note pattern.",
+      evidenceLine: "Based on variety inside the strongest mapped sound families.",
     };
   }
   if (kind === "mainstreamNiche") {
@@ -178,12 +146,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Mainstream-Niche Estimate",
       tag: "Niche-leaning",
       headline: "Niche-leaning listener",
-      summary: "Broadly popular chart gravity is not your default centre.",
-      bullets: [
-        "Popularity metadata is treated as a cautious proxy, not a judgement.",
-        "The read points to a centre outside obvious chart defaults.",
-        "Uncertainty stays visible when subscriber metadata coverage is thin.",
-      ],
+      body: "Your detected artists lean away from the most obvious mainstream centre. This does not mean obscure for the sake of obscure - just that chart gravity is not the default force in your listening.",
+      evidenceLine: "Based on available popularity and artist metadata, treated as a cautious estimate.",
     };
   }
   if (kind === "tasteConfidence") {
@@ -192,12 +156,8 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
       displayName: "Taste confidence",
       tag: "Strong profile signal",
       headline: "Strong profile signal",
-      summary: "Useful, but shaped by available metadata coverage.",
-      bullets: [
-        "The app has enough signal to make a coherent profile.",
-        "Metadata gaps still limit some fine-grained claims.",
-        "This is a data-quality score, not a score of your taste.",
-      ],
+      body: "The app has enough listening and metadata signal to make a coherent profile, while still keeping uncertainty visible where the source data is thin.",
+      evidenceLine: "This is a data-quality score, not a judgement of your taste.",
     };
   }
   return {
@@ -205,10 +165,7 @@ export function getScorePresentation(score: ScoreMetric): ScorePresentation {
     displayName: score.name,
     tag: score.name,
     headline: score.interpretation?.status_title ?? score.label,
-    summary: score.interpretation?.plain_english ?? score.explanation,
-    bullets: [
-      score.explanation,
-      score.interpretation?.confidence ? `Confidence: ${score.interpretation.confidence}` : "This uses the available listening profile evidence.",
-    ].filter(Boolean),
+    body: score.interpretation?.plain_english ?? score.explanation,
+    evidenceLine: score.interpretation?.evidence?.[0] ?? "Based on the available listening profile evidence.",
   };
 }

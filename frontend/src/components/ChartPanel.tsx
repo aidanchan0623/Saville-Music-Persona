@@ -30,16 +30,16 @@ export function ChartPanel({ title, data, type = "bar" }: Props) {
             ) : type === "line" ? (
               <LineChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                <XAxis dataKey="name" stroke="#c7c4dc" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#c7c4dc" tick={{ fontSize: 12 }} />
+                <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
+                <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
                 <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
                 <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={3} dot={false} />
               </LineChart>
             ) : (
               <BarChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                <XAxis dataKey="name" stroke="#c7c4dc" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#c7c4dc" tick={{ fontSize: 12 }} />
+                <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
+                <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
                 <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {data.map((entry, index) => (

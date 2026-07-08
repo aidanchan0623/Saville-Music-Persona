@@ -5,6 +5,9 @@ from datetime import date, timedelta
 from app.analysis.duration import annotate_normalised_durations, duration_quality
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
+    album_songs_payload,
+    albums_payload,
+    artist_songs_payload,
     classification_label,
     listening_minutes_payload,
     movement_payload,
@@ -15,14 +18,24 @@ from app.analysis.periods import (
 from app.analysis.score_interpretations import interpret_score
 
 
-def _history_item(video_id: str, title: str, artist: str, played: str, duration: int | str | None = 180) -> dict:
+def _history_item(
+    video_id: str,
+    title: str,
+    artist: str | list[str],
+    played: str,
+    duration: int | str | None = 180,
+    album: str | None = None,
+) -> dict:
+    artist_names = artist if isinstance(artist, list) else [artist]
     item = {
         "videoId": video_id,
         "title": title,
-        "artists": [{"name": artist}],
+        "artists": [{"name": name} for name in artist_names],
         "played": played,
         "source": "test",
     }
+    if album:
+        item["album"] = {"name": album, "id": f"alb-{album.lower().replace(' ', '-')}"}
     if duration is not None:
         if isinstance(duration, int):
             item["duration_seconds"] = duration
@@ -160,6 +173,52 @@ def test_top_label_classification_rules() -> None:
     assert classification_label(4, 5, "month", None, 4, 5) == "Long-term anchor"
     assert classification_label(1, 3, "month", None, None, 0) == "Current obsession"
     assert classification_label(7, 2, "month", {"direction": "new"}, None, 0) == "New arrival"
+
+
+def test_artist_songs_drilldown_matches_featured_artists() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item("duet", "Shared Chorus", ["Lead Artist", "Guest Artist"], "2026-07-02", 180, "Shared Album"),
+                _history_item("solo", "Solo Track", "Lead Artist", "2026-07-03", 180, "Shared Album"),
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    payload = artist_songs_payload(normalised, "Guest Artist", "month", "2026-07", today=date(2026, 7, 7))
+    assert payload["total_plays"] == 1
+    assert payload["unique_songs"] == 1
+    assert payload["songs"][0]["title"] == "Shared Chorus"
+    assert payload["songs"][0]["share_of_artist_plays"] == 100.0
+
+
+def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item("a1", "Album Song One", "Album Artist", "2026-07-01", 180, "Real Album"),
+                _history_item("a1", "Album Song One", "Album Artist", "2026-07-02", 180, "Real Album"),
+                _history_item("a2", "Album Song Two", "Album Artist", "2026-07-03", 180, "Real Album"),
+                _history_item("a2", "Album Song Two", "Album Artist", "2026-07-04", 180, "Real Album"),
+                _history_item("b1", "Single Driver", "Single Artist", "2026-07-01", 180, "Single Album"),
+                _history_item("b1", "Single Driver", "Single Artist", "2026-07-02", 180, "Single Album"),
+                _history_item("b1", "Single Driver", "Single Artist", "2026-07-03", 180, "Single Album"),
+                _history_item("unknown", "Unknown Album Track", "Mystery", "2026-07-04", 180),
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    albums = albums_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))["albums"]
+    assert albums[0]["album"] == "Real Album"
+    assert albums[0]["unique_songs"] == 2
+    assert "real album-level signal" in albums[0]["album_signal_note"]
+    assert albums[1]["label"] == "Single-heavy, album-light"
+    assert all(item["album"] != "Unknown Album" for item in albums)
+
+    drilldown = album_songs_payload(normalised, "Real Album", "Album Artist", "month", "2026-07", today=date(2026, 7, 7))
+    assert drilldown["total_plays"] == 4
+    assert [song["title"] for song in drilldown["songs"]] == ["Album Song One", "Album Song Two"]
+    assert drilldown["songs"][0]["share_of_album_plays"] == 50.0
 
 
 def test_score_interpretation_thresholds_are_plain_english() -> None:

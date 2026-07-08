@@ -404,9 +404,10 @@ def top_payload(
     previous_ranking_events = [event for event in previous_events if event.get("is_music_candidate") is not False]
     rolling_ranking_events = [event for event in rolling_events if event.get("is_music_candidate") is not False]
     track_lookup = tracks_by_id(normalised)
-    current_ranked = rank_items(ranking_events, track_lookup, kind)
-    previous_ranked = rank_items(previous_ranking_events, track_lookup, kind)
-    rolling_ranked = rank_items(rolling_ranking_events, track_lookup, kind)
+    artist_metadata = normalised.get("artist_metadata") or {}
+    current_ranked = rank_items(ranking_events, track_lookup, kind, artist_metadata)
+    previous_ranked = rank_items(previous_ranking_events, track_lookup, kind, artist_metadata)
+    rolling_ranked = rank_items(rolling_ranking_events, track_lookup, kind, artist_metadata)
     previous_ranks = {item["key"]: index + 1 for index, item in enumerate(previous_ranked)}
     rolling_ranks = {item["key"]: index + 1 for index, item in enumerate(rolling_ranked)}
     rolling_shares = {item["key"]: item["share_of_period"] for item in rolling_ranked}
@@ -441,7 +442,71 @@ def top_payload(
     }
 
 
-def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], kind: str) -> list[dict[str, Any]]:
+GENERIC_ALBUM_NAMES = {"", "unknown", "unknown album", "album unavailable", "unavailable", "music", "single", "singles"}
+
+
+def normalise_match_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def thumbnail_url(thumbnails: Any) -> str | None:
+    if isinstance(thumbnails, str):
+        return thumbnails or None
+    if not isinstance(thumbnails, list):
+        return None
+    candidates = [item for item in thumbnails if isinstance(item, dict) and item.get("url")]
+    if not candidates:
+        return None
+    return str(candidates[-1]["url"])
+
+
+def artist_metadata_for(artist: str, artist_metadata: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    if artist in artist_metadata:
+        return artist_metadata[artist]
+    lookup = {normalise_match_text(name): meta for name, meta in artist_metadata.items()}
+    return lookup.get(normalise_match_text(artist), {})
+
+
+def artist_names_for(track: dict[str, Any], event: dict[str, Any] | None = None) -> list[str]:
+    names: list[str] = []
+    for source in ((track.get("artists") if track else None), (event or {}).get("artists") if event else None):
+        if isinstance(source, list):
+            for item in source:
+                name = item.get("name") if isinstance(item, dict) else item
+                if name:
+                    names.append(str(name).strip())
+        elif isinstance(source, str):
+            names.append(source.strip())
+    for name in (track.get("primary_artist") if track else None, (event or {}).get("primary_artist") if event else None):
+        if name:
+            names.append(str(name).strip())
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        key = normalise_match_text(name)
+        if key and key not in seen:
+            seen.add(key)
+            deduped.append(name)
+    return deduped or [UNKNOWN_ARTIST]
+
+
+def album_name_is_usable(album: Any) -> bool:
+    text = normalise_match_text(album)
+    return bool(text and text not in GENERIC_ALBUM_NAMES)
+
+
+def album_group_for_track(track: dict[str, Any], event: dict[str, Any] | None = None) -> dict[str, str] | None:
+    album = str(track.get("album") or "").strip()
+    if not album_name_is_usable(album):
+        return None
+    artists = artist_names_for(track, event)
+    artist = artists[0] if artists else UNKNOWN_ARTIST
+    album_id = str(track.get("album_id") or "").strip()
+    key = f"id:{album_id}" if album_id else f"title:{normalise_match_text(album)}::artist:{normalise_match_text(artist)}"
+    return {"key": key, "album": album, "artist": artist, "album_id": album_id}
+
+
+def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], kind: str, artist_metadata: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     counts: Counter[str] = Counter()
     seconds: Counter[str] = Counter()
     usable_counts: Counter[str] = Counter()
@@ -472,19 +537,22 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         key=lambda key: (-counts[key], -seconds[key], str(key).lower()),
     )
     result = []
+    metadata = artist_metadata or {}
     for key in ranked:
         if kind == "artists":
             artist = key
             meta_track = None
             title = None
-            image = None
+            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails"))
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
+            album = None
         else:
             meta_track = track_lookup.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
             title = str(meta_track.get("title") or "Unknown track")
-            image = (meta_track.get("thumbnails") or [{}])[-1].get("url") if meta_track.get("thumbnails") else None
+            image = thumbnail_url(meta_track.get("thumbnails"))
             most_played_song = None
+            album = meta_track.get("album")
         play_count = counts[key]
         result.append(
             {
@@ -493,6 +561,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "video_id": meta_track.get("video_id") if meta_track else None,
                 "title": title,
                 "artist": artist,
+                "album": album,
                 "thumbnail": image,
                 "play_count": play_count,
                 "detected_minutes": round_minutes(seconds[key]),
@@ -505,6 +574,233 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             }
         )
     return result
+
+
+def artist_songs_payload(
+    normalised: dict[str, Any],
+    artist: str,
+    period: str = "this_month",
+    month: str | None = None,
+    timezone_name: str | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    spec = resolve_period(normalised, period, month, timezone_name, today)
+    events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
+    track_lookup = tracks_by_id(normalised)
+    target = normalise_match_text(artist)
+    matched = [
+        event
+        for event in events
+        if target and target in {normalise_match_text(name) for name in artist_names_for(track_lookup.get(event.get("track_id"), {}), event)}
+    ]
+    ranked = rank_items(matched, track_lookup, "tracks")
+    first_played = first_played_by_track(matched)
+    songs = [drilldown_song_payload(item, index, "artist", first_played) for index, item in enumerate(ranked, 1)]
+    top_song = songs[0]["title"] if songs else None
+    return {
+        "artist": artist,
+        "period_label": spec["label"],
+        "period": serialise_spec(spec),
+        "total_plays": len(matched),
+        "unique_songs": len({event.get("track_id") for event in matched if event.get("track_id")}),
+        "detected_minutes": round_minutes(seconds_for_events(matched)),
+        "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds_for_events(matched))),
+        "duration_coverage_percent": duration_quality(matched)["duration_coverage_percent"],
+        "most_replayed_song": top_song,
+        "songs": songs,
+    }
+
+
+def albums_payload(
+    normalised: dict[str, Any],
+    period: str = "this_month",
+    month: str | None = None,
+    timezone_name: str | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    spec = resolve_period(normalised, period, month, timezone_name, today)
+    events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
+    track_lookup = tracks_by_id(normalised)
+    albums = rank_albums(events, track_lookup, spec)
+    return {
+        "period": serialise_spec(spec),
+        "period_label": spec["label"],
+        "total_play_count": len(events),
+        "duration_quality": duration_quality(events),
+        "sample_warning": "Limited monthly sample - this view may be shaped by short-term spikes." if len(events) < MIN_STRONG_SAMPLE_PLAYS and spec["period"] in {"this_month", "month"} else None,
+        "albums": albums[:10],
+        "methodology": "Favourite albums are ranked from existing local listening events grouped by album metadata. Albums without usable album names are excluded instead of being guessed.",
+    }
+
+
+def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], spec: dict[str, Any]) -> list[dict[str, Any]]:
+    stats: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "album": "",
+            "artist": UNKNOWN_ARTIST,
+            "album_id": None,
+            "thumbnail": None,
+            "plays": 0,
+            "seconds": 0,
+            "usable": 0,
+            "tracks": set(),
+            "song_counts": Counter(),
+            "song_titles": {},
+            "last_played": "",
+        }
+    )
+    total = len(events)
+    for event in events:
+        track = track_lookup.get(event.get("track_id"), {})
+        group = album_group_for_track(track, event)
+        if not group:
+            continue
+        key = group["key"]
+        stat = stats[key]
+        stat["album"] = stat["album"] or group["album"]
+        stat["artist"] = stat["artist"] if stat["artist"] != UNKNOWN_ARTIST else group["artist"]
+        stat["album_id"] = stat["album_id"] or group["album_id"] or None
+        stat["thumbnail"] = stat["thumbnail"] or thumbnail_url(track.get("thumbnails"))
+        stat["plays"] += 1
+        sec = usable_duration_seconds(event) or 0
+        stat["seconds"] += sec
+        if sec:
+            stat["usable"] += 1
+        track_id = str(event.get("track_id") or "")
+        if track_id:
+            stat["tracks"].add(track_id)
+            stat["song_counts"][track_id] += 1
+            stat["song_titles"][track_id] = str(track.get("title") or event.get("title") or "Unknown track")
+        played = str(event.get("played_at") or "")
+        if played:
+            stat["last_played"] = max(stat["last_played"], played)
+    ranked = sorted(
+        stats.values(),
+        key=lambda item: (-int(item["plays"]), -float(item["seconds"]), -len(item["tracks"]), str(item["album"]).lower()),
+    )
+    result = []
+    for index, item in enumerate(ranked, 1):
+        play_count = int(item["plays"])
+        unique_songs = len(item["tracks"])
+        most_played_id, most_played_count = item["song_counts"].most_common(1)[0] if item["song_counts"] else ("", 0)
+        most_played_song = item["song_titles"].get(most_played_id)
+        result.append(
+            {
+                "rank": index,
+                "key": str(item.get("album_id") or f"{item['album']}::{item['artist']}"),
+                "album": item["album"],
+                "artist": item["artist"],
+                "album_id": item.get("album_id"),
+                "thumbnail": item.get("thumbnail"),
+                "plays": play_count,
+                "detected_minutes": round_minutes(item["seconds"]),
+                "detected_minutes_formatted": format_detected_minutes(round_minutes(item["seconds"])),
+                "unique_songs": unique_songs,
+                "most_played_song": most_played_song,
+                "share": round(play_count / total * 100, 1) if total else 0,
+                "duration_coverage_percent": round(int(item["usable"]) / play_count * 100, 1) if play_count else 0,
+                "last_played": item.get("last_played") or None,
+                "label": album_label(str(item["album"]), unique_songs, play_count, spec),
+                "album_signal_note": album_signal_note(most_played_song, most_played_count, play_count, unique_songs),
+            }
+        )
+    return result
+
+
+def album_label(album: str, unique_songs: int, play_count: int, spec: dict[str, Any]) -> str:
+    lowered = album.lower()
+    if "soundtrack" in lowered or lowered in {"ost", "score"}:
+        return "Soundtrack side quest"
+    if unique_songs <= 1 and play_count >= 3:
+        return "Single-heavy, album-light"
+    if unique_songs >= 5:
+        return "Album anchor"
+    if spec["period"] in {"this_month", "month"} and play_count >= 3:
+        return "Current album phase"
+    if unique_songs >= 3:
+        return "Deep-cut album"
+    return "Album signal"
+
+
+def album_signal_note(most_played_song: str | None, most_played_count: int, play_count: int, unique_songs: int) -> str:
+    if not most_played_song:
+        return "Album signal is based on available track metadata for this period."
+    if unique_songs <= 1 or (play_count and most_played_count / play_count >= 0.65):
+        return f"This album ranks here mainly because of repeated plays from {most_played_song}."
+    return "This looks like a real album-level signal because multiple songs from the album appear in the period."
+
+
+def album_songs_payload(
+    normalised: dict[str, Any],
+    album: str,
+    artist: str | None = None,
+    period: str = "this_month",
+    month: str | None = None,
+    timezone_name: str | None = None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    spec = resolve_period(normalised, period, month, timezone_name, today)
+    events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
+    track_lookup = tracks_by_id(normalised)
+    target_album = normalise_match_text(album)
+    target_artist = normalise_match_text(artist)
+    matched = []
+    for event in events:
+        track = track_lookup.get(event.get("track_id"), {})
+        if normalise_match_text(track.get("album")) != target_album:
+            continue
+        if target_artist and target_artist not in {normalise_match_text(name) for name in artist_names_for(track, event)}:
+            continue
+        matched.append(event)
+    ranked = rank_items(matched, track_lookup, "tracks")
+    first_played = first_played_by_track(matched)
+    songs = [drilldown_song_payload(item, index, "album", first_played) for index, item in enumerate(ranked, 1)]
+    top_song = songs[0]["title"] if songs else None
+    return {
+        "album": album,
+        "artist": artist,
+        "period_label": spec["label"],
+        "period": serialise_spec(spec),
+        "total_plays": len(matched),
+        "unique_songs": len({event.get("track_id") for event in matched if event.get("track_id")}),
+        "detected_minutes": round_minutes(seconds_for_events(matched)),
+        "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds_for_events(matched))),
+        "duration_coverage_percent": duration_quality(matched)["duration_coverage_percent"],
+        "most_played_song": top_song,
+        "songs": songs,
+    }
+
+
+def first_played_by_track(events: list[dict[str, Any]]) -> dict[str, str]:
+    first: dict[str, str] = {}
+    for event in events:
+        track_id = str(event.get("track_id") or "")
+        played = str(event.get("played_at") or "")
+        if not track_id or not played:
+            continue
+        first[track_id] = min(first.get(track_id, played), played)
+    return first
+
+
+def drilldown_song_payload(item: dict[str, Any], rank: int, scope: str, first_played: dict[str, str]) -> dict[str, Any]:
+    payload = {
+        "rank": rank,
+        "track_id": item.get("track_id"),
+        "video_id": item.get("video_id"),
+        "title": item.get("title"),
+        "artist": item.get("artist"),
+        "album": item.get("album"),
+        "thumbnail": item.get("thumbnail"),
+        "plays": item.get("play_count", 0),
+        "detected_minutes": item.get("detected_minutes", 0),
+        "detected_minutes_formatted": item.get("detected_minutes_formatted"),
+        "last_played": item.get("last_played"),
+        "first_played": first_played.get(str(item.get("track_id") or "")),
+        "duration_coverage_percent": item.get("duration_coverage_percent", 0),
+    }
+    share_key = "share_of_artist_plays" if scope == "artist" else "share_of_album_plays"
+    payload[share_key] = item.get("share_of_period", 0)
+    return payload
 
 
 def movement_payload(current_rank: int, previous_rank: int | None, comparison_allowed: bool) -> dict[str, Any] | None:
@@ -563,8 +859,8 @@ def taste_dna_payload(
         "nodes": nodes,
         "traits": traits,
         "structured_summary": structured_taste_summary(taste, nodes),
-        "sample_warning": "Limited sample: Taste DNA changes should be treated cautiously." if len(events) < MIN_STRONG_SAMPLE_PLAYS else None,
-        "methodology": "Taste DNA uses detected plays, curated artist genre mappings, and duration-aware period filters. It is music analysis, not a psychological diagnosis.",
+        "sample_warning": "Limited monthly sample - this view may be shaped by short-term spikes." if len(events) < MIN_STRONG_SAMPLE_PLAYS else None,
+        "methodology": "Sound Profile uses detected plays, curated artist genre mappings, and duration-aware period filters. It is music analysis, not a psychological diagnosis.",
     }
 
 
@@ -721,7 +1017,7 @@ def taste_dna_comparison_payload(
         delta = claims["declining_cluster"]["delta"]
         sentence = f"{name} is lower in {compare_payload['period']['label']} than the {base_payload['period']['label']} baseline ({delta} points), while no cluster has enough growth for a strong growth claim."
     else:
-        sentence = "There is not enough reliable period contrast to make a strong Taste DNA change claim yet."
+        sentence = "There is not enough reliable period contrast to make a strong sound-profile change claim yet."
     return {
         "base_period": base_payload["period"],
         "compare_period": compare_payload["period"],
