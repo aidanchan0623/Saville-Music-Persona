@@ -2,10 +2,10 @@ import { ChartPanel } from "../components/ChartPanel";
 import { EmptyState } from "../components/EmptyState";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import type { Charts, ListeningMinutes } from "../types/api";
+import type { Charts, ListeningMinutes, MusicSource } from "../types/api";
 import { formatMinutes } from "../utils/format";
 
-export function PatternsPage({ charts }: { charts: Charts | null }) {
+export function PatternsPage({ charts, source }: { charts: Charts | null; source: MusicSource }) {
   const [period, setPeriod] = useState<"this_month" | "month" | "rolling_year">("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
@@ -16,8 +16,8 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      api.listeningMinutes(period, period === "month" ? selectedMonth : null),
-      api.charts(period, period === "month" ? selectedMonth : null),
+      api.listeningMinutes(period, period === "month" ? selectedMonth : null, source),
+      api.charts(period, period === "month" ? selectedMonth : null, source),
     ])
       .then(([next, nextCharts]) => {
         if (cancelled) return;
@@ -31,7 +31,7 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
     return () => {
       cancelled = true;
     };
-  }, [period, selectedMonth]);
+  }, [period, selectedMonth, source]);
 
   if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." />;
   const months = minutes?.period.available_months ?? [];
@@ -41,7 +41,9 @@ export function PatternsPage({ charts }: { charts: Charts | null }) {
     <div className="space-y-5">
       <div>
         <h1 className="text-3xl font-bold text-white">Listening Patterns</h1>
-        <p className="mt-2 text-mist">Charts follow the dates and music details available in your local history.</p>
+        <p className="mt-2 text-mist">
+          {source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
+        </p>
       </div>
 
       <section className="rounded-lg border border-violet/20 bg-panel/82 p-5 shadow-glow">

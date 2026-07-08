@@ -1,3 +1,15 @@
+export type MusicSource = "youtube" | "spotify";
+
+export interface SpotifyStatus {
+  configured: boolean;
+  connected: boolean;
+  display_name: string | null;
+  profile_image: string | null;
+  spotify_user_id: string | null;
+  last_synced_at: string | null;
+  message: string;
+}
+
 export interface Coverage {
   earliest_detected_play: string | null;
   latest_detected_play: string | null;
@@ -86,6 +98,8 @@ export interface TopTrack {
   rank: number;
   track_id: string;
   video_id: string | null;
+  source?: MusicSource | string;
+  source_track_id?: string | null;
   title: string;
   artist: string;
   artists: string[];
@@ -96,12 +110,18 @@ export interface TopTrack {
   last_played: string | null;
   why_it_ranked: string;
   genre_clusters: string[];
+  popularity?: number | null;
+  spotify_time_range?: string | null;
+  spotify_rank?: number | null;
+  spotify_signal_label?: string | null;
 }
 
 export interface TopArtist {
   rank: number;
   artist: string;
   artist_id: string | null;
+  source?: MusicSource | string;
+  source_artist_id?: string | null;
   image: string | null;
   play_count: number;
   share_of_listens: number;
@@ -116,6 +136,8 @@ export interface TopArtist {
   genre_confidence_label: string;
   taste_role: string;
   why_it_matters: string;
+  popularity?: number | null;
+  followers?: number | null;
 }
 
 export interface Overview {
@@ -140,6 +162,8 @@ export interface Overview {
   unknown_artist_coverage_percent: number;
   use_demo: boolean;
   warnings: string[];
+  source?: MusicSource;
+  source_label?: string;
 }
 
 export interface PeriodSpec {
@@ -202,6 +226,9 @@ export interface PeriodTopItem {
   rank: number;
   track_id: string | null;
   video_id: string | null;
+  source?: MusicSource | string;
+  source_track_id?: string | null;
+  source_artist_id?: string | null;
   title: string | null;
   artist: string;
   album: string | null;
@@ -216,6 +243,9 @@ export interface PeriodTopItem {
   last_played: string | null;
   movement: TopMovement | null;
   interpretation_label: string;
+  spotify_time_range?: string | null;
+  spotify_rank?: number | null;
+  spotify_signal_label?: string | null;
 }
 
 export interface PeriodTopResponse {
@@ -469,6 +499,7 @@ export interface PersonaReport {
   model: string;
   evidence: Record<string, unknown>;
   generated_at: string;
+  source?: MusicSource;
 }
 
 export interface Recommendation {

@@ -53,8 +53,17 @@ class JsonRepository:
             return None
         return json.loads(row["value"])
 
+    def delete_json(self, key: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM json_cache WHERE key = ?", (key,))
+
+    def delete_json_many(self, keys: list[str]) -> None:
+        if not keys:
+            return
+        with self.connect() as conn:
+            conn.executemany("DELETE FROM json_cache WHERE key = ?", [(key,) for key in keys])
+
     def updated_at(self, key: str) -> str | None:
         with self.connect() as conn:
             row = conn.execute("SELECT updated_at FROM json_cache WHERE key = ?", (key,)).fetchone()
         return row["updated_at"] if row else None
-

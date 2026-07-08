@@ -1,6 +1,6 @@
-import { ExternalLink, ShieldCheck } from "lucide-react";
+import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { StatusPill } from "../components/StatusPill";
-import type { AuthStatus, Prerequisites } from "../types/api";
+import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
 
 interface Props {
   auth: AuthStatus | null;
@@ -10,9 +10,25 @@ interface Props {
   onUseDemoChange: (value: boolean) => void;
   onCheckAuth: () => void;
   onImportTakeout: (file: File) => void;
+  spotifyStatus: SpotifyStatus | null;
+  onConnectSpotify: () => void;
+  onRefreshSpotify: () => void;
+  onDisconnectSpotify: () => void;
 }
 
-export function SettingsPage({ auth, prerequisites, useDemo, busy, onUseDemoChange, onCheckAuth, onImportTakeout }: Props) {
+export function SettingsPage({
+  auth,
+  prerequisites,
+  useDemo,
+  busy,
+  onUseDemoChange,
+  onCheckAuth,
+  onImportTakeout,
+  spotifyStatus,
+  onConnectSpotify,
+  onRefreshSpotify,
+  onDisconnectSpotify,
+}: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -44,6 +60,53 @@ export function SettingsPage({ auth, prerequisites, useDemo, busy, onUseDemoChan
         </div>
         <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
           Browser-header authentication is deliberately not automated. If you use it as an advanced fallback, treat the header file like account-access data and keep it out of Git.
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Connect Spotify</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
+              Spotify is optional. It stays separate from YouTube Music and uses top artists, top tracks, saved songs, playlists, and recent plays.
+            </p>
+          </div>
+          <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Connected" : "Optional"} />
+        </div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <div className="rounded-md bg-white/[0.04] p-4">
+            <p className="text-xs uppercase tracking-[0.16em] text-mist/60">Account</p>
+            <div className="mt-3 flex items-center gap-3">
+              {spotifyStatus?.profile_image ? (
+                <img className="h-11 w-11 rounded-full object-cover" src={spotifyStatus.profile_image} alt={spotifyStatus.display_name ?? "Spotify profile"} />
+              ) : (
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-white/10 text-sm font-bold text-white">SP</span>
+              )}
+              <p className="text-sm text-white">{spotifyStatus?.display_name || "Not connected"}</p>
+            </div>
+          </div>
+          <Info label="Spotify configured" value={spotifyStatus?.configured ? "Yes" : "No"} />
+          <Info label="Last Spotify sync" value={spotifyStatus?.last_synced_at || "Never"} />
+          <Info label="Status" value={spotifyStatus?.message || "Not checked yet"} />
+        </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          {!spotifyStatus?.connected ? (
+            <button className="btn-primary" disabled={busy || !spotifyStatus?.configured} onClick={onConnectSpotify}>
+              Connect Spotify
+            </button>
+          ) : (
+            <>
+              <button className="btn-secondary" disabled={busy} onClick={onRefreshSpotify}>
+                <RefreshCw size={16} /> Refresh Spotify Data
+              </button>
+              <button className="btn-secondary" disabled={busy} onClick={onDisconnectSpotify}>
+                Disconnect Spotify
+              </button>
+            </>
+          )}
+        </div>
+        <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-mist">
+          Spotify does not provide Google Takeout-style full historical play counts. Initial Spotify profiles are based on top items, saved music, playlists, and recent sync data; monthly history improves after repeated syncs.
         </div>
       </section>
 

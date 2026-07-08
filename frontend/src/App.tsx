@@ -10,7 +10,7 @@ import { ReportPage } from "./pages/ReportPage";
 import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, Charts, ListeningMinutes, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
 
 type Page = "overview" | "top10" | "scores" | "patterns" | "report" | "recommendations" | "settings";
 
@@ -26,6 +26,11 @@ const nav: { id: Page; label: string; icon: ElementType }[] = [
 
 export default function App() {
   const [page, setPage] = useState<Page>("overview");
+  const [source, setSource] = useState<MusicSource>(() => {
+    const querySource = new URLSearchParams(window.location.search).get("source");
+    if (querySource === "spotify") return "spotify";
+    return localStorage.getItem("smp_music_source") === "spotify" ? "spotify" : "youtube";
+  });
   const [useDemo, setUseDemo] = useState(() => localStorage.getItem("smp_use_demo") === "true");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [tracks, setTracks] = useState<TopTrack[]>([]);
@@ -37,26 +42,40 @@ export default function App() {
   const [report, setReport] = useState<PersonaReport | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [spotifyStatus, setSpotifyStatus] = useState<SpotifyStatus | null>(null);
   const [prerequisites, setPrerequisites] = useState<Prerequisites | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const loadStatus = async () => {
-    const [nextPrerequisites, nextAuth] = await Promise.all([api.prerequisites(), api.authStatus()]);
+    const [nextPrerequisites, nextAuth, nextSpotifyStatus] = await Promise.all([api.prerequisites(), api.authStatus(), api.spotifyStatus()]);
     setPrerequisites(nextPrerequisites);
     setAuth(nextAuth);
+    setSpotifyStatus(nextSpotifyStatus);
   };
 
-  const loadAnalysis = async () => {
-    const nextOverview = await api.overview();
+  const clearAnalysis = () => {
+    setOverview(null);
+    setTracks([]);
+    setArtists([]);
+    setScores([]);
+    setCharts(null);
+    setThisMonthMinutes(null);
+    setRollingYearMinutes(null);
+    setReport(null);
+    setRecommendations([]);
+  };
+
+  const loadAnalysis = async (activeSource: MusicSource = source) => {
+    const nextOverview = await api.overview(activeSource);
     setOverview(nextOverview);
     const [nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.allSettled([
-      api.topTracks(),
-      api.topArtists(),
-      api.scores(),
-      api.charts(),
-      api.listeningMinutes("this_month"),
-      api.listeningMinutes("rolling_year"),
+      api.topTracks(activeSource),
+      api.topArtists(activeSource),
+      api.scores("rolling_year", null, activeSource),
+      api.charts("rolling_year", null, activeSource),
+      api.listeningMinutes("this_month", null, activeSource),
+      api.listeningMinutes("rolling_year", null, activeSource),
     ] as const);
     if (nextTracks.status === "fulfilled") setTracks(nextTracks.value);
     if (nextArtists.status === "fulfilled") setArtists(nextArtists.value);
@@ -65,13 +84,17 @@ export default function App() {
     if (nextThisMonthMinutes.status === "fulfilled") setThisMonthMinutes(nextThisMonthMinutes.value);
     if (nextRollingYearMinutes.status === "fulfilled") setRollingYearMinutes(nextRollingYearMinutes.value);
     try {
-      setReport(await api.latestReport());
+      setReport(await api.latestReport(activeSource));
     } catch {
       setReport(null);
     }
-    try {
-      setRecommendations(await api.recommendations());
-    } catch {
+    if (activeSource === "youtube") {
+      try {
+        setRecommendations(await api.recommendations());
+      } catch {
+        setRecommendations([]);
+      }
+    } else {
       setRecommendations([]);
     }
   };
@@ -82,16 +105,25 @@ export default function App() {
 
   useEffect(() => {
     void loadStatus().catch((error) => setMessage(error.message));
-    void loadAnalysis().catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("smp_music_source", source);
+    void loadAnalysis(source).catch((error) => {
+      clearAnalysis();
+      if (source === "spotify") {
+        setMessage(error instanceof Error ? error.message : "Connect Spotify in Settings, then refresh Spotify data.");
+      }
+    });
+  }, [source]);
 
   const refresh = async () => {
     setBusy(true);
-    setMessage(useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
+    setMessage(source === "spotify" ? "Refreshing local Spotify data..." : useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
     try {
-      const response = await api.refresh(useDemo);
+      const response = source === "spotify" ? await api.spotifyRefresh() : await api.refresh(useDemo);
       await loadStatus();
-      await loadAnalysis();
+      await loadAnalysis(source);
       setMessage(`Refreshed ${response.track_count} tracks and ${response.play_count} detected plays.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Refresh failed.");
@@ -104,7 +136,7 @@ export default function App() {
     setBusy(true);
     setMessage("Asking local Gemma to rewrite the deterministic Music Character profile...");
     try {
-      const nextReport = await api.generateReport(mode);
+      const nextReport = await api.generateReport(mode, source);
       setReport(nextReport);
       setPage("report");
       setMessage("Persona report generated locally.");
@@ -134,7 +166,8 @@ export default function App() {
     setMessage(`Importing ${file.name} from Google Takeout...`);
     try {
       const result = await api.importTakeout(file);
-      await loadAnalysis();
+      setSource("youtube");
+      await loadAnalysis("youtube");
       setMessage(`${result.message} Imported ${result.imported_count} history entries.`);
       setPage("overview");
     } catch (error) {
@@ -145,6 +178,10 @@ export default function App() {
   };
 
   const createPlaylist = async () => {
+    if (source === "spotify") {
+      setMessage("Playlist creation currently uses YouTube Music recommendations. Switch back to YouTube Music first.");
+      return;
+    }
     const confirmed = window.confirm('Create a private YouTube Music playlist named "Saville Recommendations"?');
     if (!confirmed) return;
     setBusy(true);
@@ -153,6 +190,43 @@ export default function App() {
       setMessage(`${result.message} Playlist ID: ${result.playlist_id}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Playlist creation failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connectSpotify = () => {
+    window.location.href = api.spotifyLoginUrl();
+  };
+
+  const refreshSpotify = async () => {
+    setBusy(true);
+    setMessage("Refreshing local Spotify data...");
+    try {
+      const response = await api.spotifyRefresh();
+      await loadStatus();
+      if (source === "spotify") {
+        await loadAnalysis("spotify");
+      }
+      setMessage(`Refreshed Spotify with ${response.track_count} tracks and ${response.play_count} local signals.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Spotify refresh failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnectSpotify = async () => {
+    setBusy(true);
+    try {
+      const result = await api.spotifyDisconnect();
+      await loadStatus();
+      if (source === "spotify") {
+        setSource("youtube");
+      }
+      setMessage(result.message);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Spotify disconnect failed.");
     } finally {
       setBusy(false);
     }
@@ -177,16 +251,17 @@ export default function App() {
             onOpenScores={() => setPage("scores")}
             onOpenPatterns={() => setPage("patterns")}
             onOpenReport={() => setPage("report")}
+            source={source}
           />
         );
       case "top10":
-        return <Top10Page />;
+        return <Top10Page source={source} />;
       case "scores":
-        return <ScoresPage scores={scores} />;
+        return <ScoresPage scores={scores} source={source} />;
       case "patterns":
-        return <PatternsPage charts={charts} />;
+        return <PatternsPage charts={charts} source={source} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} />;
+        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} source={source} />;
       case "recommendations":
         return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} />;
       case "settings":
@@ -199,10 +274,14 @@ export default function App() {
             onUseDemoChange={setUseDemo}
             onCheckAuth={() => void loadStatus().catch((error) => setMessage(error.message))}
             onImportTakeout={importTakeout}
+            spotifyStatus={spotifyStatus}
+            onConnectSpotify={connectSpotify}
+            onRefreshSpotify={refreshSpotify}
+            onDisconnectSpotify={disconnectSpotify}
           />
         );
     }
-  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations]);
+  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
 
   return (
     <div className="min-h-screen bg-ink text-white">
@@ -229,7 +308,8 @@ export default function App() {
           })}
         </nav>
         <div className="absolute bottom-5 left-5 right-5 space-y-2">
-          <StatusPill ok={auth?.connected || useDemo} label={useDemo ? "Demo data" : auth?.connected ? "Connected" : "Not connected"} />
+          <StatusPill ok={auth?.connected || useDemo} label={useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : "YouTube offline"} />
+          <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} />
           <StatusPill ok={Boolean(prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma offline"} />
         </div>
       </aside>
@@ -246,6 +326,7 @@ export default function App() {
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
+          <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
           {message ? (
             <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-mist">
               {message}
@@ -255,5 +336,45 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+function SourceSwitcher({
+  source,
+  spotifyStatus,
+  onChange,
+  onConnectSpotify,
+}: {
+  source: MusicSource;
+  spotifyStatus: SpotifyStatus | null;
+  onChange: (source: MusicSource) => void;
+  onConnectSpotify: () => void;
+}) {
+  const label = source === "spotify" ? "Spotify" : "YouTube Music";
+  return (
+    <section className="mb-5 rounded-lg border border-line bg-panel/72 p-3">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-mist/70">Music source</p>
+          <p className="mt-1 text-sm font-semibold text-white">Currently analysing: {label}</p>
+          {source === "spotify" ? (
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-mist">
+              Spotify profile is based on top items, saved music, playlists and recent sync data. Full historical play counts are not available immediately.
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "youtube" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("youtube")}>
+            YouTube Music
+          </button>
+          <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "spotify" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("spotify")}>
+            Spotify
+          </button>
+          {source === "spotify" && !spotifyStatus?.connected ? (
+            <button className="btn-secondary" onClick={onConnectSpotify}>Connect Spotify</button>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }

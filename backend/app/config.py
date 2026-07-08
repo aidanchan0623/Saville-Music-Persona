@@ -44,6 +44,10 @@ class Settings:
             self.ytmusic_browser_auth_file = self.project_root / self.ytmusic_browser_auth_file
         self.ytmusic_client_id = os.getenv("YTMUSIC_OAUTH_CLIENT_ID", "")
         self.ytmusic_client_secret = os.getenv("YTMUSIC_OAUTH_CLIENT_SECRET", "")
+        self.spotify_client_id = os.getenv("SPOTIFY_CLIENT_ID", "")
+        self.spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+        self.spotify_redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/api/spotify/callback")
+        self.frontend_url = os.getenv("SMP_FRONTEND_URL", "http://localhost:5173")
         self.cors_origins = [
             "http://localhost:5173",
             "http://127.0.0.1:5173",

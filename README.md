@@ -1,6 +1,6 @@
 # Saville Music Persona
 
-Saville Music Persona is a private, local-first web app that analyses your YouTube Music listening taste with `ytmusicapi`, then uses deterministic Music Character rules with an optional local Ollama model (`gemma3:4b`) to write a polished music-personality report.
+Saville Music Persona is a private, local-first web app that analyses your YouTube Music listening taste with `ytmusicapi`, optionally analyses a separate Spotify profile, then uses deterministic Music Character rules with an optional local Ollama model (`gemma3:4b`) to write a polished music-personality report.
 
 No OpenAI, Gemini, or paid cloud API key is required. Credentials, cached history, reports, and playlist exports stay on your Windows laptop.
 
@@ -17,6 +17,7 @@ Screenshots are intentionally left out until you run the app against your own pr
 - Music Character persona report modes
 - Evidence-driven recommendations
 - Connect YouTube Music settings page
+- Optional Spotify login/profile source switcher
 
 ## Architecture
 
@@ -24,11 +25,13 @@ Screenshots are intentionally left out until you run the app against your own pr
 flowchart LR
   UI["React + Vite + Tailwind dashboard"] --> API["FastAPI backend"]
   API --> YTM["ytmusicapi authenticated locally"]
+  API --> Spotify["Spotify OAuth + Web API optional"]
   API --> DB["SQLite + ignored raw JSON cache"]
   API --> Scoring["Deterministic scoring engine"]
   API --> Ollama["Ollama localhost:11434 gemma3:4b"]
   Scoring --> API
   YTM --> API
+  Spotify --> API
   Ollama --> API
 ```
 
@@ -76,6 +79,30 @@ $env:YTMUSIC_AUTH_FILE="backend/private/oauth.json"
 ```
 
 Then generate `backend/private/oauth.json` using the `ytmusicapi oauth` flow from the virtual environment. Keep that file private.
+
+## Optional Spotify authentication
+
+YouTube Music remains the default source. Spotify is optional and stored separately, so disconnecting Spotify does not delete or overwrite YouTube Music or Google Takeout data.
+
+1. Create an app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. Add this redirect URI to the Spotify app:
+
+```text
+http://localhost:8000/api/spotify/callback
+```
+
+3. Put credentials in `backend/private/.env` or your local shell, never in Git:
+
+```powershell
+SPOTIFY_CLIENT_ID=your-spotify-client-id
+SPOTIFY_CLIENT_SECRET=your-spotify-client-secret
+SPOTIFY_REDIRECT_URI=http://localhost:8000/api/spotify/callback
+```
+
+4. Run the backend and frontend, open Settings, and click Connect Spotify.
+5. If your Spotify app is in Development Mode, add each friend/account as an allow-listed user in the Spotify dashboard.
+
+Spotify data uses top tracks, top artists, saved songs, playlists, and recent plays. Spotify does not provide a Google Takeout-style full historical play-count export through the Web API, so Spotify monthly history improves after repeated syncs.
 
 ## Run the app
 
@@ -151,6 +178,7 @@ The repository ignores:
 
 - `backend/private/`
 - `oauth.json`
+- Spotify client secrets and tokens
 - browser headers
 - cookies
 - `.env`
@@ -169,6 +197,7 @@ Never commit account data or authentication files.
 - Play timestamps may be relative, missing, or not parseable.
 - Detected listening minutes are estimates from full track durations, not exact listening time.
 - Google Takeout and YouTube Music history can omit durations, so duration coverage may be partial.
+- Spotify does not expose full historical play counts through the Web API; Spotify profiles use top-item, saved-library, playlist, and recent-sync signals.
 - Genre, subscriber, and release-year metadata may be incomplete.
 - The LLM explains calculated data; it does not decide facts.
 - The app never claims a full 365-day analysis unless the available dated history supports it.

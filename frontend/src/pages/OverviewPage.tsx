@@ -11,6 +11,7 @@ import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection"
 import type {
   AuthStatus,
   ListeningMinutes,
+  MusicSource,
   Overview,
   PeriodTopItem,
   Prerequisites,
@@ -34,6 +35,7 @@ interface Props {
   onOpenScores: () => void;
   onOpenPatterns: () => void;
   onOpenReport: () => void;
+  source: MusicSource;
 }
 
 export function OverviewPage({
@@ -50,6 +52,7 @@ export function OverviewPage({
   onOpenScores,
   onOpenPatterns,
   onOpenReport,
+  source,
 }: Props) {
   const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
   const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
@@ -59,9 +62,9 @@ export function OverviewPage({
     if (!overview) return;
     let cancelled = false;
     Promise.allSettled([
-      api.tasteDna("this_month"),
-      api.tasteDnaCompare("rolling_year", "this_month"),
-      api.periodTop("this_month", "artists"),
+      api.tasteDna("this_month", null, source),
+      api.tasteDnaCompare("rolling_year", "this_month", null, source),
+      api.periodTop("this_month", "artists", null, source),
     ] as const).then(([tasteResult, comparisonResult, artistsResult]) => {
       if (cancelled) return;
       if (tasteResult.status === "fulfilled") setCurrentTaste(tasteResult.value);
@@ -71,7 +74,7 @@ export function OverviewPage({
     return () => {
       cancelled = true;
     };
-  }, [overview?.last_refreshed_at]);
+  }, [overview?.last_refreshed_at, source]);
 
   const scoreByKey = useMemo(() => new Map(scores.map((score) => [score.key, score])), [scores]);
 
@@ -79,7 +82,7 @@ export function OverviewPage({
     return (
       <EmptyState
         title="No listening analysis loaded yet"
-        body="Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."
+        body={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
         action={
           <div className="flex flex-wrap justify-center gap-3">
             <button className="btn-primary" onClick={onRefresh} disabled={busy}>

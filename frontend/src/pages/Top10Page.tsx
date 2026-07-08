@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import type {
+  MusicSource,
   PeriodTopItem,
   PeriodTopResponse,
   TopAlbumItem,
@@ -16,7 +17,7 @@ import { formatDate } from "../utils/format";
 
 type TopPeriod = "this_month" | "month" | "rolling_year";
 
-export function Top10Page() {
+export function Top10Page({ source }: { source: MusicSource }) {
   const [period, setPeriod] = useState<TopPeriod>("this_month");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [tracks, setTracks] = useState<PeriodTopResponse | null>(null);
@@ -36,9 +37,9 @@ export function Top10Page() {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.periodTop(period, "tracks", period === "month" ? selectedMonth : null),
-      api.periodTop(period, "artists", period === "month" ? selectedMonth : null),
-      api.topAlbums(period, period === "month" ? selectedMonth : null),
+      api.periodTop(period, "tracks", period === "month" ? selectedMonth : null, source),
+      api.periodTop(period, "artists", period === "month" ? selectedMonth : null, source),
+      api.topAlbums(period, period === "month" ? selectedMonth : null, source),
     ])
       .then(([nextTracks, nextArtists, nextAlbums]) => {
         if (cancelled) return;
@@ -59,7 +60,7 @@ export function Top10Page() {
     return () => {
       cancelled = true;
     };
-  }, [period, selectedMonth]);
+  }, [period, selectedMonth, source]);
 
   useEffect(() => {
     if (!selectedArtist) {
@@ -68,7 +69,7 @@ export function Top10Page() {
     }
     let cancelled = false;
     setArtistLoading(true);
-    api.artistSongs(selectedArtist, period, period === "month" ? selectedMonth : null)
+    api.artistSongs(selectedArtist, period, period === "month" ? selectedMonth : null, source)
       .then((next) => {
         if (!cancelled) setArtistSongs(next);
       })
@@ -81,7 +82,7 @@ export function Top10Page() {
     return () => {
       cancelled = true;
     };
-  }, [selectedArtist, period, selectedMonth]);
+  }, [selectedArtist, period, selectedMonth, source]);
 
   useEffect(() => {
     if (!selectedAlbum) {
@@ -90,7 +91,7 @@ export function Top10Page() {
     }
     let cancelled = false;
     setAlbumLoading(true);
-    api.albumSongs(selectedAlbum.album, selectedAlbum.artist, period, period === "month" ? selectedMonth : null)
+    api.albumSongs(selectedAlbum.album, selectedAlbum.artist, period, period === "month" ? selectedMonth : null, source)
       .then((next) => {
         if (!cancelled) setAlbumSongs(next);
       })
@@ -103,7 +104,7 @@ export function Top10Page() {
     return () => {
       cancelled = true;
     };
-  }, [selectedAlbum, period, selectedMonth]);
+  }, [selectedAlbum, period, selectedMonth, source]);
 
   const months = tracks?.period.available_months ?? artists?.period.available_months ?? albums?.period.available_months ?? [];
   const activeLabel = displayPeriodLabel(tracks?.period.label ?? albums?.period.label, period);
@@ -120,7 +121,7 @@ export function Top10Page() {
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
             <h1 className="mt-3 text-5xl font-black leading-none text-white md:text-7xl">Top 10</h1>
             <p className="mt-4 max-w-3xl text-lg leading-8 text-mist">
-              The songs, artists, and albums currently defining this slice of your listening.
+              {source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
@@ -145,6 +146,7 @@ export function Top10Page() {
           <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{activeLabel}</span>
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{(tracks?.total_play_count ?? 0).toLocaleString()} detected plays</span>
+          {source === "spotify" ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Top-item based, not exact Spotify history</span> : null}
           {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
         </div>
       </header>
@@ -159,17 +161,19 @@ export function Top10Page() {
 
       <TopList
         title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`}
-        caption="Your clearest song leaders, ranked by local play history."
+        caption={source === "spotify" ? "Your clearest Spotify top-track signals. Exact lifetime play counts are not available from Spotify." : "Your clearest song leaders, ranked by local play history."}
         response={tracks}
         loading={loading}
+        source={source}
       />
 
       <TopList
         title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
-        caption="The artists pulling the most attention in this period."
+        caption={source === "spotify" ? "Official Spotify artist images and genres where available." : "The artists pulling the most attention in this period."}
         response={artists}
         loading={loading}
         artistList
+        source={source}
         selectedArtist={selectedArtist}
         onViewSongs={setSelectedArtist}
       />
@@ -178,7 +182,7 @@ export function Top10Page() {
         <ArtistDrilldownPanel artist={selectedArtist} response={artistSongs} loading={artistLoading} onClose={() => setSelectedArtist(null)} />
       ) : null}
 
-      <FavouriteAlbumsSection response={albums} loading={loading} selectedAlbum={selectedAlbum} onViewSongs={setSelectedAlbum} />
+      <FavouriteAlbumsSection response={albums} loading={loading} selectedAlbum={selectedAlbum} onViewSongs={setSelectedAlbum} source={source} />
 
       {selectedAlbum ? (
         <AlbumDrilldownPanel album={selectedAlbum} response={albumSongs} loading={albumLoading} onClose={() => setSelectedAlbum(null)} />
@@ -203,6 +207,7 @@ function TopList({
   artistList = false,
   selectedArtist,
   onViewSongs,
+  source,
 }: {
   title: string;
   caption: string;
@@ -211,6 +216,7 @@ function TopList({
   artistList?: boolean;
   selectedArtist?: string | null;
   onViewSongs?: (artist: string) => void;
+  source: MusicSource;
 }) {
   return (
     <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
@@ -230,6 +236,7 @@ function TopList({
               artistList={artistList}
               selected={artistList && selectedArtist === item.artist}
               onViewSongs={onViewSongs}
+              source={source}
             />
           ))
         ) : (
@@ -240,7 +247,7 @@ function TopList({
   );
 }
 
-function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: PeriodTopItem; artistList: boolean; selected?: boolean; onViewSongs?: (artist: string) => void }) {
+function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { item: PeriodTopItem; artistList: boolean; selected?: boolean; onViewSongs?: (artist: string) => void; source: MusicSource }) {
   const title = artistList ? item.artist : item.title ?? "Unknown track";
   const rank = `#${String(item.rank).padStart(2, "0")}`;
 
@@ -259,7 +266,7 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
               {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
             </p>
             <div className="mt-5 flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-black text-white">{item.play_count.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
+              <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, true)}</span>
               <Movement movement={item.movement} />
             </div>
             {onViewSongs ? (
@@ -292,7 +299,7 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
           {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
-          <span className="text-2xl font-black text-white">{item.play_count.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
+          <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, false)}</span>
           <Movement movement={item.movement} />
         </div>
       </div>
@@ -300,20 +307,20 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs }: { item: Peri
   );
 }
 
-function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void }) {
+function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs, source }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   return (
     <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
       <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">Favourite Albums</h2>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">Projects with the strongest pull across your local plays.</p>
+          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."}</p>
         </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}
       </div>
       {response?.albums.length ? (
         <div className="grid gap-4 xl:grid-cols-2">
           {response.albums.map((album) => (
-            <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} />
+            <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} source={source} />
           ))}
         </div>
       ) : (
@@ -323,7 +330,7 @@ function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs 
   );
 }
 
-function AlbumCard({ album, selected, onViewSongs }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void }) {
+function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   const rank = `#${String(album.rank).padStart(2, "0")}`;
   return (
     <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
@@ -337,7 +344,7 @@ function AlbumCard({ album, selected, onViewSongs }: { album: TopAlbumItem; sele
           <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{album.album}</h3>
           <p className="mt-2 truncate text-base font-semibold text-mist">{album.artist}</p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-black text-white">{album.plays.toLocaleString()} <span className="text-base font-semibold text-mist">plays</span></span>
+            <span className="text-2xl font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
             <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{album.unique_songs} songs</span>
           </div>
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
@@ -522,6 +529,12 @@ function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
 function displayListLabel(label: string, artistList: boolean) {
   if (artistList && label === "Comfort favourite") return "Stable favourite";
   return label;
+}
+
+function spotifyEvidenceLabel(item: PeriodTopItem, source: MusicSource, artistList: boolean) {
+  if (source !== "spotify") return `${item.play_count.toLocaleString()} plays`;
+  if (artistList) return item.play_count > 1 ? `${item.play_count.toLocaleString()} signals` : "Spotify top artist";
+  return item.spotify_signal_label || (item.play_count > 1 ? `${item.play_count.toLocaleString()} signals` : "Spotify top track");
 }
 
 function initials(value: string) {

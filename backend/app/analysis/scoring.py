@@ -326,16 +326,22 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     no_repeat_signal = max_play_count <= 1
     for index, track in enumerate([track for track in ranked if track.get("play_count_in_period", 0) > 0][:10], 1):
         reason = f"{track.get('play_count_in_period', 0)} detected plays in the analysed period; recency only broke ties."
+        if track.get("source") == "spotify":
+            reason = track.get("spotify_signal_label") or "Spotify top-item and recent-sync signal."
         if no_repeat_signal:
             reason = (
                 "The available YouTube Music web history has no repeated tracks, so this row is a recent detected song "
                 "rather than a meaningful top-song ranking. Import Google Takeout history for stronger counts."
             )
+            if track.get("source") == "spotify":
+                reason = "Spotify does not expose full historical play counts here; this row is based on top-item or recent-sync evidence."
         result.append(
             {
                 "rank": index,
                 "track_id": track["track_id"],
                 "video_id": track.get("video_id"),
+                "source": track.get("source"),
+                "source_track_id": track.get("source_track_id"),
                 "title": track["title"],
                 "artist": track["primary_artist"],
                 "artists": track["artists"],
@@ -346,6 +352,10 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "last_played": track.get("last_played"),
                 "why_it_ranked": reason,
                 "genre_clusters": track.get("genre_clusters", []),
+                "popularity": track.get("popularity"),
+                "spotify_time_range": track.get("spotify_time_range"),
+                "spotify_rank": track.get("spotify_rank"),
+                "spotify_signal_label": track.get("spotify_signal_label"),
                 "ranking_confidence": "low_no_repeat_signal" if no_repeat_signal else "play_count",
             }
         )
@@ -380,12 +390,17 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
             label = "Secondary influence"
         else:
             label = "Distinctive side interest"
-        top_genres = [name for name, _ in artist_genres[artist].most_common(3)]
+        top_genres = [name for name, _ in artist_genres[artist].most_common(3)] or list(meta.get("genres") or [])[:3]
+        observation = f"{artist} accounts for {round(share, 1)}% of detected plays across {unique_songs} song(s)."
+        if meta.get("source") == "spotify":
+            observation = f"{artist} is supported by Spotify top-item and recent-sync signals across {unique_songs} song(s)."
         result.append(
             {
                 "rank": index,
                 "artist": artist,
                 "artist_id": meta.get("artist_id"),
+                "source": meta.get("source"),
+                "source_artist_id": meta.get("artist_id"),
                 "image": thumbnail_url(meta.get("thumbnails")),
                 "play_count": count,
                 "share_of_listens": round(share, 1),
@@ -393,7 +408,9 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
                 "most_played_song": most_played,
                 "artist_loyalty_label": label,
                 "related_genres": top_genres or ["inferred genre unavailable"],
-                "observation": f"{artist} accounts for {round(share, 1)}% of detected plays across {unique_songs} song(s).",
+                "popularity": meta.get("popularity"),
+                "followers": meta.get("followers"),
+                "observation": observation,
             }
         )
     total_plays = len(events)

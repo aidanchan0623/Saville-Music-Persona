@@ -375,7 +375,7 @@ def artist_cache_has_thumbnail(value: Any) -> bool:
 
 
 def artist_cache_has_result(value: Any) -> bool:
-    return isinstance(value, dict) and (bool(value.get("thumbnails")) or bool(value.get("fetched_at")))
+    return artist_cache_has_thumbnail(value)
 
 
 def artist_payload_has_thumbnail(payload: Any) -> bool:

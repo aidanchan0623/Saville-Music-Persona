@@ -415,15 +415,19 @@ def top_payload(
     items = []
     for index, item in enumerate(current_ranked[:10], 1):
         movement = movement_payload(index, previous_ranks.get(item["key"]), comparison_allowed)
-        label = classification_label(
-            rank=index,
-            share=item["share_of_period"],
-            period=spec["period"],
-            movement=movement,
-            rolling_rank=rolling_ranks.get(item["key"]),
-            rolling_share=rolling_shares.get(item["key"], 0),
-        )
+        if normalised.get("metadata", {}).get("source") == "spotify":
+            label = "Spotify top artist" if kind == "artists" else item.get("spotify_signal_label") or "Spotify top track"
+        else:
+            label = classification_label(
+                rank=index,
+                share=item["share_of_period"],
+                period=spec["period"],
+                movement=movement,
+                rolling_rank=rolling_ranks.get(item["key"]),
+                rolling_share=rolling_shares.get(item["key"], 0),
+            )
         items.append({**item, "rank": index, "movement": movement, "interpretation_label": label})
+    spotify_source = normalised.get("metadata", {}).get("source") == "spotify"
     return {
         "period": serialise_spec(spec),
         "type": "artists" if kind == "artists" else "tracks",
@@ -432,7 +436,11 @@ def top_payload(
         "duration_quality": duration_quality(events),
         "sample_warning": "Limited sample: avoid treating this period as a strong taste change." if len(events) < MIN_STRONG_SAMPLE_PLAYS else None,
         "items": items,
-        "methodology": "Top lists are ranked by deterministic detected play counts. Detected listening minutes are estimated from full track durations with duration coverage shown.",
+        "methodology": (
+            "Spotify top lists use top-item, saved-library, playlist and recent-sync signals. Exact full historical Spotify play counts are not available from the API."
+            if spotify_source
+            else "Top lists are ranked by deterministic detected play counts. Detected listening minutes are estimated from full track durations with duration coverage shown."
+        ),
         "classification_rules": [
             "Current obsession: strong current rank and not a rolling-year anchor.",
             "Long-term anchor: highly ranked in both the selected period and rolling-year profile.",
@@ -554,9 +562,16 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             artist = key
             meta_track = None
             title = None
-            image = thumbnail_url(artist_metadata_for(artist, metadata).get("thumbnails"))
+            artist_meta = artist_metadata_for(artist, metadata)
+            image = thumbnail_url(artist_meta.get("thumbnails"))
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
             album = None
+            source = artist_meta.get("source")
+            source_track_id = None
+            source_artist_id = artist_meta.get("artist_id")
+            spotify_time_range = artist_meta.get("spotify_time_range")
+            spotify_rank = artist_meta.get("spotify_rank")
+            spotify_signal_label = None
         else:
             meta_track = track_lookup.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
@@ -564,12 +579,21 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             image = thumbnail_url(meta_track.get("thumbnails"), meta_track.get("video_id"))
             most_played_song = None
             album = meta_track.get("album")
+            source = meta_track.get("source")
+            source_track_id = meta_track.get("source_track_id")
+            source_artist_id = None
+            spotify_time_range = meta_track.get("spotify_time_range")
+            spotify_rank = meta_track.get("spotify_rank")
+            spotify_signal_label = meta_track.get("spotify_signal_label")
         play_count = counts[key]
         result.append(
             {
                 "key": key,
                 "track_id": key if kind != "artists" else None,
                 "video_id": meta_track.get("video_id") if meta_track else None,
+                "source": source,
+                "source_track_id": source_track_id,
+                "source_artist_id": source_artist_id,
                 "title": title,
                 "artist": artist,
                 "album": album,
@@ -582,6 +606,9 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "unique_songs": len(unique_tracks[key]) if kind == "artists" else None,
                 "most_played_song": most_played_song,
                 "last_played": last_played.get(key),
+                "spotify_time_range": spotify_time_range,
+                "spotify_rank": spotify_rank,
+                "spotify_signal_label": spotify_signal_label,
             }
         )
     return result

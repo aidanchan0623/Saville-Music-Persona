@@ -212,8 +212,16 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
     title = str(item.get("title") or item.get("name") or "Unavailable track").strip()
     artists = extract_artist_names(item)
     primary_artist = artists[0]
-    video_id = item.get("videoId") or item.get("video_id") or item.get("id")
-    track_id = f"video:{video_id}" if video_id else stable_key(title, primary_artist)
+    source = str(item.get("source") or "").strip().lower()
+    source_track_id = item.get("source_track_id")
+    if source == "spotify":
+        spotify_id = str(source_track_id or item.get("id") or "").strip()
+        source_track_id = spotify_id if spotify_id.startswith("spotify:") else f"spotify:track:{spotify_id}" if spotify_id else None
+        video_id = None
+        track_id = source_track_id or stable_key(title, primary_artist)
+    else:
+        video_id = item.get("videoId") or item.get("video_id") or item.get("id")
+        track_id = f"video:{video_id}" if video_id else stable_key(title, primary_artist)
     album, album_id = extract_album(item)
     year = (
         parse_release_year(item.get("release_year"))
@@ -223,9 +231,16 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
     )
     duration = item.get("duration_seconds") or parse_duration_seconds(item.get("duration"))
     genres, moods = infer_keywords(item, playlist_title)
+    incoming_source_types = [str(value) for value in item.get("source_types") or [] if value]
+    source_types = [source_type]
+    for incoming in incoming_source_types:
+        if incoming not in source_types:
+            source_types.append(incoming)
     return {
         "track_id": track_id,
         "video_id": str(video_id) if video_id else None,
+        "source": source or "youtube",
+        "source_track_id": source_track_id,
         "title": title,
         "artists": artists,
         "artist_ids": extract_artist_ids(item),
@@ -235,7 +250,7 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
         "release_year": year,
         "duration_seconds": duration,
         "thumbnails": item.get("thumbnails") or [],
-        "source_types": [source_type],
+        "source_types": source_types,
         "playlist_ids": [playlist_id] if playlist_id else [],
         "playlist_titles": [playlist_title] if playlist_title else [],
         "liked": source_type == "liked",
@@ -247,6 +262,10 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
         "genre_clusters": genres,
         "mood_signals": moods,
         "genre_confidence": 0.65 if genres else 0.0,
+        "popularity": item.get("popularity"),
+        "spotify_time_range": item.get("spotify_time_range"),
+        "spotify_rank": item.get("spotify_rank"),
+        "spotify_signal_label": item.get("spotify_signal_label"),
     }
 
 
@@ -262,7 +281,7 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
             existing["playlist_titles"].append(playlist_title)
     existing["liked"] = existing["liked"] or incoming["liked"]
     existing["library_saved"] = existing["library_saved"] or incoming["library_saved"]
-    for field in ("album", "album_id", "release_year", "duration_seconds", "video_id"):
+    for field in ("album", "album_id", "release_year", "duration_seconds", "video_id", "source_track_id", "popularity", "spotify_time_range", "spotify_rank", "spotify_signal_label"):
         if existing.get(field) in (None, "", []):
             existing[field] = incoming.get(field)
     if not existing.get("thumbnails") and incoming.get("thumbnails"):
@@ -281,25 +300,51 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
 def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
     metadata: dict[str, dict[str, Any]] = {}
 
-    def store_artist(name: Any, artist_id: Any = None, subscribers: Any = None, thumbnails: Any = None) -> None:
+    def store_artist(
+        name: Any,
+        artist_id: Any = None,
+        subscribers: Any = None,
+        thumbnails: Any = None,
+        genres: Any = None,
+        popularity: Any = None,
+        followers: Any = None,
+        source: Any = None,
+    ) -> None:
         if not name:
             return
         key = str(name).strip()
         if not key:
             return
-        existing = metadata.setdefault(key, {"artist_id": None, "subscribers": None, "thumbnails": []})
+        existing = metadata.setdefault(key, {"artist_id": None, "subscribers": None, "thumbnails": [], "genres": [], "popularity": None, "followers": None, "source": None})
         if not existing.get("artist_id") and artist_id:
             existing["artist_id"] = artist_id
         if not existing.get("subscribers") and subscribers:
             existing["subscribers"] = subscribers
         if not existing.get("thumbnails") and thumbnails:
             existing["thumbnails"] = thumbnails
+        if not existing.get("genres") and genres:
+            existing["genres"] = genres
+        if existing.get("popularity") is None and popularity is not None:
+            existing["popularity"] = popularity
+        if existing.get("followers") is None and followers is not None:
+            existing["followers"] = followers
+        if not existing.get("source") and source:
+            existing["source"] = source
 
     for artist in raw.get("library_artists") or []:
         if not isinstance(artist, dict):
             continue
         name = artist.get("artist") or artist.get("name")
-        store_artist(name, artist.get("browseId") or artist.get("id"), artist.get("subscribers"), artist.get("thumbnails") or [])
+        store_artist(
+            name,
+            artist.get("browseId") or artist.get("id"),
+            artist.get("subscribers") or artist.get("followers"),
+            artist.get("thumbnails") or [],
+            artist.get("genres") or [],
+            artist.get("popularity"),
+            artist.get("followers"),
+            artist.get("source"),
+        )
 
     image_cache = raw.get("artist_image_cache")
     if isinstance(image_cache, dict):
@@ -311,6 +356,10 @@ def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
                 artist.get("browseId") or artist.get("artist_id") or artist.get("id"),
                 artist.get("subscribers"),
                 artist.get("thumbnails") or [],
+                artist.get("genres") or [],
+                artist.get("popularity"),
+                artist.get("followers"),
+                artist.get("source"),
             )
     return metadata
 
@@ -366,12 +415,16 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
             {
                 "track_id": track["track_id"],
                 "video_id": track.get("video_id"),
+                "source_track_id": track.get("source_track_id"),
                 "title": track["title"],
                 "primary_artist": track["primary_artist"],
                 "artists": track["artists"],
                 "played_at": played_iso,
                 "played_date_raw": item.get("played"),
-                "source": item.get("source") or "history",
+                "source": item.get("event_source") or item.get("source") or "history",
+                "spotify_time_range": item.get("spotify_time_range"),
+                "spotify_rank": item.get("spotify_rank"),
+                "spotify_signal_label": item.get("spotify_signal_label"),
             }
         )
 

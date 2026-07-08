@@ -59,6 +59,7 @@ class TakeoutImportResponse(BaseModel):
 
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
+    source: Literal["youtube", "spotify"] = "youtube"
 
 
 class PlaylistCreateRequest(BaseModel):

@@ -2,7 +2,7 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
-import type { MusicCharacter, MusicCharacterResponse, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
+import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
 interface Props {
   report: PersonaReport | null;
@@ -10,6 +10,7 @@ interface Props {
   busy: boolean;
   topArtists: TopArtist[];
   onGenerate: (mode: "serious" | "playful" | "roast") => void;
+  source: MusicSource;
 }
 
 interface PersonaProfile {
@@ -24,7 +25,7 @@ interface PersonaProfile {
   sourceLabel: string;
 }
 
-export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate }: Props) {
+export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate, source }: Props) {
   const [rollingCharacter, setRollingCharacter] = useState<MusicCharacterResponse | null>(null);
   const [currentCharacter, setCurrentCharacter] = useState<MusicCharacterResponse | null>(null);
   const [characterError, setCharacterError] = useState<string | null>(null);
@@ -35,7 +36,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
   useEffect(() => {
     let active = true;
     setLoadingCharacter(true);
-    Promise.allSettled([api.musicCharacter("rolling_year"), api.musicCharacter("this_month")])
+    Promise.allSettled([api.musicCharacter("rolling_year", null, source), api.musicCharacter("this_month", null, source)])
       .then(([rolling, current]) => {
         if (!active) return;
         if (rolling.status === "fulfilled") setRollingCharacter(rolling.value);
@@ -52,7 +53,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
     return () => {
       active = false;
     };
-  }, []);
+  }, [source]);
 
   const profile = useMemo(
     () => buildPersonaProfile(report, rollingCharacter, currentCharacter),
@@ -67,7 +68,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
     return (
       <EmptyState
         title="No persona profile yet"
-        body={characterError || "Refresh YouTube Music data or import Google Takeout history, then return here for a Music Character based persona read."}
+        body={characterError || (source === "spotify" ? "Connect Spotify and refresh Spotify data, then return here for a Music Character based persona read." : "Refresh YouTube Music data or import Google Takeout history, then return here for a Music Character based persona read.")}
       />
     );
   }
@@ -117,7 +118,9 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Anchor artists</p>
               <h2 className="mt-2 text-3xl font-black text-white">The faces in the sound-world</h2>
             </div>
-            <p className="max-w-xl text-sm leading-6 text-mist">Official artist images are used when YouTube Music metadata has them; otherwise initials keep the profile clean.</p>
+            <p className="max-w-xl text-sm leading-6 text-mist">
+              {source === "spotify" ? "Official Spotify artist images are used where the account data provides them; otherwise initials keep the profile clean." : "Official artist images are used when YouTube Music metadata has them; otherwise initials keep the profile clean."}
+            </p>
           </div>
           <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {topArtists.slice(0, 4).map((artist) => (

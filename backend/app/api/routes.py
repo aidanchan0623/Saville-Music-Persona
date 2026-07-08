@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import RedirectResponse
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
@@ -23,6 +24,7 @@ from app.analysis.periods import (
     top_payload,
 )
 from app.analysis.scoring import build_analysis
+from app.analysis.spotify_adapter import SPOTIFY_LIMITATION_NOTE, spotify_raw_to_collection
 from app.config import settings
 from app.database.repository import JsonRepository
 from app.schemas.responses import (
@@ -38,6 +40,7 @@ from app.schemas.responses import (
 )
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import generate_recommendations
+from app.services.spotify_service import SpotifyService
 from app.services.takeout_service import TakeoutParseError, parse_takeout_upload
 from app.services.ytmusic_service import YTMusicService
 
@@ -46,6 +49,19 @@ router = APIRouter(prefix="/api")
 repo = JsonRepository(settings.db_path)
 ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
+spotify = SpotifyService(settings)
+
+SPOTIFY_CACHE_KEYS = [
+    "spotify_tokens",
+    "spotify_profile",
+    "spotify_raw",
+    "spotify_normalised",
+    "spotify_analysis",
+    "spotify_last_refresh_meta",
+    "spotify_latest_report",
+    "spotify_recommendations",
+    "spotify_oauth_state",
+]
 
 
 def require_cache(key: str) -> Any:
@@ -53,6 +69,70 @@ def require_cache(key: str) -> Any:
     if value is None:
         raise HTTPException(status_code=404, detail={"error": "No data yet", "detail": "Refresh music data first or enable demo data.", "code": "no_cached_data"})
     return value
+
+
+def normalise_source(source: str | None) -> str:
+    value = (source or "youtube").strip().lower()
+    if value in {"youtube", "ytmusic", "youtube_music"}:
+        return "youtube"
+    if value == "spotify":
+        return "spotify"
+    raise HTTPException(status_code=400, detail={"error": "Unknown music source", "detail": "Use source=youtube or source=spotify.", "code": "unknown_source"})
+
+
+def cache_key(key: str, source: str | None = "youtube") -> str:
+    return key if normalise_source(source) == "youtube" else f"spotify_{key}"
+
+
+def require_source_cache(key: str, source: str | None = "youtube") -> Any:
+    resolved_source = normalise_source(source)
+    if resolved_source == "youtube":
+        if key in {"analysis", "normalised"}:
+            ensure_youtube_artist_images()
+        return require_cache(key)
+    value = repo.load_json(cache_key(key, resolved_source))
+    if value is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "No Spotify data yet",
+                "detail": "Connect Spotify in Settings, then refresh Spotify data.",
+                "code": "no_spotify_data",
+            },
+        )
+    return value
+
+
+def ensure_youtube_artist_images() -> None:
+    analysis = repo.load_json("analysis")
+    if not top_artist_images_missing(analysis):
+        return
+    raw = repo.load_json("raw")
+    if not isinstance(raw, dict):
+        return
+    status = ytmusic.auth_status()
+    if not status.get("connected"):
+        return
+    warnings: list[str] = []
+    normalised = normalise_with_duration_cache(raw, warnings, allow_artist_image_enrichment=True)
+    refreshed_at = (repo.load_json("last_refresh_meta") or {}).get("refreshed_at") or datetime.now(timezone.utc).isoformat()
+    normalised["refreshed_at"] = refreshed_at
+    normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
+    rebuilt = build_analysis(normalised)
+    repo.save_json("raw", raw)
+    repo.save_json("normalised", normalised)
+    repo.save_json("analysis", rebuilt)
+    if warnings:
+        meta = repo.load_json("last_refresh_meta") or {"refreshed_at": refreshed_at, "use_demo": False, "warnings": []}
+        meta["warnings"] = list(dict.fromkeys([*(meta.get("warnings") or []), *warnings]))
+        repo.save_json("last_refresh_meta", meta)
+
+
+def top_artist_images_missing(analysis: Any) -> bool:
+    if not isinstance(analysis, dict):
+        return False
+    top_artists = analysis.get("top_artists") or []
+    return any(isinstance(artist, dict) and not artist.get("image") for artist in top_artists[:5])
 
 
 def normalise_with_duration_cache(
@@ -96,12 +176,36 @@ def normalise_with_duration_cache(
     return normalised
 
 
-def analysis_for_period(period: str, month: str | None, timezone_name: str | None) -> tuple[dict[str, Any], dict[str, Any], int]:
-    normalised = require_cache("normalised")
+def analysis_for_period(period: str, month: str | None, timezone_name: str | None, source: str | None = "youtube") -> tuple[dict[str, Any], dict[str, Any], int]:
+    normalised = require_source_cache("normalised", source)
     spec = resolve_period(normalised, period, month, timezone_name or settings.local_timezone)
     events = filter_events(normalised, spec)
     period_normalised = normalised_for_events(normalised, events, spec)
     return build_analysis(period_normalised), spec, len(events)
+
+
+def rebuild_spotify_cache() -> dict[str, Any]:
+    settings.ensure_local_dirs()
+    raw = spotify.fetch_all(repo)
+    repo.save_json("spotify_profile", raw.get("profile") or {})
+    collection = spotify_raw_to_collection(raw)
+    normalised = normalise_collection(collection)
+    refreshed_at = datetime.now(timezone.utc).isoformat()
+    normalised["refreshed_at"] = refreshed_at
+    normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
+    analysis = build_analysis(normalised)
+    repo.save_json("spotify_raw", raw)
+    repo.save_json("spotify_normalised", normalised)
+    repo.save_json("spotify_analysis", analysis)
+    repo.save_json("spotify_last_refresh_meta", {"refreshed_at": refreshed_at, "warnings": [SPOTIFY_LIMITATION_NOTE], "use_demo": False})
+    return {
+        "refreshed_at": refreshed_at,
+        "warnings": [SPOTIFY_LIMITATION_NOTE],
+        "coverage": analysis["coverage"],
+        "track_count": normalised["metadata"]["track_count"],
+        "play_count": normalised["metadata"]["play_count"],
+        "profile": raw.get("profile") or {},
+    }
 
 
 @router.get("/health")
@@ -137,6 +241,65 @@ def auth_status() -> AuthStatusResponse:
 @router.post("/auth/setup")
 def auth_setup() -> dict[str, Any]:
     return ytmusic.setup_instructions()
+
+
+@router.get("/spotify/status")
+def spotify_status() -> dict[str, Any]:
+    return spotify.status(repo)
+
+
+@router.get("/spotify/login")
+def spotify_login() -> RedirectResponse:
+    state = spotify.new_state()
+    repo.save_json("spotify_oauth_state", {"state": state, "created_at": datetime.now(timezone.utc).isoformat()})
+    try:
+        return RedirectResponse(spotify.login_url(state))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail={"error": "Spotify is not configured", "detail": str(exc), "code": "spotify_not_configured"}) from exc
+
+
+@router.get("/spotify/callback")
+def spotify_callback(
+    code: str | None = Query(None),
+    state: str | None = Query(None),
+    error: str | None = Query(None),
+) -> RedirectResponse:
+    if error:
+        return RedirectResponse(f"{settings.frontend_url}?source=spotify&spotify_error={error}")
+    if not code:
+        raise HTTPException(status_code=400, detail={"error": "Spotify callback failed", "detail": "Spotify did not return an authorization code.", "code": "spotify_missing_code"})
+    stored_state = repo.load_json("spotify_oauth_state") or {}
+    if stored_state.get("state") and state != stored_state.get("state"):
+        raise HTTPException(status_code=400, detail={"error": "Spotify callback failed", "detail": "OAuth state did not match.", "code": "spotify_state_mismatch"})
+    tokens = spotify.exchange_code(code)
+    repo.save_json("spotify_tokens", tokens)
+    repo.delete_json("spotify_oauth_state")
+    try:
+        rebuild_spotify_cache()
+    except Exception as exc:  # noqa: BLE001
+        repo.save_json(
+            "spotify_last_refresh_meta",
+            {
+                "refreshed_at": datetime.now(timezone.utc).isoformat(),
+                "warnings": [f"Spotify connected, but initial data refresh failed: {exc}"],
+                "use_demo": False,
+            },
+        )
+    return RedirectResponse(f"{settings.frontend_url}?source=spotify")
+
+
+@router.post("/spotify/disconnect")
+def spotify_disconnect() -> dict[str, Any]:
+    repo.delete_json_many(SPOTIFY_CACHE_KEYS)
+    return {"connected": False, "message": "Spotify disconnected. YouTube Music and Google Takeout data were left untouched."}
+
+
+@router.post("/spotify/refresh")
+def spotify_refresh() -> dict[str, Any]:
+    try:
+        return rebuild_spotify_cache()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"error": "Spotify refresh failed", "detail": str(exc), "code": "spotify_refresh_failed"}) from exc
 
 
 @router.post("/data/refresh", response_model=RefreshResponse)
@@ -229,29 +392,32 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
 
 
 @router.get("/data/coverage")
-def coverage() -> dict[str, Any]:
-    return require_cache("analysis")["coverage"]
+def coverage(source: str = Query("youtube")) -> dict[str, Any]:
+    return require_source_cache("analysis", source)["coverage"]
 
 
 @router.get("/analysis/overview")
-def overview() -> dict[str, Any]:
-    analysis = require_cache("analysis")
-    meta = repo.load_json("last_refresh_meta") or {}
+def overview(source: str = Query("youtube")) -> dict[str, Any]:
+    resolved_source = normalise_source(source)
+    analysis = require_source_cache("analysis", resolved_source)
+    meta = repo.load_json(cache_key("last_refresh_meta", resolved_source)) or {}
     payload = dict(analysis["overview"])
     payload["last_refreshed_at"] = meta.get("refreshed_at")
     payload["use_demo"] = meta.get("use_demo", False)
     payload["warnings"] = meta.get("warnings", [])
+    payload["source"] = resolved_source
+    payload["source_label"] = "Spotify" if resolved_source == "spotify" else "YouTube Music"
     return payload
 
 
 @router.get("/analysis/top-tracks")
-def top_tracks() -> list[dict[str, Any]]:
-    return require_cache("analysis")["top_tracks"]
+def top_tracks(source: str = Query("youtube")) -> list[dict[str, Any]]:
+    return require_source_cache("analysis", source)["top_tracks"]
 
 
 @router.get("/analysis/top-artists")
-def top_artists() -> list[dict[str, Any]]:
-    return require_cache("analysis")["top_artists"]
+def top_artists(source: str = Query("youtube")) -> list[dict[str, Any]]:
+    return require_source_cache("analysis", source)["top_artists"]
 
 
 @router.get("/analysis/scores")
@@ -259,8 +425,9 @@ def scores(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> list[dict[str, Any]]:
-    analysis, spec, event_count = analysis_for_period(period, month, timezone_name)
+    analysis, spec, event_count = analysis_for_period(period, month, timezone_name, source)
     scores_payload = analysis["scores"]
     if spec["period"] in {"this_month", "month"} and event_count < 50:
         for score in scores_payload:
@@ -276,8 +443,9 @@ def charts(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    analysis, _, _ = analysis_for_period(period, month, timezone_name)
+    analysis, _, _ = analysis_for_period(period, month, timezone_name, source)
     return analysis["charts"]
 
 
@@ -286,8 +454,9 @@ def listening_minutes(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+    return listening_minutes_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/analytics/listening-minutes/daily")
@@ -295,8 +464,9 @@ def listening_minutes_daily(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> list[dict[str, Any]]:
-    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)["daily"]
+    return listening_minutes_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)["daily"]
 
 
 @router.get("/analytics/listening-minutes/heatmap")
@@ -304,8 +474,9 @@ def listening_minutes_heatmap(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> list[dict[str, Any]]:
-    return listening_minutes_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)["heatmap"]
+    return listening_minutes_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)["heatmap"]
 
 
 @router.get("/top")
@@ -314,9 +485,10 @@ def period_top(
     type: str = Query("tracks"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
     kind = "artists" if type == "artists" else "tracks"
-    return top_payload(require_cache("normalised"), kind, period, month, timezone_name or settings.local_timezone)
+    return top_payload(require_source_cache("normalised", source), kind, period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/top/artist-songs")
@@ -325,8 +497,9 @@ def period_artist_songs(
     period: str = Query("this_month"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return artist_songs_payload(require_cache("normalised"), artist, period, month, timezone_name or settings.local_timezone)
+    return artist_songs_payload(require_source_cache("normalised", source), artist, period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/top/albums")
@@ -334,8 +507,9 @@ def period_albums(
     period: str = Query("this_month"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return albums_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+    return albums_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/top/album-songs")
@@ -345,8 +519,9 @@ def period_album_songs(
     period: str = Query("this_month"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return album_songs_payload(require_cache("normalised"), album, artist, period, month, timezone_name or settings.local_timezone)
+    return album_songs_payload(require_source_cache("normalised", source), album, artist, period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/taste-dna")
@@ -354,8 +529,9 @@ def taste_dna(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return taste_dna_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+    return taste_dna_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/taste-dna/compare")
@@ -364,8 +540,9 @@ def taste_dna_compare(
     compare: str = Query("this_month"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return taste_dna_comparison_payload(require_cache("normalised"), base, compare, month, timezone_name or settings.local_timezone)
+    return taste_dna_comparison_payload(require_source_cache("normalised", source), base, compare, month, timezone_name or settings.local_timezone)
 
 
 @router.get("/scores/interpretations")
@@ -373,8 +550,9 @@ def score_interpretations(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> list[dict[str, Any]]:
-    return scores(period, month, timezone_name)
+    return scores(period, month, timezone_name, source)
 
 
 @router.get("/persona/character")
@@ -382,8 +560,9 @@ def persona_character(
     period: str = Query("rolling_year"),
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
 ) -> dict[str, Any]:
-    return character_payload(require_cache("normalised"), period, month, timezone_name or settings.local_timezone)
+    return character_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
 
 
 @router.post("/persona/character/rewrite")
@@ -391,16 +570,17 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
     period = str(payload.get("period") or "rolling_year")
     month = payload.get("month")
     mode = str(payload.get("mode") or "playful")
-    profile = character_payload(require_cache("normalised"), period, str(month) if month else None, settings.local_timezone)
+    source = normalise_source(str(payload.get("source") or "youtube"))
+    profile = character_payload(require_source_cache("normalised", source), period, str(month) if month else None, settings.local_timezone)
     status = ollama.status()
     if not status["reachable"] or not status["model_installed"]:
         raise HTTPException(status_code=503, detail={"error": "Ollama rewrite unavailable", "detail": status["message"], "code": "ollama_unavailable"})
     return ollama.generate_character_rewrite(profile, mode)
 
 
-def report_profile_with_characters() -> dict[str, Any]:
-    normalised = require_cache("normalised")
-    analysis = require_cache("analysis")
+def report_profile_with_characters(source: str | None = "youtube") -> dict[str, Any]:
+    normalised = require_source_cache("normalised", source)
+    analysis = require_source_cache("analysis", source)
     profile = dict(analysis["report_profile"])
     rolling_character = character_payload(normalised, "rolling_year", timezone_name=settings.local_timezone)
     current_character = character_payload(normalised, "this_month", timezone_name=settings.local_timezone)
@@ -483,20 +663,22 @@ def album_or_track_behavior(character: dict[str, Any]) -> str:
 
 @router.post("/report/generate")
 def generate_report(request: ReportRequest) -> dict[str, Any]:
-    profile = report_profile_with_characters()
+    source = normalise_source(request.source)
+    profile = report_profile_with_characters(source)
     status = ollama.status()
     if not status["reachable"] or not status["model_installed"]:
         raise HTTPException(status_code=503, detail={"error": "Ollama report unavailable", "detail": status["message"], "code": "ollama_unavailable"})
     report = ollama.generate_report(profile, request.mode)
     payload = report.model_dump()
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-    repo.save_json("latest_report", payload)
+    payload["source"] = source
+    repo.save_json(cache_key("latest_report", source), payload)
     return payload
 
 
 @router.get("/report/latest")
-def latest_report() -> dict[str, Any]:
-    return require_cache("latest_report")
+def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
+    return require_source_cache("latest_report", source)
 
 
 @router.get("/recommendations")

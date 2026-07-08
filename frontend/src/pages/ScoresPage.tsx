@@ -2,12 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
-import type { ListeningMinutes, ScoreMetric } from "../types/api";
+import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
 import { asPercent } from "../utils/format";
 
 type ScorePeriod = "this_month" | "month" | "rolling_year";
 
-export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] }) {
+export function ScoresPage({ scores: initialScores, source }: { scores: ScoreMetric[]; source: MusicSource }) {
   const [period, setPeriod] = useState<ScorePeriod>("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [scores, setScores] = useState<ScoreMetric[]>(initialScores);
@@ -20,8 +20,8 @@ export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] })
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      api.scoreInterpretations(period, period === "month" ? selectedMonth : null),
-      api.listeningMinutes(period, period === "month" ? selectedMonth : null),
+      api.scoreInterpretations(period, period === "month" ? selectedMonth : null, source),
+      api.listeningMinutes(period, period === "month" ? selectedMonth : null, source),
     ])
       .then(([nextScores, nextMinutes]) => {
         if (cancelled) return;
@@ -37,7 +37,7 @@ export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] })
     return () => {
       cancelled = true;
     };
-  }, [period, selectedMonth]);
+  }, [period, selectedMonth, source]);
 
   if (!scores.length) return <EmptyState title="No scorecard yet" body="Refresh data to calculate deterministic scores with transparent formulas." />;
   const groups = buildScoreGroups(scores);
@@ -57,7 +57,9 @@ export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] })
             {periodLabel} read on how you listen &mdash; not just what you play.
           </p>
           <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
-            These scores translate the selected period into a music profile: replay, discovery, artist pull, and the shape of your sound world.
+            {source === "spotify"
+              ? "Spotify scores translate top-item, saved-library, playlist, and recent-sync signals into the same music-profile framework."
+              : "These scores translate the selected period into a music profile: replay, discovery, artist pull, and the shape of your sound world."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
@@ -77,6 +79,7 @@ export function ScoresPage({ scores: initialScores }: { scores: ScoreMetric[] })
           <span className="font-semibold text-white">Analysing {periodLabel}</span>
           {loading ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Updating...</span> : null}
           {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{playCount.toLocaleString()} detected plays</span> : null}
+          {source === "spotify" ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Spotify top-item based</span> : null}
           {limitedSample ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">Limited sample for this month</span> : null}
         </div>
       </section>
