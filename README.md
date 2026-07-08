@@ -1,8 +1,8 @@
 # Saville Music Persona
 
-Saville Music Persona is a private, local-first web app that analyses your YouTube Music listening taste with `ytmusicapi`, then asks a locally installed Ollama model (`gemma3:4b`) to write a polished music-personality report from the calculated facts.
+Saville Music Persona is a private, local-first web app that analyses your YouTube Music listening taste with `ytmusicapi`, then uses deterministic Music Character rules with an optional local Ollama model (`gemma3:4b`) to write a polished music-personality report.
 
-No OpenAI, Gemini, Spotify, or paid cloud API key is required. Credentials, cached history, reports, and playlist exports stay on your Windows laptop.
+No OpenAI, Gemini, or paid cloud API key is required. Credentials, cached history, reports, and playlist exports stay on your Windows laptop.
 
 ## Screenshots
 
@@ -14,7 +14,7 @@ Screenshots are intentionally left out until you run the app against your own pr
 - Transparent score gauges with plain-English interpretations
 - Listening pattern charts with daily, weekly, and monthly detected minutes
 - Interactive Taste DNA Explorer
-- AI persona report modes
+- Music Character persona report modes
 - Evidence-driven recommendations
 - Connect YouTube Music settings page
 

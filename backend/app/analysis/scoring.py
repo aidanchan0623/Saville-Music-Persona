@@ -580,6 +580,7 @@ def build_report_profile(
         "top_artists": top_artists[:10],
         "scores": [
             {
+                "key": score["key"],
                 "name": score["name"],
                 "value": score["value"],
                 "label": score["label"],

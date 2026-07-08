@@ -1,4 +1,5 @@
 import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from "lucide-react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
@@ -362,6 +363,7 @@ function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: 
     <DrilldownShell
       title={`Songs by ${artist} - ${response?.period_label ?? "Selected Period"}`}
       subtitle="Song-level data for this artist in the selected period."
+      visual={<Artwork src={response?.artist_thumbnail} label={artist} fallback={initials(artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-24 w-24" />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Song-level data for this artist is not available in the selected period."
@@ -380,6 +382,7 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
     <DrilldownShell
       title={`Songs from ${album.album} - ${response?.period_label ?? "Selected Period"}`}
       subtitle={album.artist}
+      visual={<Artwork src={album.thumbnail} label={album.album} fallback={initials(album.album)} icon={Album} rounded="rounded-2xl" sizeClass="h-24 w-24" />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Album data is unavailable for this period."
@@ -396,6 +399,7 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
 function DrilldownShell({
   title,
   subtitle,
+  visual,
   loading,
   onClose,
   emptyMessage,
@@ -404,6 +408,7 @@ function DrilldownShell({
 }: {
   title: string;
   subtitle: string;
+  visual?: ReactNode;
   loading: boolean;
   onClose: () => void;
   emptyMessage: string;
@@ -413,10 +418,13 @@ function DrilldownShell({
   return (
     <section className="rounded-[1.5rem] border border-line bg-panel/85 p-5 shadow-glow lg:p-6" data-testid="songs-drilldown">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Drilldown</p>
-          <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
-          <p className="mt-1 text-sm text-mist">{subtitle}</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          {visual}
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Drilldown</p>
+            <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
+            <p className="mt-1 text-sm text-mist">{subtitle}</p>
+          </div>
         </div>
         <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-red-400/50 hover:bg-white/10" onClick={onClose}>
           <X size={16} /> Close

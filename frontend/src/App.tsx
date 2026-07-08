@@ -102,7 +102,7 @@ export default function App() {
 
   const generateReport = async (mode: "serious" | "playful" | "roast" = "serious") => {
     setBusy(true);
-    setMessage("Asking local Gemma to write from the factual profile...");
+    setMessage("Asking local Gemma to rewrite the deterministic Music Character profile...");
     try {
       const nextReport = await api.generateReport(mode);
       setReport(nextReport);
@@ -186,7 +186,7 @@ export default function App() {
       case "patterns":
         return <PatternsPage charts={charts} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} onGenerate={generateReport} />;
+        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} />;
       case "recommendations":
         return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} />;
       case "settings":

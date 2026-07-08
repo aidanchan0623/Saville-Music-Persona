@@ -279,6 +279,7 @@ export interface TopDrilldownSong {
 
 export interface TopArtistSongsResponse {
   artist: string;
+  artist_thumbnail: string | null;
   period_label: string;
   period: PeriodSpec;
   total_plays: number;
@@ -442,8 +443,20 @@ export interface PersonaTag {
   reason: string;
 }
 
+export interface PersonaReportCard {
+  title: string;
+  body: string;
+}
+
 export interface PersonaReport {
   headline: string;
+  subheadline?: string;
+  core_identity_paragraph?: string;
+  listener_type_cards?: PersonaReportCard[];
+  taste_world_paragraph?: string;
+  music_movement_paragraph?: string;
+  current_vs_long_term_paragraph?: string;
+  friendly_roast?: string;
   summary: string;
   current_era: string;
   core_identity: string;

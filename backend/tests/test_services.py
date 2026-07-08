@@ -12,7 +12,8 @@ def test_malformed_llm_json_is_repaired() -> None:
     service = OllamaService(Settings())
     report = service.parse_report('noise {"headline":"Hi","summary":123} end', {"headline_persona": "Fallback"})
     assert report.headline == "Hi"
-    assert report.summary == "123"
+    assert report.summary
+    assert report.listener_type_cards
 
 
 def test_partial_llm_report_is_filled_from_evidence() -> None:
@@ -29,9 +30,10 @@ def test_partial_llm_report_is_filled_from_evidence() -> None:
         },
     )
     assert report.headline == "Only headline"
-    assert "200 detected plays" in report.summary
-    assert "Bring Me The Horizon" in report.current_era
+    assert report.core_identity_paragraph
+    assert "Bring Me The Horizon" in report.comfort_artists
     assert report.personality_tags
+    assert report.listener_type_cards
 
 
 def test_recommendation_duplicate_removal() -> None:

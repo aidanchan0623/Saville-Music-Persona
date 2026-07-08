@@ -15,13 +15,25 @@ class PersonalityTag(BaseModel):
     reason: str
 
 
+class ReportCard(BaseModel):
+    title: str
+    body: str
+
+
 class PersonaReport(BaseModel):
-    headline: str
-    summary: str
-    current_era: str
-    core_identity: str
-    listening_habits: str
-    comfort_artists: str
+    headline: str = ""
+    subheadline: str = ""
+    core_identity_paragraph: str = ""
+    listener_type_cards: list[ReportCard] = Field(default_factory=list)
+    taste_world_paragraph: str = ""
+    music_movement_paragraph: str = ""
+    current_vs_long_term_paragraph: str = ""
+    friendly_roast: str = ""
+    summary: str = ""
+    current_era: str = ""
+    core_identity: str = ""
+    listening_habits: str = ""
+    comfort_artists: str = ""
     personality_tags: list[PersonalityTag] = Field(default_factory=list)
     report_sections: list[str] = Field(default_factory=list)
     recommendation_explanations: list[dict[str, str]] = Field(default_factory=list)
@@ -195,24 +207,71 @@ class OllamaService:
 
     def _build_report_prompt(self, profile: dict[str, Any], mode: str) -> str:
         mode_instruction = {
-            "serious": "Write a polished, serious music-taste profile.",
-            "playful": "Make it witty and specific, but not random or insulting.",
-            "roast": "Roast gently and keep it music-focused only. No slurs, protected-characteristic insults, sexuality jokes, mental-health claims, or harsh insults.",
-        }.get(mode, "Write a polished, serious profile.")
+            "serious": "Write it like a polished music identity editorial.",
+            "playful": "Make it witty and specific, but still grounded in the supplied evidence.",
+            "roast": "Roast gently and keep it music-focused only. No slurs, protected-characteristic insults, sexual jokes, mental-health claims, or harsh insults.",
+        }.get(mode, "Write it like a polished music identity editorial.")
+        compact = self._report_prompt_evidence(profile, mode)
         return (
-            "You are a careful music critic analysing a listener's profile. Use only the supplied evidence and genre mapping. "
-            "Do not invent artists, tracks, genres, personal facts, emotional problems, or listening history. "
-            "Your job is to explain the listener's musical identity in concrete genre language.\n"
-            "You must identify core genre families; explain how the artists combine into a coherent taste; distinguish core taste from side interests; "
-            "describe sonic traits such as guitar-driven, atmospheric, melodic, heavy, cinematic, nostalgic, energetic, introspective, or experimental only when supported by evidence; "
-            "state uncertainty when genre coverage is incomplete; avoid generic phrases like 'you enjoy a mix of genres'; "
-            "avoid repeating raw play counts unless useful as evidence; never call a genre tag factual if it is low-confidence.\n"
+            "You are a witty but careful music-profile writer. You are not calculating the profile. "
+            "The character and evidence have already been selected by deterministic rules.\n\n"
+            "Your job is to interpret the listener's music identity in a way that feels insightful, human, and music-aware.\n\n"
+            "Rules:\n"
+            "- Use only the supplied evidence.\n"
+            "- Do not invent artists, tracks, genres, behaviours, emotional problems, or personal life facts.\n"
+            "- Do not simply restate the raw metrics.\n"
+            "- Translate data into interpretation.\n"
+            "- Explain what kind of listener this person is.\n"
+            "- Keep the tone playful, smart, and specific.\n"
+            "- Avoid generic language like 'you have a diverse taste'.\n"
+            "- Avoid therapy language or serious mental-health claims.\n"
+            "- Keep roasts light and music-focused.\n"
+            "- No cruel insults, slurs, sexual jokes, or protected-characteristic jokes.\n"
+            "- The output should feel like a music identity editorial, not an analytics summary.\n"
             f"{mode_instruction}\n"
             "Return strict JSON matching this schema: "
-            '{"headline":"","summary":"","current_era":"","core_identity":"","listening_habits":"","comfort_artists":"","personality_tags":[{"tag":"","reason":""}],"report_sections":[],"recommendation_explanations":[]}.\n'
-            "The report should contain 3-5 concise paragraphs across the fields and 3 personality tags.\n\n"
-            f"FACTUAL_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=True)}"
+            '{"headline":"","subheadline":"","core_identity_paragraph":"","listener_type_cards":[{"title":"","body":""}],'
+            '"taste_world_paragraph":"","music_movement_paragraph":"","current_vs_long_term_paragraph":"","friendly_roast":""}.\n'
+            "Use 3 listener_type_cards: Primary character, Secondary character, Behaviour modifier. "
+            "Do not include raw percentages or play counts unless the evidence label already makes them meaningful.\n\n"
+            f"SUPPLIED_PROFILE_JSON:\n{json.dumps(compact, ensure_ascii=True)}"
         )
+
+    def _report_prompt_evidence(self, profile: dict[str, Any], mode: str) -> dict[str, Any]:
+        character = profile.get("music_character") if isinstance(profile.get("music_character"), dict) else {}
+        current = profile.get("current_month_character") if isinstance(profile.get("current_month_character"), dict) else {}
+        taste = profile.get("taste_interpretation") if isinstance(profile.get("taste_interpretation"), dict) else {}
+        top_artists = profile.get("top_artists") if isinstance(profile.get("top_artists"), list) else []
+        top_tracks = profile.get("top_tracks") if isinstance(profile.get("top_tracks"), list) else []
+        return {
+            "mode": mode,
+            "period": (character.get("period") or {}).get("label") if isinstance(character.get("period"), dict) else None,
+            "primary_character": character.get("primary"),
+            "secondary_character": character.get("secondary"),
+            "modifier": character.get("modifier"),
+            "current_month_character": current.get("primary"),
+            "current_vs_long_term": profile.get("current_vs_long_term"),
+            "top_artists": [
+                {"artist": item.get("artist"), "role": item.get("artist_loyalty_label")}
+                for item in top_artists[:5]
+                if isinstance(item, dict) and item.get("artist")
+            ],
+            "top_tracks": [
+                {"title": item.get("title"), "artist": item.get("artist")}
+                for item in top_tracks[:5]
+                if isinstance(item, dict) and item.get("title")
+            ],
+            "top_sound_clusters": [
+                {"name": item.get("name")}
+                for item in taste.get("core_genre_families", [])[:5]
+                if isinstance(item, dict) and item.get("name")
+            ],
+            "sonic_traits": list(taste.get("sonic_traits", [])[:8]) if isinstance(taste.get("sonic_traits"), list) else [],
+            "plain_language_scores": profile.get("plain_language_scores", {}),
+            "listener_axis": profile.get("listener_axis", {}),
+            "album_or_track_behavior": profile.get("album_or_track_behavior"),
+            "important_instruction": "Use the deterministic characters as the anchor. Do not choose or rename the character.",
+        }
 
     def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
         host, port, prefix = self._parse_http_base_url()
@@ -307,16 +366,31 @@ class OllamaService:
                 "personality_tags": data.get("personality_tags") if isinstance(data.get("personality_tags"), list) else fallback["personality_tags"],
                 "report_sections": data.get("report_sections") if isinstance(data.get("report_sections"), list) else fallback["report_sections"],
                 "recommendation_explanations": data.get("recommendation_explanations") if isinstance(data.get("recommendation_explanations"), list) else [],
+                "subheadline": str(data.get("subheadline") or fallback["subheadline"]),
+                "core_identity_paragraph": str(data.get("core_identity_paragraph") or fallback["core_identity_paragraph"]),
+                "listener_type_cards": data.get("listener_type_cards") if isinstance(data.get("listener_type_cards"), list) else fallback["listener_type_cards"],
+                "taste_world_paragraph": str(data.get("taste_world_paragraph") or fallback["taste_world_paragraph"]),
+                "music_movement_paragraph": str(data.get("music_movement_paragraph") or fallback["music_movement_paragraph"]),
+                "current_vs_long_term_paragraph": str(data.get("current_vs_long_term_paragraph") or fallback["current_vs_long_term_paragraph"]),
+                "friendly_roast": str(data.get("friendly_roast") or fallback["friendly_roast"]),
             }
             return self._fill_report_gaps(PersonaReport(**repaired), fallback)
 
     def _fill_report_gaps(self, report: PersonaReport, fallback: dict[str, Any]) -> PersonaReport:
         report.headline = report.headline or fallback["headline"]
+        report.subheadline = report.subheadline or fallback["subheadline"]
+        report.core_identity_paragraph = report.core_identity_paragraph or fallback["core_identity_paragraph"]
+        report.taste_world_paragraph = report.taste_world_paragraph or fallback["taste_world_paragraph"]
+        report.music_movement_paragraph = report.music_movement_paragraph or fallback["music_movement_paragraph"]
+        report.current_vs_long_term_paragraph = report.current_vs_long_term_paragraph or fallback["current_vs_long_term_paragraph"]
+        report.friendly_roast = report.friendly_roast or fallback["friendly_roast"]
         report.summary = report.summary or fallback["summary"]
         report.current_era = report.current_era or fallback["current_era"]
         report.core_identity = report.core_identity or fallback["core_identity"]
         report.listening_habits = report.listening_habits or fallback["listening_habits"]
         report.comfort_artists = report.comfort_artists or fallback["comfort_artists"]
+        if not report.listener_type_cards:
+            report.listener_type_cards = [ReportCard(**item) for item in fallback["listener_type_cards"]]
         if not report.personality_tags:
             report.personality_tags = [PersonalityTag(**item) for item in fallback["personality_tags"]]
         if not report.report_sections:
@@ -330,6 +404,11 @@ class OllamaService:
         top_tracks = evidence.get("top_tracks") if isinstance(evidence.get("top_tracks"), list) else []
         scores = evidence.get("scores") if isinstance(evidence.get("scores"), list) else []
         moods = evidence.get("mood_profile") if isinstance(evidence.get("mood_profile"), list) else []
+        character = evidence.get("music_character") if isinstance(evidence.get("music_character"), dict) else {}
+        current_character = evidence.get("current_month_character") if isinstance(evidence.get("current_month_character"), dict) else {}
+        primary = character.get("primary") if isinstance(character.get("primary"), dict) else {}
+        secondary = character.get("secondary") if isinstance(character.get("secondary"), dict) else {}
+        modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
         artist_names = [str(item.get("artist")) for item in top_artists[:3] if isinstance(item, dict) and item.get("artist")]
         track_names = [str(item.get("title")) for item in top_tracks[:3] if isinstance(item, dict) and item.get("title")]
         day_count = coverage.get("days_represented") or 0
@@ -341,6 +420,9 @@ class OllamaService:
         confidence = self._score_by_name(scores, "Taste confidence")
         repeat = self._score_by_name(scores, "Repeat score")
         loyalty = self._score_by_name(scores, "Artist loyalty")
+        discovery = self._score_by_name(scores, "Discovery score")
+        nostalgia = self._score_by_name(scores, "Nostalgia score")
+        mainstream = self._score_by_name(scores, "Mainstream-Niche Estimate")
         top_artist_text = self._join_names(artist_names) or "the available top artists"
         top_track_text = self._join_names(track_names) or "the available recent tracks"
         core_families = [str(item.get("name")) for item in taste.get("core_genre_families", []) if isinstance(item, dict) and item.get("name")]
@@ -348,61 +430,135 @@ class OllamaService:
         sonic_traits = [str(item) for item in taste.get("sonic_traits", [])[:6]]
         taste_summary = str(taste.get("summary") or "")
         confidence_label = confidence.get("label") or "partial"
-        repeat_label = repeat.get("label") or "unknown"
-        loyalty_label = loyalty.get("label") or "unknown"
         coverage_text = f"{play_count} detected plays from {earliest} to {latest}"
         if day_count:
             coverage_text = f"{coverage_text}, spanning {day_count} day(s)"
-        top_song_context = (
-            "The top-song list now has repeat-count evidence, so it can be read as a real ranking."
-            if max_track_plays > 1
-            else "The top-song list is treated cautiously when every detected song has only one play."
-        )
+        top_song_context = "Songs that survive replay matter here." if max_track_plays > 1 else "The track-level signal is still forming, so the broader character carries more weight."
         window_context = (
             "This should be read as a full-year listening profile."
             if full_year
             else "This should be read as a current snapshot rather than a full-year identity."
         )
-        summary = taste_summary or (
-            f"This is a {confidence_label} profile based on {coverage_text}. "
-            f"The clearest artist signals are {top_artist_text}. {top_song_context}"
+        headline = str(primary.get("name") or evidence.get("headline_persona") or "Saville Music Persona")
+        subheadline = str(primary.get("roast") or "Your listening profile has a point of view, even when the model is offline.")
+        primary_profile = str(primary.get("profile") or "")
+        secondary_profile = str(secondary.get("profile") or "There is not a strong secondary character yet; the main identity carries most of the signal.")
+        modifier_profile = str(modifier.get("profile") or "No separate behaviour modifier is strong enough to overtake the main character.")
+        sound_centre = self._join_names(core_families[:3]) or "the strongest mapped sound families"
+        side_colour = self._join_names(secondary_families[:2] or sonic_traits[:2]) or "smaller side colours"
+        trait_text = self._join_names(sonic_traits[:4]) or "a few recurring sonic habits"
+        listener_axis = evidence.get("listener_axis") if isinstance(evidence.get("listener_axis"), dict) else {}
+        artist_axis = str(listener_axis.get("artist_or_sound_led") or "")
+        album_axis = str(evidence.get("album_or_track_behavior") or "")
+        core_identity_paragraph = (
+            f"{primary_profile} You are not just collecting disconnected songs; the profile keeps returning to {sound_centre}, "
+            f"with {side_colour} adding shape around the edges."
         )
-        current_era = (
-            f"Right now the listening window points toward {top_artist_text}. {window_context}"
+        taste_world_paragraph = (
+            f"The sound-world feels {trait_text}. {taste_summary or 'The profile reads as a coherent musical weather system rather than a loose pile of categories.'} "
+            f"{artist_axis or 'The bigger anchor is the musical world, not just one isolated stat.'}"
         )
-        if core_families:
-            current_era = f"Core taste: {self._join_names(core_families[:3])}. {window_context}"
-        core_identity = (
-            f"The profile reads as {evidence.get('headline_persona') or 'a private, pattern-seeking listener'}: "
-            f"{self._join_names(core_families[:3]) or 'the strongest mapped genres'} form the centre, with "
-            f"{self._join_names(secondary_families[:2]) or 'smaller side influences'} shaping the edges."
-        )
-        listening_habits = (
-            f"The recent track surface includes {top_track_text}. {top_song_context}"
-        )
-        if sonic_traits:
-            listening_habits += f" The mapped sonic traits are {self._join_names(sonic_traits[:5])}."
+        music_movement_paragraph = self._movement_paragraph(repeat, loyalty, discovery, nostalgia, mainstream, album_axis, top_song_context)
+        comparison = evidence.get("current_vs_long_term") if isinstance(evidence.get("current_vs_long_term"), dict) else {}
+        long_name = headline
+        current_primary = current_character.get("primary") if isinstance(current_character.get("primary"), dict) else {}
+        current_name = str(current_primary.get("name") or "")
+        if comparison.get("has_contrast") and current_name:
+            current_vs_long_term = (
+                f"Long-term you read as {long_name}, while this month leans toward {current_name}. "
+                f"That looks more like a current phase changing the lighting than a full identity replacement."
+            )
+        elif current_name:
+            current_vs_long_term = (
+                f"The current month and rolling-year read are broadly aligned: {current_name} still sits close to the long-term identity. "
+                "This is continuity, not a sudden costume change."
+            )
+        else:
+            current_vs_long_term = f"{window_context} Choose a monthly view after more listening data lands for a sharper phase comparison."
+        summary = core_identity_paragraph
+        current_era = current_vs_long_term
+        core_identity = taste_world_paragraph
+        listening_habits = music_movement_paragraph
         comfort_artists = (
-            f"{artist_names[0] if artist_names else 'The top artist'} is the strongest repeat-presence signal in the available data, "
-            f"with {top_artist_text} shaping the current comfort zone."
+            f"{top_artist_text} matter because they point toward a repeatable sound-world, not just a leaderboard. "
+            f"{top_track_text} give the track-level surface, but the character read comes from how those signals connect."
         )
         mood_tags = [str(item.get("tag")) for item in moods[:2] if isinstance(item, dict) and item.get("tag")]
         profile_label = "Full-year taste profile" if full_year else "Current listening snapshot"
+        listener_type_cards = [
+            {
+                "title": f"Primary: {headline}",
+                "body": f"{primary_profile or core_identity_paragraph} Why it fits: {self._join_names([str(item) for item in primary.get('evidence', [])[:2]]) or 'the strongest overall character signal.'}",
+            },
+            {
+                "title": f"Secondary: {secondary.get('name') or 'Still forming'}",
+                "body": secondary_profile,
+            },
+            {
+                "title": f"Modifier: {modifier.get('name') or 'No strong modifier'}",
+                "body": modifier_profile,
+            },
+        ]
         personality_tags = [
-            {"tag": profile_label, "reason": f"The report is based on {day_count or 'limited'} day(s) of detected history."},
-            {"tag": "Artist-led listener", "reason": f"The strongest evidence comes from artist concentration around {top_artist_text}."},
-            {"tag": "Sonic-trait profile", "reason": f"Mapped traits include {self._join_names(sonic_traits[:3] or mood_tags) or 'mixed listening contexts'}."},
+            {"tag": headline, "reason": primary_profile or "Deterministic character engine selected the main identity."},
+            {"tag": modifier.get("name") or profile_label, "reason": modifier_profile},
+            {"tag": "Sound-world read", "reason": f"The recurring sound colours include {self._join_names(sonic_traits[:3] or mood_tags) or 'mixed listening contexts'}."},
         ]
         return {
-            "headline": str(evidence.get("headline_persona") or "Saville Music Persona"),
+            "headline": headline,
+            "subheadline": subheadline,
+            "core_identity_paragraph": core_identity_paragraph,
+            "listener_type_cards": listener_type_cards,
+            "taste_world_paragraph": taste_world_paragraph,
+            "music_movement_paragraph": music_movement_paragraph,
+            "current_vs_long_term_paragraph": current_vs_long_term,
+            "friendly_roast": subheadline,
             "summary": summary,
             "current_era": current_era,
             "core_identity": core_identity,
             "listening_habits": listening_habits,
             "comfort_artists": comfort_artists,
             "personality_tags": personality_tags,
-            "report_sections": [summary, current_era, core_identity, listening_habits, comfort_artists],
+            "report_sections": [core_identity_paragraph, taste_world_paragraph, music_movement_paragraph, current_vs_long_term],
         }
+
+    def _movement_paragraph(
+        self,
+        repeat: dict[str, Any],
+        loyalty: dict[str, Any],
+        discovery: dict[str, Any],
+        nostalgia: dict[str, Any],
+        mainstream: dict[str, Any],
+        album_axis: str,
+        top_song_context: str,
+    ) -> str:
+        repeat_value = float(repeat.get("value") or 0)
+        loyalty_value = float(loyalty.get("value") or 0)
+        discovery_value = float(discovery.get("value") or 0)
+        nostalgia_value = float(nostalgia.get("value") or 0)
+        mainstream_value = float(mainstream.get("value") or 0)
+        repeat_line = (
+            "You do not treat songs as disposable; once something lands, it tends to stay in rotation."
+            if repeat_value >= 55
+            else "Replay is present, but the profile is not only built from looping the same few tracks."
+        )
+        discovery_line = (
+            "Discovery looks selective rather than chaotic: new music enters when it fits the world you already respond to."
+            if discovery_value < 55
+            else "There is a real exploratory streak here, but it still seems to look for music with the right emotional shape."
+        )
+        loyalty_line = (
+            "The profile is artist-led enough that certain names act like anchors."
+            if loyalty_value >= 65
+            else "The profile feels more sound-led than fandom-locked: the mood and texture matter more than one artist owning everything."
+        )
+        niche_line = (
+            "It leans toward the less-obvious side of your library without becoming obscure for the sake of it."
+            if mainstream_value >= 55
+            else "It keeps one foot in accessible, immediate songs, which gives the heavier or moodier edges a pop-readable centre."
+        )
+        nostalgia_line = "There is also an era-memory pull in the profile." if nostalgia_value >= 50 else "Nostalgia is colour, not the whole engine."
+        return f"{repeat_line} {discovery_line} {loyalty_line} {niche_line} {nostalgia_line} {album_axis or top_song_context}"
 
     def _score_by_name(self, scores: list[Any], name: str) -> dict[str, Any]:
         for score in scores:

@@ -608,8 +608,10 @@ def artist_songs_payload(
     first_played = first_played_by_track(matched)
     songs = [drilldown_song_payload(item, index, "artist", first_played) for index, item in enumerate(ranked, 1)]
     top_song = songs[0]["title"] if songs else None
+    artist_thumbnail = thumbnail_url(artist_metadata_for(artist, normalised.get("artist_metadata") or {}).get("thumbnails"))
     return {
         "artist": artist,
+        "artist_thumbnail": artist_thumbnail,
         "period_label": spec["label"],
         "period": serialise_spec(spec),
         "total_plays": len(matched),

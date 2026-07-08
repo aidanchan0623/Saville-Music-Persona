@@ -398,13 +398,96 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
     return ollama.generate_character_rewrite(profile, mode)
 
 
+def report_profile_with_characters() -> dict[str, Any]:
+    normalised = require_cache("normalised")
+    analysis = require_cache("analysis")
+    profile = dict(analysis["report_profile"])
+    rolling_character = character_payload(normalised, "rolling_year", timezone_name=settings.local_timezone)
+    current_character = character_payload(normalised, "this_month", timezone_name=settings.local_timezone)
+    profile["music_character"] = rolling_character
+    profile["current_month_character"] = current_character
+    profile["current_vs_long_term"] = character_comparison(rolling_character, current_character)
+    profile["plain_language_scores"] = plain_language_scores(profile.get("scores", []))
+    profile["listener_axis"] = listener_axis(profile, rolling_character)
+    profile["album_or_track_behavior"] = album_or_track_behavior(rolling_character)
+    return profile
+
+
+def character_comparison(rolling: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    rolling_primary = rolling.get("primary") if isinstance(rolling.get("primary"), dict) else {}
+    current_primary = current.get("primary") if isinstance(current.get("primary"), dict) else {}
+    rolling_id = rolling_primary.get("id")
+    current_id = current_primary.get("id")
+    has_current_sample = bool((current.get("period") or {}).get("start_date")) if isinstance(current.get("period"), dict) else False
+    return {
+        "rolling_year": rolling_primary.get("name"),
+        "current_month": current_primary.get("name"),
+        "has_contrast": bool(has_current_sample and rolling_id and current_id and rolling_id != current_id),
+        "rolling_roast": rolling_primary.get("roast"),
+        "current_roast": current_primary.get("roast"),
+    }
+
+
+def plain_language_scores(scores: list[Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for score in scores:
+        if not isinstance(score, dict):
+            continue
+        key = str(score.get("key") or score.get("name") or "").strip()
+        interpretation = score.get("interpretation") if isinstance(score.get("interpretation"), dict) else {}
+        label = str(score.get("label") or "")
+        plain = str(interpretation.get("plain_english") or "")
+        if key:
+            result[key] = plain or label
+    return result
+
+
+def listener_axis(profile: dict[str, Any], character: dict[str, Any]) -> dict[str, str]:
+    scores = {str(item.get("key") or item.get("name")): item for item in profile.get("scores", []) if isinstance(item, dict)}
+    loyalty_value = float((scores.get("artist_loyalty") or {}).get("value") or 0)
+    discovery_value = float((scores.get("discovery") or {}).get("value") or 0)
+    repeat_value = float((scores.get("repeat") or {}).get("value") or 0)
+    primary = character.get("primary") if isinstance(character.get("primary"), dict) else {}
+    modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
+    artist_or_sound = (
+        "The profile is artist-led: a small set of artists acts as the main anchor."
+        if loyalty_value >= 65 or primary.get("id") == "one_artist_cult_member"
+        else "The profile is sound-led: the larger emotional and sonic world matters more than one artist owning everything."
+    )
+    discovery_or_comfort = (
+        "Discovery is active, but it still seems to chase a familiar emotional shape."
+        if discovery_value >= 55
+        else "Discovery is selective; comfort and fit matter more than constant novelty."
+    )
+    repeat_or_variety = (
+        "Replay is a major behaviour pattern, so songs become part of the identity by surviving repeat listens."
+        if repeat_value >= 55 or modifier.get("id") in {"comfort_loop_specialist", "single_song_prisoner"}
+        else "The profile leaves more room for rotation and variety than pure fixation."
+    )
+    return {
+        "artist_or_sound_led": artist_or_sound,
+        "discovery_or_comfort": discovery_or_comfort,
+        "repeat_or_variety": repeat_or_variety,
+    }
+
+
+def album_or_track_behavior(character: dict[str, Any]) -> str:
+    modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
+    modifier_id = modifier.get("id")
+    if modifier_id == "album_loyalist":
+        return "The profile has album-depth behaviour: full projects matter, not just isolated singles."
+    if modifier_id == "single_song_prisoner":
+        return "The profile has track-fixation behaviour: a few songs can dominate the phase once they click."
+    return "Album-vs-track behaviour is not the loudest signal, so the character read leans more on sound, replay, and artist patterns."
+
+
 @router.post("/report/generate")
 def generate_report(request: ReportRequest) -> dict[str, Any]:
-    analysis = require_cache("analysis")
+    profile = report_profile_with_characters()
     status = ollama.status()
     if not status["reachable"] or not status["model_installed"]:
         raise HTTPException(status_code=503, detail={"error": "Ollama report unavailable", "detail": status["message"], "code": "ollama_unavailable"})
-    report = ollama.generate_report(analysis["report_profile"], request.mode)
+    report = ollama.generate_report(profile, request.mode)
     payload = report.model_dump()
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     repo.save_json("latest_report", payload)

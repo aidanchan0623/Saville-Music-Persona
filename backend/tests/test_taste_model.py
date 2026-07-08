@@ -99,8 +99,9 @@ def test_ai_prompt_receives_structured_interpretation_data() -> None:
     )
     analysis = build_analysis(normalised)
     prompt = OllamaService(Settings())._build_report_prompt(analysis["report_profile"], "serious")
-    assert "taste_interpretation" in prompt
-    assert "core_genre_families" in prompt
+    assert "primary_character" in prompt
+    assert "top_sound_clusters" in prompt
+    assert "deterministic characters" in prompt
     assert "r&b / soul" not in prompt
 
 
