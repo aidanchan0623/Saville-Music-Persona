@@ -12,7 +12,7 @@ export function TasteNarrativeSection({ taste }: Props) {
   return (
     <section className="grid gap-10 py-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start">
       <div className="max-w-3xl">
-        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-200">What Your Taste Sounds Like</p>
+        <p className="section-label">What Your Taste Sounds Like</p>
         <h2 className="mt-3 text-4xl font-black leading-tight text-white md:text-5xl">
           Emotion, atmosphere, and guitar pressure with a polished pop edge.
         </h2>
@@ -22,11 +22,11 @@ export function TasteNarrativeSection({ taste }: Props) {
         </p>
       </div>
 
-      <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6">
-        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet/20 blur-3xl" />
-        <SoundList title="Core genres" items={core} accent="violet" />
-        <SoundList title="Secondary influences" items={secondary} accent="indigo" />
-        <SoundList title="Sonic traits" items={traits} accent="magenta" />
+      <div className="relative overflow-hidden rounded-lg border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6">
+        <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-red-500/20 blur-3xl" />
+        <SoundList title="Core genres" items={core} accent="red" />
+        <SoundList title="Secondary influences" items={secondary} accent="deep" />
+        <SoundList title="Sonic traits" items={traits} accent="soft" />
         {taste.coverage.unknown_artist_coverage_percent > 30 ? (
           <p className="mt-6 rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm leading-6 text-amber-100">
             Smaller artists still have partial genre coverage, so the clearest claims come from the dominant mapped artists.
@@ -37,11 +37,11 @@ export function TasteNarrativeSection({ taste }: Props) {
   );
 }
 
-function SoundList({ title, items, accent }: { title: string; items: string[]; accent: "violet" | "indigo" | "magenta" }) {
+function SoundList({ title, items, accent }: { title: string; items: string[]; accent: "red" | "deep" | "soft" }) {
   const accentClass = {
-    violet: "bg-violet/15 text-violet-100 border-violet/20",
-    indigo: "bg-indigo/15 text-indigo-100 border-indigo/20",
-    magenta: "bg-magenta/15 text-red-100 border-magenta/20",
+    red: "bg-red-500/15 text-red-100 border-red-400/20",
+    deep: "bg-red-950/35 text-red-100 border-red-900/40",
+    soft: "bg-white/[0.055] text-mist border-white/10",
   }[accent];
   return (
     <div className="relative mt-6 first:mt-0">

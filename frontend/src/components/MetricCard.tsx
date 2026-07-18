@@ -4,14 +4,14 @@ interface Props {
   label: string;
   value: ReactNode;
   caption?: string;
-  accent?: "violet" | "indigo" | "magenta";
+  accent?: "red" | "deep" | "soft";
 }
 
-export function MetricCard({ label, value, caption, accent = "violet" }: Props) {
+export function MetricCard({ label, value, caption, accent = "red" }: Props) {
   const accents = {
-    violet: "from-violet/20 to-violet/0 text-violet-100",
-    indigo: "from-indigo/20 to-indigo/0 text-indigo-100",
-    magenta: "from-magenta/20 to-magenta/0 text-red-100",
+    red: "from-red-500/20 to-red-500/0 text-red-100",
+    deep: "from-red-950/35 to-red-950/0 text-red-100",
+    soft: "from-white/[0.075] to-white/[0.015] text-mist",
   };
   return (
     <section className={`rounded-lg border border-line bg-gradient-to-br ${accents[accent]} p-5 shadow-glow`}>

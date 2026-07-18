@@ -1,16 +1,16 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
-import type { MusicCharacterResponse, MusicCharacterRewrite, Prerequisites } from "../../types/api";
-
-type CharacterPeriod = "this_month" | "month" | "rolling_year";
+import type { MusicCharacterResponse, MusicCharacterRewrite, MusicSource, Prerequisites } from "../../types/api";
+import { PeriodSelector, type PeriodValue, standardPeriodOptions } from "../ui/PeriodSelector";
 
 interface Props {
   prerequisites: Prerequisites | null;
+  source: MusicSource;
 }
 
-export function MusicCharacterSection({ prerequisites }: Props) {
-  const [period, setPeriod] = useState<CharacterPeriod>("rolling_year");
+export function MusicCharacterSection({ prerequisites, source }: Props) {
+  const [period, setPeriod] = useState<PeriodValue>("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [character, setCharacter] = useState<MusicCharacterResponse | null>(null);
   const [rewrite, setRewrite] = useState<MusicCharacterRewrite | null>(null);
@@ -23,7 +23,7 @@ export function MusicCharacterSection({ prerequisites }: Props) {
     setLoading(true);
     setRewrite(null);
     setRewriteError(null);
-    api.musicCharacter(period, period === "month" ? selectedMonth : null)
+    api.musicCharacter(period, period === "month" ? selectedMonth : null, source)
       .then((next) => {
         if (cancelled) return;
         setCharacter(next);
@@ -40,12 +40,12 @@ export function MusicCharacterSection({ prerequisites }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [period, selectedMonth]);
+  }, [period, selectedMonth, source]);
 
   if (!character) {
     return (
-      <section className="rounded-[1.5rem] border border-line bg-panel/82 p-6">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Your Music Character</p>
+      <section className="editorial-panel p-6">
+        <p className="section-label">Your Music Character</p>
         <p className="mt-3 text-mist">{loading ? "Reading your music character..." : "Music Character will appear after a refresh with listening data."}</p>
       </section>
     );
@@ -63,7 +63,7 @@ export function MusicCharacterSection({ prerequisites }: Props) {
     setRewriting(true);
     setRewriteError(null);
     try {
-      setRewrite(await api.rewriteMusicCharacter(period, period === "month" ? selectedMonth : null, "playful"));
+      setRewrite(await api.rewriteMusicCharacter(period, period === "month" ? selectedMonth : null, "playful", source));
     } catch (error) {
       setRewriteError(error instanceof Error ? error.message : "Personalised rewrite unavailable.");
     } finally {
@@ -72,32 +72,23 @@ export function MusicCharacterSection({ prerequisites }: Props) {
   };
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-line bg-[linear-gradient(135deg,rgba(20,16,16,0.94),rgba(5,5,5,0.98))] shadow-glow">
+    <section className="overflow-hidden rounded-lg border border-white/10 bg-[linear-gradient(135deg,rgba(20,8,8,0.94),rgba(5,3,3,0.98))] shadow-glow">
       <div className="grid gap-0 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="relative border-b border-white/10 p-6 lg:p-8 xl:border-b-0 xl:border-r">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(239,68,68,0.18),transparent_35%)]" />
           <div className="relative">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Your Music Character</p>
-                <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-5xl">{headline}</h2>
+                <p className="section-label">Your Music Character</p>
+                <h2 className="mt-3 font-display text-4xl uppercase leading-[0.92] tracking-[0.03em] text-white md:text-5xl">{headline}</h2>
                 <p className="mt-2 text-sm text-mist">{displayPeriodLabel(character.period.label, period)}</p>
               </div>
-              <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.035] p-2">
-                <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
-                <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
-                <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
-                {period === "month" ? (
-                  <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months.at(-1)?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
-                    {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
-                  </select>
-                ) : null}
-              </div>
+              <PeriodSelector value={period} onChange={setPeriod} month={selectedMonth} months={months} onMonthChange={setSelectedMonth} options={standardPeriodOptions} />
             </div>
 
             {character.sample_warning ? <p className="mt-5 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{character.sample_warning}</p> : null}
 
-            <p className="mt-6 rounded-xl border border-violet/25 bg-violet/10 p-4 text-xl font-black leading-snug text-violet-100">{roast}</p>
+            <p className="mt-6 rounded-lg border border-red-400/25 bg-red-500/10 p-4 text-xl font-black leading-snug text-red-100">{roast}</p>
             <p className="mt-5 max-w-3xl text-base leading-8 text-mist">{profile}</p>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -126,7 +117,7 @@ export function MusicCharacterSection({ prerequisites }: Props) {
             <ul className="mt-4 space-y-3 text-sm leading-6 text-mist">
               {(rewrite?.why_it_fits?.length ? rewrite.why_it_fits : primary.evidence).slice(0, 4).map((item) => (
                 <li key={item} className="flex gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet" />
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -136,10 +127,6 @@ export function MusicCharacterSection({ prerequisites }: Props) {
       </div>
     </section>
   );
-}
-
-function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>{label}</button>;
 }
 
 function CharacterMini({ title, value, body }: { title: string; value: string; body: string }) {
@@ -152,7 +139,7 @@ function CharacterMini({ title, value, body }: { title: string; value: string; b
   );
 }
 
-function displayPeriodLabel(label: string | undefined, period: CharacterPeriod) {
+function displayPeriodLabel(label: string | undefined, period: PeriodValue) {
   if (period === "rolling_year") return "Your Music Character - Rolling Year";
   return `Your Music Character - ${label ?? "Selected Period"}`;
 }

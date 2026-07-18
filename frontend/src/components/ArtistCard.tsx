@@ -12,7 +12,7 @@ export function ArtistCard({ artist }: { artist: TopArtist }) {
             <span className="text-2xl font-black text-white/20">#{artist.rank}</span>
             <h3 className="truncate text-2xl font-black text-white">{artist.artist}</h3>
           </div>
-          <p className="mt-1 text-sm text-violet-200">{artist.artist_loyalty_label}</p>
+          <p className="mt-1 text-sm text-red-200">{artist.artist_loyalty_label}</p>
         </div>
       </div>
       <dl className="mt-5 grid grid-cols-3 gap-3 text-sm">
@@ -29,7 +29,7 @@ export function ArtistCard({ artist }: { artist: TopArtist }) {
           <dd className="mt-1 font-semibold text-white">{artist.unique_songs_played}</dd>
         </div>
       </dl>
-      <p className="mt-4 text-sm font-semibold text-violet-100">{artist.taste_role || artist.artist_loyalty_label}</p>
+      <p className="mt-4 text-sm font-semibold text-red-100">{artist.taste_role || artist.artist_loyalty_label}</p>
       <p className="mt-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.observation}</p>
       <p className="mt-3 text-xs text-mist/75">Most played: {artist.most_played_song || "Unavailable"}</p>
       <div className="mt-4 space-y-3">
@@ -46,7 +46,7 @@ function ChipGroup({ title, items, muted = false }: { title: string; items: stri
       <p className="mb-2 text-xs uppercase tracking-[0.14em] text-mist/60">{title}</p>
       <div className="flex flex-wrap gap-2">
         {items.map((item) => (
-          <span key={item} className={`rounded-full border px-3 py-1 text-xs ${muted ? "border-white/10 text-mist/60" : "border-violet/25 bg-violet/10 text-violet-100"}`}>
+          <span key={item} className={`rounded-full border px-3 py-1 text-xs ${muted ? "border-white/10 text-mist/60" : "border-red-400/25 bg-red-500/10 text-red-100"}`}>
             {item}
           </span>
         ))}

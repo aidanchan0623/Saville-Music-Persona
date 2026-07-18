@@ -1,20 +1,27 @@
-import { ChartPanel } from "../components/ChartPanel";
-import { EmptyState } from "../components/EmptyState";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { ChartPanel } from "../components/ChartPanel";
+import { EmptyState } from "../components/EmptyState";
+import { MetricBlock } from "../components/ui/MetricBlock";
+import { PageHeader } from "../components/ui/PageHeader";
+import { PeriodSelector, type PeriodValue, standardPeriodOptions } from "../components/ui/PeriodSelector";
 import type { Charts, ListeningMinutes, MusicSource } from "../types/api";
 import { formatMinutes } from "../utils/format";
 
 export function PatternsPage({ charts, source }: { charts: Charts | null; source: MusicSource }) {
-  const [period, setPeriod] = useState<"this_month" | "month" | "rolling_year">("rolling_year");
+  const [period, setPeriod] = useState<PeriodValue>("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
   const [periodCharts, setPeriodCharts] = useState<Charts | null>(charts);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => setPeriodCharts(charts), [charts]);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     Promise.all([
       api.listeningMinutes(period, period === "month" ? selectedMonth : null, source),
       api.charts(period, period === "month" ? selectedMonth : null, source),
@@ -25,62 +32,68 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
         setPeriodCharts(nextCharts);
         if (!selectedMonth && next.period.available_months.length) setSelectedMonth(next.period.available_months[next.period.available_months.length - 1].value);
       })
-      .catch(() => {
-        if (!cancelled) setMinutes(null);
+      .catch((nextError: Error) => {
+        if (!cancelled) {
+          setMinutes(null);
+          setError(nextError.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, [period, selectedMonth, source]);
 
-  if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." />;
-  const months = minutes?.period.available_months ?? [];
   const activeCharts = periodCharts ?? charts;
-  const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? "Selected period";
-  return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-3xl font-bold text-white">Listening Patterns</h1>
-        <p className="mt-2 text-mist">
-          {source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
-        </p>
-      </div>
+  if (!activeCharts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." />;
 
-      <section className="rounded-lg border border-violet/20 bg-panel/82 p-5 shadow-glow">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+  const months = minutes?.period.available_months ?? [];
+  const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? periodLabel(period);
+
+  return (
+    <div className="space-y-9">
+      <section className="editorial-panel overflow-hidden">
+        <div className="p-5 md:p-8">
+          <PageHeader
+            eyebrow="Listening patterns"
+            title="Patterns"
+            description={source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates, durations, and music details available in your local history."}
+            action={<PeriodSelector value={period} onChange={setPeriod} month={selectedMonth} months={months} onMonthChange={setSelectedMonth} options={standardPeriodOptions} />}
+            meta={
+              <>
+                <span className="subtle-pill border-red-400/20 bg-red-500/10 text-red-100">{activeLabel}</span>
+                {loading ? <span className="subtle-pill">Updating</span> : null}
+                {source === "spotify" ? <span className="subtle-pill">Spotify signal model</span> : null}
+              </>
+            }
+          />
+        </div>
+        <div className="grid gap-px border-t border-white/10 bg-white/10 md:grid-cols-4">
+          <MetricBlock label="Selected total" value={minutes ? formatMinutes(minutes.metrics.selected_period_total_minutes) : "Unavailable"} caption="Detected listening minutes" index={1} />
+          <MetricBlock label="Average active day" value={minutes ? formatMinutes(minutes.metrics.average_active_day_minutes) : "Unavailable"} caption={minutes ? `${minutes.metrics.active_listening_days} active days` : "Waiting for period data"} index={2} />
+          <MetricBlock label="Longest day" value={minutes?.metrics.longest_detected_listening_day?.formatted ?? "Unavailable"} caption={minutes?.metrics.longest_detected_listening_day?.date ?? "No listening time yet"} index={3} />
+          <MetricBlock label="Current streak" value={`${minutes?.metrics.current_listening_streak_days ?? 0} days`} caption="Active day has at least one detected music play" index={4} />
+        </div>
+      </section>
+
+      {error ? <p className="rounded-lg border border-red-300/10 bg-red-400/10 p-4 text-sm text-red-100">{error}</p> : null}
+
+      <section className="editorial-panel p-5 md:p-7">
+        <div className="mb-5 flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm uppercase tracking-[0.16em] text-violet-200">Daily Listening Minutes</p>
-            <h2 className="mt-1 text-2xl font-black text-white">{activeLabel}</h2>
+            <p className="section-label">Detected listening time</p>
+            <h2 className="mt-2 text-3xl font-black text-white">{activeLabel}</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
               A practical view of when you listened most, with quiet days kept visible instead of smoothed away.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {([
-              ["this_month", "This Month"],
-              ["month", "Select Month"],
-              ["rolling_year", "Rolling Year"],
-            ] as const).map(([value, label]) => (
-              <button key={value} className={`rounded-md px-3 py-2 text-sm font-semibold ${period === value ? "bg-violet text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => setPeriod(value)}>
-                {label}
-              </button>
-            ))}
-            {period === "month" ? (
-              <select className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white" value={selectedMonth ?? months[months.length - 1]?.value ?? ""} onChange={(event) => setSelectedMonth(event.target.value)}>
-                {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
-              </select>
-            ) : null}
-          </div>
+          {minutes?.duration_quality.confidence_badge ? <span className="subtle-pill">{minutes.duration_quality.confidence_badge}</span> : null}
         </div>
         {minutes ? (
           <>
-            <div className="mt-5 grid gap-3 md:grid-cols-4">
-              <MinuteStat label="Selected total" value={formatMinutes(minutes.metrics.selected_period_total_minutes)} caption="Across the selected period" />
-              <MinuteStat label="Average active day" value={formatMinutes(minutes.metrics.average_active_day_minutes)} caption={`${minutes.metrics.active_listening_days} active days`} />
-              <MinuteStat label="Longest day" value={minutes.metrics.longest_detected_listening_day?.formatted ?? "Unavailable"} caption={minutes.metrics.longest_detected_listening_day?.date ?? "No listening time yet"} />
-              <MinuteStat label="Current streak" value={`${minutes.metrics.current_listening_streak_days} days`} caption="Active day = at least one detected music play" />
-            </div>
-            <p className="mt-4 rounded-md bg-white/[0.04] p-3 text-sm text-mist">{minutes.summary_sentence}</p>
+            <p className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-mist">{minutes.summary_sentence}</p>
             <div className="mt-5 grid gap-5 xl:grid-cols-3">
               <ChartPanel title="Daily detected minutes" data={minutes.daily} type="line" />
               <ChartPanel title="Weekly aggregate minutes" data={minutes.weekly} />
@@ -89,11 +102,11 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
             <Heatmap values={minutes.heatmap.slice(-140)} />
           </>
         ) : (
-          <div className="mt-5 rounded-md bg-white/[0.03] p-5 text-sm text-mist">No minute analytics available yet.</div>
+          <div className="rounded-lg bg-white/[0.03] p-5 text-sm text-mist">No minute analytics available yet.</div>
         )}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <section className="grid gap-5 xl:grid-cols-2">
         <ChartPanel title={`Listening by release decade - ${activeLabel}`} data={activeCharts.release_decades} />
         <ChartPanel title={`Dominant genre families - ${activeLabel}`} data={activeCharts.top_genre_clusters} type="pie" />
         <ChartPanel title={`Top artists by plays - ${activeLabel}`} data={activeCharts.top_artists} />
@@ -103,17 +116,7 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
         <div className="xl:col-span-2">
           <ChartPanel title={`Listening history timeline - ${activeLabel}`} data={activeCharts.coverage_timeline} type="line" />
         </div>
-      </div>
-    </div>
-  );
-}
-
-function MinuteStat({ label, value, caption }: { label: string; value: string; caption: string }) {
-  return (
-    <div className="rounded-md bg-white/[0.05] p-4">
-      <p className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</p>
-      <p className="mt-2 text-xl font-black text-white">{value}</p>
-      <p className="mt-1 text-xs text-mist">{caption}</p>
+      </section>
     </div>
   );
 }
@@ -122,7 +125,7 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
   if (!values.length) return null;
   const max = Math.max(...values.map((item) => item.value), 1);
   return (
-    <div className="mt-5 rounded-md bg-white/[0.04] p-4">
+    <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-white">Recent daily intensity</h3>
         <p className="text-xs text-mist">Darker cells mean more listening time.</p>
@@ -142,4 +145,8 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
       </div>
     </div>
   );
+}
+
+function periodLabel(period: PeriodValue) {
+  return standardPeriodOptions.find((option) => option.value === period)?.label ?? "Selected Period";
 }

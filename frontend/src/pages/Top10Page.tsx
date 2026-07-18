@@ -1,8 +1,12 @@
-import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
+import { Artwork } from "../components/ui/Artwork";
+import { MetricBlock } from "../components/ui/MetricBlock";
+import { PageHeader } from "../components/ui/PageHeader";
+import { PeriodSelector, type PeriodValue, standardPeriodOptions } from "../components/ui/PeriodSelector";
 import type {
   MusicSource,
   PeriodTopItem,
@@ -15,10 +19,8 @@ import type {
 } from "../types/api";
 import { formatDate } from "../utils/format";
 
-type TopPeriod = "this_month" | "month" | "rolling_year";
-
 export function Top10Page({ source }: { source: MusicSource }) {
-  const [period, setPeriod] = useState<TopPeriod>("this_month");
+  const [period, setPeriod] = useState<PeriodValue>("this_month");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [tracks, setTracks] = useState<PeriodTopResponse | null>(null);
   const [artists, setArtists] = useState<PeriodTopResponse | null>(null);
@@ -108,195 +110,115 @@ export function Top10Page({ source }: { source: MusicSource }) {
 
   const months = tracks?.period.available_months ?? artists?.period.available_months ?? albums?.period.available_months ?? [];
   const activeLabel = displayPeriodLabel(tracks?.period.label ?? albums?.period.label, period);
+  const detectedPlayLabel = source === "spotify" ? "local signals" : "detected plays";
 
   if (!tracks && !artists && !albums && !loading) {
     return <EmptyState title="No rankings yet" body="Refresh your music data to build period rankings from detected plays." />;
   }
 
   return (
-    <div className="space-y-10">
-      <header className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(37,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(17,8,8,0.98))] p-6 shadow-glow lg:p-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-4xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
-            <h1 className="mt-3 text-5xl font-black leading-none text-white md:text-7xl">Top 10</h1>
-            <p className="mt-4 max-w-3xl text-lg leading-8 text-mist">
-              {source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
-          <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
-          <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
-          <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
-          {period === "month" ? (
-            <select
-              className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white"
-              value={selectedMonth ?? months.at(-1)?.value ?? ""}
-              onChange={(event) => setSelectedMonth(event.target.value)}
-            >
-              {months.map((month) => (
-                <option key={month.value} value={month.value}>{month.label}</option>
-              ))}
-            </select>
-          ) : null}
-          </div>
+    <div className="space-y-9">
+      <section className="editorial-panel overflow-hidden">
+        <div className="p-5 md:p-8">
+          <PageHeader
+            eyebrow="Music leaders"
+            title="Top 10"
+            description={source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums defining this slice of your listening."}
+            action={<PeriodSelector value={period} onChange={setPeriod} month={selectedMonth} months={months} onMonthChange={setSelectedMonth} options={standardPeriodOptions} />}
+            meta={
+              <>
+                <span className="subtle-pill border-red-400/20 bg-red-500/10 text-red-100">{activeLabel}</span>
+                <span className="subtle-pill">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
+                <span className="subtle-pill">{(tracks?.total_play_count ?? 0).toLocaleString()} {detectedPlayLabel}</span>
+                {loading ? <span className="subtle-pill border-red-400/20 bg-red-500/10 text-red-100">Updating</span> : null}
+              </>
+            }
+          />
         </div>
-
-        <div className="mt-7 flex flex-wrap gap-3 text-sm">
-          <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{activeLabel}</span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{(tracks?.total_play_count ?? 0).toLocaleString()} detected plays</span>
-          {source === "spotify" ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Top-item based, not exact Spotify history</span> : null}
-          {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
+        <div className="grid gap-px border-t border-white/10 bg-white/10 md:grid-cols-3">
+          <MetricBlock label="Ranked plays" value={(tracks?.ranked_music_play_count ?? 0).toLocaleString()} caption="Music-only events in this period" index={1} />
+          <MetricBlock label="Top song" value={tracks?.items[0]?.title ?? "Still forming"} caption={tracks?.items[0]?.artist ?? "No detected leader"} index={2} />
+          <MetricBlock label="Top artist" value={artists?.items[0]?.artist ?? "Still forming"} caption={artists?.items[0]?.most_played_song ?? "No artist anchor yet"} index={3} />
         </div>
-      </header>
+      </section>
 
       {(tracks?.sample_warning || albums?.sample_warning || error) ? (
         <section className="space-y-3">
-          {tracks?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
-          {albums?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{albums.sample_warning}</p> : null}
-          {error ? <p className="rounded-xl border border-red-300/10 bg-red-400/10 p-4 text-sm text-red-100">{error}</p> : null}
+          {tracks?.sample_warning ? <p className="rounded-lg border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
+          {albums?.sample_warning ? <p className="rounded-lg border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{albums.sample_warning}</p> : null}
+          {error ? <p className="rounded-lg border border-red-300/10 bg-red-400/10 p-4 text-sm text-red-100">{error}</p> : null}
         </section>
       ) : null}
 
-      <TopList
-        title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`}
-        caption={source === "spotify" ? "Your clearest Spotify top-track signals. Exact lifetime play counts are not available from Spotify." : "Your clearest song leaders, ranked by local play history."}
-        response={tracks}
-        loading={loading}
-        source={source}
-      />
+      <TopSongsPanel response={tracks} loading={loading} source={source} />
+      <TopArtistsPanel response={artists} loading={loading} selectedArtist={selectedArtist} onViewSongs={setSelectedArtist} source={source} />
 
-      <TopList
-        title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
-        caption={source === "spotify" ? "Official Spotify artist images and genres where available." : "The artists pulling the most attention in this period."}
-        response={artists}
-        loading={loading}
-        artistList
-        source={source}
-        selectedArtist={selectedArtist}
-        onViewSongs={setSelectedArtist}
-      />
-
-      {selectedArtist ? (
-        <ArtistDrilldownPanel artist={selectedArtist} response={artistSongs} loading={artistLoading} onClose={() => setSelectedArtist(null)} />
-      ) : null}
+      {selectedArtist ? <ArtistDrilldownPanel artist={selectedArtist} response={artistSongs} loading={artistLoading} onClose={() => setSelectedArtist(null)} /> : null}
 
       <FavouriteAlbumsSection response={albums} loading={loading} selectedAlbum={selectedAlbum} onViewSongs={setSelectedAlbum} source={source} />
 
-      {selectedAlbum ? (
-        <AlbumDrilldownPanel album={selectedAlbum} response={albumSongs} loading={albumLoading} onClose={() => setSelectedAlbum(null)} />
-      ) : null}
+      {selectedAlbum ? <AlbumDrilldownPanel album={selectedAlbum} response={albumSongs} loading={albumLoading} onClose={() => setSelectedAlbum(null)} /> : null}
     </div>
   );
 }
 
-function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+function TopSongsPanel({ response, loading, source }: { response: PeriodTopResponse | null; loading: boolean; source: MusicSource }) {
+  const maxCount = Math.max(...(response?.items.map((item) => item.play_count) ?? [1]), 1);
   return (
-    <button className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${active ? "bg-red-600 text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
-      {label}
-    </button>
+    <section className="editorial-panel p-5 md:p-7">
+      <PanelIntro title="Top Songs" caption={source === "spotify" ? "Your strongest Spotify top-track signals. Exact lifetime play counts are not available from Spotify." : "Your clearest song leaders, ranked by local play history."} loading={loading} />
+      <div className="mt-6 space-y-3">
+        {response?.items.length ? response.items.map((item) => <RankedSongRow key={item.key} item={item} maxCount={maxCount} source={source} />) : <EmptyRanking text="No detected songs in this period." />}
+      </div>
+    </section>
   );
 }
 
-function TopList({
-  title,
-  caption,
+function TopArtistsPanel({
   response,
   loading,
-  artistList = false,
   selectedArtist,
   onViewSongs,
   source,
 }: {
-  title: string;
-  caption: string;
   response: PeriodTopResponse | null;
   loading: boolean;
-  artistList?: boolean;
-  selectedArtist?: string | null;
-  onViewSongs?: (artist: string) => void;
+  selectedArtist: string | null;
+  onViewSongs: (artist: string) => void;
   source: MusicSource;
 }) {
   return (
-    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">{title}</h2>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{caption}</p>
-        </div>
-        {loading ? <span className="text-sm text-mist">Loading...</span> : null}
-      </div>
-      <div className={artistList ? "grid gap-4 xl:grid-cols-2" : "space-y-4"}>
+    <section className="editorial-panel p-5 md:p-7">
+      <PanelIntro title="Top Artists" caption={source === "spotify" ? "Official Spotify artist images and genres where available." : "The artists pulling the most attention in this period."} loading={loading} />
+      <div className="mt-6 grid gap-4 xl:grid-cols-2">
         {response?.items.length ? (
-          response.items.map((item) => (
-            <PeriodTopCard
-              key={item.key}
-              item={item}
-              artistList={artistList}
-              selected={artistList && selectedArtist === item.artist}
-              onViewSongs={onViewSongs}
-              source={source}
-            />
-          ))
+          response.items.map((item) => <RankedArtistCard key={item.key} item={item} selected={selectedArtist === item.artist} onViewSongs={onViewSongs} source={source} />)
         ) : (
-          <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">No detected plays in this period.</div>
+          <EmptyRanking text="No detected artists in this period." />
         )}
       </div>
     </section>
   );
 }
 
-function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { item: PeriodTopItem; artistList: boolean; selected?: boolean; onViewSongs?: (artist: string) => void; source: MusicSource }) {
-  const title = artistList ? item.artist : item.title ?? "Unknown track";
-  const rank = `#${String(item.rank).padStart(2, "0")}`;
-
-  if (artistList) {
-    return (
-      <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
-        <div className="grid gap-5 sm:grid-cols-[7rem_1fr]">
-          <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-28 w-28" />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-black text-red-200">{rank}</span>
-              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, true)}</span>
-            </div>
-            <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-mist">
-              {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
-            </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, true)}</span>
-              <Movement movement={item.movement} />
-            </div>
-            {onViewSongs ? (
-              <button
-                aria-label={`View songs by ${item.artist}`}
-                className="mt-5 rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
-                type="button"
-                onClick={() => onViewSongs(item.artist)}
-              >
-                View songs
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </article>
-    );
-  }
-
+function RankedSongRow({ item, maxCount, source }: { item: PeriodTopItem; maxCount: number; source: MusicSource }) {
+  const title = item.title ?? "Unknown track";
+  const width = Math.max(5, (item.play_count / maxCount) * 100);
   return (
-    <article className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
-      <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto] lg:items-center">
-        <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
+    <article className="group rounded-lg border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
+      <div className="grid gap-4 sm:grid-cols-[5.5rem_1fr] lg:grid-cols-[6rem_1fr_auto] lg:items-center">
+        <Artwork src={item.thumbnail} alt={title} className="h-24 w-24" />
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-3xl font-black text-red-200">{rank}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-display text-3xl leading-none text-red-200">#{String(item.rank).padStart(2, "0")}</span>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, false)}</span>
           </div>
-          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
-          <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
-          {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
+          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white">{title}</h3>
+          <p className="truncate text-sm font-semibold text-mist">{item.artist}</p>
+          {item.album ? <p className="mt-1 truncate text-xs text-mist/70">{item.album}</p> : null}
+          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-gradient-to-r from-red-800 via-red-500 to-red-200" style={{ width: `${width}%` }} />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
           <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, false)}</span>
@@ -307,56 +229,62 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
   );
 }
 
+function RankedArtistCard({ item, selected, onViewSongs, source }: { item: PeriodTopItem; selected: boolean; onViewSongs: (artist: string) => void; source: MusicSource }) {
+  return (
+    <article className={`rounded-lg border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
+      <div className="grid gap-5 sm:grid-cols-[6.5rem_1fr]">
+        <Artwork src={item.thumbnail} alt={item.artist} rounded="circle" className="h-28 w-28" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-display text-3xl leading-none text-red-200">#{String(item.rank).padStart(2, "0")}</span>
+            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, true)}</span>
+          </div>
+          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white">{item.artist}</h3>
+          <p className="mt-2 text-sm leading-6 text-mist">
+            {item.unique_songs ?? 0} unique songs{item.most_played_song ? `, top song: ${item.most_played_song}` : ""}
+          </p>
+          <MetricPills items={[spotifyEvidenceLabel(item, source, true), item.detected_minutes_formatted, item.share_of_period ? `${item.share_of_period}% share` : null]} />
+          <button className="mt-5 rounded-md border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15" type="button" onClick={() => onViewSongs(item.artist)}>
+            View songs
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs, source }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   return (
-    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">Favourite Albums</h2>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."}</p>
-        </div>
-        {loading ? <span className="text-sm text-mist">Loading...</span> : null}
-      </div>
+    <section className="editorial-panel p-5 md:p-7">
+      <PanelIntro title="Favourite Albums" caption={source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."} loading={loading} />
       {response?.albums.length ? (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {response.albums.map((album) => (
-            <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} source={source} />
-          ))}
+        <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          {response.albums.map((album) => <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} source={source} />)}
         </div>
       ) : (
-        <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">Album data is unavailable for this period.</div>
+        <EmptyRanking text="Album data is unavailable for this period." />
       )}
     </section>
   );
 }
 
 function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
-  const rank = `#${String(album.rank).padStart(2, "0")}`;
   return (
-    <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
+    <article className={`rounded-lg border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
       <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto]">
-        <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
+        <Artwork src={album.thumbnail} alt={album.album} className="h-28 w-28 md:h-32 md:w-32" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-black text-red-200">{rank}</span>
+            <span className="font-display text-3xl leading-none text-red-200">#{String(album.rank).padStart(2, "0")}</span>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{album.label}</span>
           </div>
-          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{album.album}</h3>
+          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white">{album.album}</h3>
           <p className="mt-2 truncate text-base font-semibold text-mist">{album.artist}</p>
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{album.unique_songs} songs</span>
-          </div>
+          <MetricPills items={[source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`, `${album.unique_songs} songs`, album.detected_minutes_formatted]} />
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
-          {album.most_played_song ? <p className="mt-2 text-xs text-mist/75">Most played: {album.most_played_song}</p> : null}
         </div>
         <div className="flex items-start justify-end">
-          <button
-            aria-label={`View songs from ${album.album}`}
-            className="whitespace-nowrap rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
-            type="button"
-            onClick={() => onViewSongs(album)}
-          >
+          <button className="whitespace-nowrap rounded-md border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15" type="button" onClick={() => onViewSongs(album)}>
             View songs
           </button>
         </div>
@@ -368,17 +296,13 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
 function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: string; response: TopArtistSongsResponse | null; loading: boolean; onClose: () => void }) {
   return (
     <DrilldownShell
-      title={`Songs by ${artist} - ${response?.period_label ?? "Selected Period"}`}
-      subtitle="Song-level data for this artist in the selected period."
-      visual={<Artwork src={response?.artist_thumbnail} label={artist} fallback={initials(artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-24 w-24" />}
+      title={`Songs by ${artist}`}
+      subtitle={response?.period_label ?? "Selected Period"}
+      visual={<Artwork src={response?.artist_thumbnail} alt={artist} rounded="circle" className="h-24 w-24" />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Song-level data for this artist is not available in the selected period."
-      summary={response ? [
-        `${response.total_plays} total plays`,
-        `${response.unique_songs} unique songs`,
-        response.most_replayed_song ? `Most replayed: ${response.most_replayed_song}` : null,
-      ] : []}
+      summary={response ? [`${response.total_plays} total plays`, `${response.unique_songs} unique songs`, response.most_replayed_song ? `Most replayed: ${response.most_replayed_song}` : null] : []}
       songs={response?.songs ?? []}
     />
   );
@@ -387,17 +311,13 @@ function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: 
 function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: TopAlbumItem; response: TopAlbumSongsResponse | null; loading: boolean; onClose: () => void }) {
   return (
     <DrilldownShell
-      title={`Songs from ${album.album} - ${response?.period_label ?? "Selected Period"}`}
-      subtitle={album.artist}
-      visual={<Artwork src={album.thumbnail} label={album.album} fallback={initials(album.album)} icon={Album} rounded="rounded-2xl" sizeClass="h-24 w-24" />}
+      title={`Songs from ${album.album}`}
+      subtitle={response?.period_label ?? album.artist}
+      visual={<Artwork src={album.thumbnail} alt={album.album} className="h-24 w-24" />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Album data is unavailable for this period."
-      summary={response ? [
-        `${response.total_plays} total plays`,
-        `${response.unique_songs} unique songs`,
-        response.most_played_song ? `Most played: ${response.most_played_song}` : null,
-      ] : []}
+      summary={response ? [`${response.total_plays} total plays`, `${response.unique_songs} unique songs`, response.most_played_song ? `Most played: ${response.most_played_song}` : null] : []}
       songs={response?.songs ?? []}
     />
   );
@@ -423,17 +343,17 @@ function DrilldownShell({
   songs: TopDrilldownSong[];
 }) {
   return (
-    <section className="rounded-[1.5rem] border border-line bg-panel/85 p-5 shadow-glow lg:p-6" data-testid="songs-drilldown">
+    <section className="editorial-panel p-5 md:p-6" data-testid="songs-drilldown">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           {visual}
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Drilldown</p>
+            <p className="section-label">Drilldown</p>
             <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
             <p className="mt-1 text-sm text-mist">{subtitle}</p>
           </div>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-red-400/50 hover:bg-white/10" onClick={onClose}>
+        <button className="inline-flex items-center gap-2 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white hover:border-red-400/50 hover:bg-white/10" onClick={onClose}>
           <X size={16} /> Close
         </button>
       </div>
@@ -451,52 +371,35 @@ function DrilldownShell({
 
 function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
-    <article className="grid gap-4 rounded-xl border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[4.5rem_1fr]">
-      <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} rounded="rounded-xl" sizeClass="h-16 w-16" />
+    <article className="grid gap-4 rounded-lg border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[4.5rem_1fr]">
+      <Artwork src={song.thumbnail} alt={song.title ?? "Song"} className="h-16 w-16" />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{song.rank}</span>
           <h3 className="truncate text-base font-semibold text-white">{song.title ?? "Unknown track"}</h3>
         </div>
-        <p className="mt-1 truncate text-sm text-mist">{song.artist ?? "Unknown Artist"}{song.album ? ` - ${song.album}` : ""}</p>
-        <MetricPills
-          items={[
-            `${song.plays} plays`,
-            song.last_played ? `Last ${formatDate(song.last_played)}` : null,
-            song.first_played ? `First ${formatDate(song.first_played)}` : null,
-          ]}
-        />
+        <p className="mt-1 truncate text-sm text-mist">{song.artist ?? "Unknown Artist"}{song.album ? `, ${song.album}` : ""}</p>
+        <MetricPills items={[`${song.plays} plays`, song.last_played ? `Last ${formatDate(song.last_played)}` : null, song.first_played ? `First ${formatDate(song.first_played)}` : null]} />
       </div>
     </article>
   );
 }
 
-function Artwork({
-  src,
-  label,
-  fallback,
-  icon: Icon = Music2,
-  rounded = "rounded-lg",
-  sizeClass = "h-16 w-16",
-}: {
-  src: string | null | undefined;
-  label: string;
-  fallback?: string;
-  icon?: typeof Music2;
-  rounded?: string;
-  sizeClass?: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
+function PanelIntro({ title, caption, loading }: { title: string; caption: string; loading: boolean }) {
   return (
-    <div className={`relative grid shrink-0 place-items-center overflow-hidden border border-white/10 bg-[linear-gradient(135deg,rgba(127,29,29,0.9),rgba(5,5,5,0.95))] text-white shadow-[0_18px_50px_rgba(0,0,0,0.32)] ${sizeClass} ${rounded}`}>
-      {src && !failed ? <img className="h-full w-full object-cover object-center" src={src} alt={label} onError={() => setFailed(true)} /> : (
-        <div className="grid h-full w-full place-items-center">
-          {fallback ? <span className="text-base font-black text-white/85">{fallback}</span> : <Icon size={24} />}
-        </div>
-      )}
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <p className="section-label">{title}</p>
+        <h2 className="mt-2 text-3xl font-black leading-tight text-white md:text-5xl">{title}</h2>
+        <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{caption}</p>
+      </div>
+      {loading ? <span className="text-sm text-mist">Loading...</span> : null}
     </div>
   );
+}
+
+function EmptyRanking({ text }: { text: string }) {
+  return <div className="rounded-lg border border-line bg-black/20 p-6 text-sm text-mist">{text}</div>;
 }
 
 function MetricPills({ items }: { items: (string | null | undefined)[] }) {
@@ -504,9 +407,7 @@ function MetricPills({ items }: { items: (string | null | undefined)[] }) {
   if (!visible.length) return null;
   return (
     <div className="mt-3 flex flex-wrap gap-2 text-xs text-mist">
-      {visible.map((item) => (
-        <span key={item} className="rounded-full bg-white/10 px-3 py-1">{item}</span>
-      ))}
+      {visible.map((item) => <span key={item} className="rounded-full bg-white/10 px-3 py-1">{item}</span>)}
     </div>
   );
 }
@@ -521,9 +422,9 @@ function Movement({ movement }: { movement: PeriodTopItem["movement"] }) {
   );
 }
 
-function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
+function displayPeriodLabel(label: string | undefined, period: PeriodValue) {
   if (period === "rolling_year") return "Rolling Year";
-  return label ?? "Selected Period";
+  return label ?? standardPeriodOptions.find((option) => option.value === period)?.label ?? "Selected Period";
 }
 
 function displayListLabel(label: string, artistList: boolean) {
@@ -535,9 +436,4 @@ function spotifyEvidenceLabel(item: PeriodTopItem, source: MusicSource, artistLi
   if (source !== "spotify") return `${item.play_count.toLocaleString()} plays`;
   if (artistList) return item.play_count > 1 ? `${item.play_count.toLocaleString()} signals` : "Spotify top artist";
   return item.spotify_signal_label || (item.play_count > 1 ? `${item.play_count.toLocaleString()} signals` : "Spotify top track");
-}
-
-function initials(value: string) {
-  const parts = value.split(/\s+/).filter(Boolean);
-  return (parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "");
 }

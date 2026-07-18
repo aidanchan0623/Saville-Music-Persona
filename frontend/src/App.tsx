@@ -1,8 +1,11 @@
-import { BarChart3, Disc3, Gauge, Home, Library, Music2, Settings, Sparkles } from "lucide-react";
+import { BarChart3, Disc3, Gauge, Home, Library, Menu, Music2, RefreshCw, Settings, Sparkles, X } from "lucide-react";
 import type { ElementType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
+import { LineSidebar, type LineSidebarItem } from "./components/LineSidebar";
+import { LineWaves } from "./components/LineWaves";
 import { StatusPill } from "./components/StatusPill";
+import { SourceControl } from "./components/ui/SourceControl";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PatternsPage } from "./pages/PatternsPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -10,22 +13,23 @@ import { ReportPage } from "./pages/ReportPage";
 import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist } from "./types/api";
 
 type Page = "overview" | "top10" | "scores" | "patterns" | "report" | "recommendations" | "settings";
 
-const nav: { id: Page; label: string; icon: ElementType }[] = [
-  { id: "overview", label: "Overview", icon: Home },
-  { id: "top10", label: "Top 10", icon: Disc3 },
-  { id: "scores", label: "Scores", icon: Gauge },
-  { id: "patterns", label: "Patterns", icon: BarChart3 },
-  { id: "report", label: "Persona Report", icon: Sparkles },
-  { id: "recommendations", label: "Recommendations", icon: Library },
-  { id: "settings", label: "Settings", icon: Settings },
+const nav: (LineSidebarItem<Page> & { icon: ElementType })[] = [
+  { id: "overview", label: "Overview", kicker: "Identity read", icon: Home },
+  { id: "top10", label: "Top 10", kicker: "Ranked plays", icon: Disc3 },
+  { id: "scores", label: "Taste Scores", kicker: "Signal gauges", icon: Gauge },
+  { id: "patterns", label: "Patterns", kicker: "Time and charts", icon: BarChart3 },
+  { id: "report", label: "Persona Report", kicker: "Written profile", icon: Sparkles },
+  { id: "recommendations", label: "Recommendations", kicker: "Curated picks", icon: Library },
+  { id: "settings", label: "Settings", kicker: "Local setup", icon: Settings },
 ];
 
 export default function App() {
   const [page, setPage] = useState<Page>("overview");
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [source, setSource] = useState<MusicSource>(() => {
     const querySource = new URLSearchParams(window.location.search).get("source");
     if (querySource === "spotify") return "spotify";
@@ -33,7 +37,6 @@ export default function App() {
   });
   const [useDemo, setUseDemo] = useState(() => localStorage.getItem("smp_use_demo") === "true");
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [tracks, setTracks] = useState<TopTrack[]>([]);
   const [artists, setArtists] = useState<TopArtist[]>([]);
   const [scores, setScores] = useState<ScoreMetric[]>([]);
   const [charts, setCharts] = useState<Charts | null>(null);
@@ -56,7 +59,6 @@ export default function App() {
 
   const clearAnalysis = () => {
     setOverview(null);
-    setTracks([]);
     setArtists([]);
     setScores([]);
     setCharts(null);
@@ -69,15 +71,13 @@ export default function App() {
   const loadAnalysis = async (activeSource: MusicSource = source) => {
     const nextOverview = await api.overview(activeSource);
     setOverview(nextOverview);
-    const [nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.allSettled([
-      api.topTracks(activeSource),
+    const [nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.allSettled([
       api.topArtists(activeSource),
       api.scores("rolling_year", null, activeSource),
       api.charts("rolling_year", null, activeSource),
       api.listeningMinutes("this_month", null, activeSource),
       api.listeningMinutes("rolling_year", null, activeSource),
     ] as const);
-    if (nextTracks.status === "fulfilled") setTracks(nextTracks.value);
     if (nextArtists.status === "fulfilled") setArtists(nextArtists.value);
     if (nextScores.status === "fulfilled") setScores(nextScores.value);
     if (nextCharts.status === "fulfilled") setCharts(nextCharts.value);
@@ -104,15 +104,13 @@ export default function App() {
   }, [useDemo]);
 
   useEffect(() => {
-    void loadStatus().catch((error) => setMessage(error.message));
+    void loadStatus().catch((error) => setMessage(error instanceof Error ? error.message : "Could not read local status."));
   }, []);
 
   useEffect(() => {
     void loadAnalysis(source).catch((error) => {
       clearAnalysis();
-      if (source === "spotify") {
-        setMessage(error instanceof Error ? error.message : "Connect Spotify in Settings, then refresh Spotify data.");
-      }
+      setMessage(error instanceof Error ? error.message : "No local analysis is available for this source yet.");
     });
   }, [source]);
 
@@ -147,6 +145,10 @@ export default function App() {
   };
 
   const generateRecommendations = async () => {
+    if (source === "spotify") {
+      setMessage("Recommendations currently use YouTube Music history. Switch to YouTube Music to generate them.");
+      return;
+    }
     setBusy(true);
     setMessage("Building recommendations from your local taste profile...");
     try {
@@ -262,7 +264,7 @@ export default function App() {
       case "report":
         return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} source={source} />;
       case "recommendations":
-        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} />;
+        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} />;
       case "settings":
         return (
           <SettingsPage
@@ -288,57 +290,68 @@ export default function App() {
           />
         );
     }
-  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
+  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, artists, scores, charts, report, recommendations, source]);
 
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
-  const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
+  const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube cached" : "YouTube offline";
+  const currentNav = nav.find((item) => item.id === page) ?? nav[0];
+  const shellFooter = (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <StatusPill ok={youtubeReady} label={youtubeLabel} />
+        <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : spotifyStatus?.configured ? "Spotify ready" : "Spotify optional"} muted={!spotifyStatus?.configured && !spotifyStatus?.connected} />
+        <StatusPill ok={Boolean(prerequisites?.model_installed && prerequisites.ollama_reachable)} label={prerequisites?.model_installed && prerequisites.ollama_reachable ? "Gemma ready" : "Gemma offline"} />
+      </div>
+      <button type="button" className="btn-secondary w-full" onClick={refresh} disabled={busy}>
+        <RefreshCw size={16} className={busy ? "animate-spin" : ""} /> Refresh data
+      </button>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-ink text-white">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,68,68,0.18),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(153,27,27,0.16),transparent_25%)]" />
-      <aside className="fixed inset-y-0 left-0 hidden w-72 border-r border-line bg-ink/85 p-5 backdrop-blur-xl lg:block">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-br from-violet to-magenta">
-            <Music2 size={22} />
+    <div className="relative min-h-screen overflow-x-hidden bg-ink text-white">
+      <LineWaves className="fixed opacity-70" amplitude={26} speed={0.00014} waveCount={8} />
+      <div className="fixed inset-0 -z-10 bg-[linear-gradient(115deg,rgba(5,3,3,0.98),rgba(13,6,6,0.96)_52%,rgba(4,3,3,0.99))]" />
+      <div className="fixed inset-x-0 top-0 z-30 border-b border-white/10 bg-[#050303]/88 px-4 py-3 backdrop-blur-2xl lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <button type="button" className="grid h-10 w-10 place-items-center rounded-md border border-white/10 bg-white/[0.06] text-white" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
+            <Menu size={19} />
+          </button>
+          <div className="min-w-0 text-center">
+            <p className="font-display text-lg uppercase leading-none tracking-[0.06em]">Saville</p>
+            <p className="mt-1 truncate text-xs uppercase tracking-[0.18em] text-mist/70">{currentNav.label}</p>
           </div>
-          <div>
-            <p className="font-bold">Saville Music</p>
-            <p className="text-xs text-mist">Music identity</p>
-          </div>
+          <span className="grid h-10 w-10 place-items-center rounded-md border border-red-400/25 bg-red-600/20 text-red-100">
+            <Music2 size={18} />
+          </span>
         </div>
-        <nav className="mt-8 space-y-2">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => setPage(item.id)}>
-                <Icon size={18} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="absolute bottom-5 left-5 right-5 space-y-2">
-          <StatusPill ok={youtubeReady} label={youtubeLabel} />
-          <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} />
-          <StatusPill ok={Boolean(prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma offline"} />
-        </div>
-      </aside>
+      </div>
 
-      <div className="lg:pl-72">
-        <header className="sticky top-0 z-20 border-b border-line bg-ink/78 px-4 py-3 backdrop-blur-xl lg:hidden">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold">
-              <Music2 size={20} /> Saville
-            </div>
-            <select className="rounded-md border border-line bg-panel px-3 py-2 text-sm" value={page} onChange={(event) => setPage(event.target.value as Page)}>
-              {nav.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
-          </div>
-        </header>
-        <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
-          <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
+      <LineSidebar items={nav} active={page} onNavigate={setPage} footer={shellFooter} className="fixed inset-y-0 left-0 z-30 hidden w-[19rem] lg:block" />
+
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm lg:hidden">
+          <LineSidebar
+            items={nav}
+            active={page}
+            onNavigate={(next) => {
+              setPage(next);
+              setMobileOpen(false);
+            }}
+            footer={shellFooter}
+            className="h-full w-[min(22rem,calc(100vw-2rem))]"
+          />
+          <button type="button" className="absolute right-4 top-4 grid h-10 w-10 place-items-center rounded-md border border-white/10 bg-white/[0.08] text-white" aria-label="Close navigation" onClick={() => setMobileOpen(false)}>
+            <X size={20} />
+          </button>
+        </div>
+      ) : null}
+
+      <div className="relative z-10 pt-[4.6rem] lg:pl-[19rem] lg:pt-0">
+        <main className="mx-auto max-w-[94rem] px-4 pb-12 md:px-7 lg:px-10">
+          <SourceControl source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
           {message ? (
-            <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-mist">
+            <div className="mb-6 rounded-lg border border-white/10 bg-white/[0.055] px-4 py-3 text-sm leading-6 text-mist shadow-[0_18px_70px_rgba(0,0,0,0.4)]">
               {message}
             </div>
           ) : null}
@@ -346,45 +359,5 @@ export default function App() {
         </main>
       </div>
     </div>
-  );
-}
-
-function SourceSwitcher({
-  source,
-  spotifyStatus,
-  onChange,
-  onConnectSpotify,
-}: {
-  source: MusicSource;
-  spotifyStatus: SpotifyStatus | null;
-  onChange: (source: MusicSource) => void;
-  onConnectSpotify: () => void;
-}) {
-  const label = source === "spotify" ? "Spotify" : "YouTube Music";
-  return (
-    <section className="mb-5 rounded-lg border border-line bg-panel/72 p-3">
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-mist/70">Music source</p>
-          <p className="mt-1 text-sm font-semibold text-white">Currently analysing: {label}</p>
-          {source === "spotify" ? (
-            <p className="mt-1 max-w-3xl text-xs leading-5 text-mist">
-              Spotify profile is based on top items, saved music, playlists and recent sync data. Full historical play counts are not available immediately.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "youtube" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("youtube")}>
-            YouTube Music
-          </button>
-          <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "spotify" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("spotify")}>
-            Spotify
-          </button>
-          {source === "spotify" && !spotifyStatus?.connected ? (
-            <button className="btn-secondary" onClick={onConnectSpotify}>Connect Spotify</button>
-          ) : null}
-        </div>
-      </div>
-    </section>
   );
 }

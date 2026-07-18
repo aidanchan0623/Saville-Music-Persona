@@ -39,7 +39,7 @@ export function ExploreProfileSection({ onOpenTop10, onOpenScores, onOpenPattern
     <section className="py-4">
       <div className="mb-5 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Explore the profile</p>
+          <p className="section-label">Explore the profile</p>
           <h2 className="mt-2 text-3xl font-black text-white">Go deeper into the signal.</h2>
         </div>
         <p className="max-w-lg text-sm leading-6 text-mist">The homepage gives the identity. These sections show the evidence behind it.</p>
@@ -48,9 +48,9 @@ export function ExploreProfileSection({ onOpenTop10, onOpenScores, onOpenPattern
         {tiles.map((tile) => {
           const Icon = tile.icon;
           return (
-            <button key={tile.title} className="group bg-ink/86 p-5 text-left transition hover:bg-panelSoft focus:outline-none focus:ring-2 focus:ring-violet" onClick={tile.action}>
+            <button key={tile.title} className="group bg-ink/86 p-5 text-left transition hover:bg-panelSoft focus:outline-none focus:ring-2 focus:ring-red-400" onClick={tile.action}>
               <div className="flex items-start justify-between gap-4">
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-violet/15 text-violet-100">
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-red-500/15 text-red-100">
                   <Icon size={20} />
                 </span>
                 <ArrowUpRight className="text-mist transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-white" size={18} />
