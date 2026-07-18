@@ -8,6 +8,7 @@ import { ExploreProfileSection } from "../components/home/ExploreProfileSection"
 import { KeySignalsStrip } from "../components/home/KeySignalsStrip";
 import { MusicCharacterSection } from "../components/home/MusicCharacterSection";
 import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection";
+import LineWaves from "../components/reactbits/LineWaves/LineWaves";
 import type {
   AuthStatus,
   ListeningMinutes,
@@ -57,6 +58,7 @@ export function OverviewPage({
   const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
   const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
   const [currentTopArtist, setCurrentTopArtist] = useState<PeriodTopItem | null>(null);
+  const compactWaves = useCompactHeroMotion();
 
   useEffect(() => {
     if (!overview) return;
@@ -105,8 +107,26 @@ export function OverviewPage({
 
   return (
     <div className="space-y-8">
-      <section className="overflow-hidden rounded-xl border border-line bg-surface/88 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:p-6">
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
+      <section className="relative isolate min-h-[19rem] overflow-hidden rounded-xl border border-line bg-surface/88 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:p-6">
+        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+          <LineWaves
+            speed={0.16}
+            innerLineCount={compactWaves ? 16 : 28}
+            outerLineCount={compactWaves ? 20 : 34}
+            warpIntensity={0.65}
+            rotation={-35}
+            edgeFadeWidth={0.12}
+            colorCycleSpeed={0.3}
+            brightness={compactWaves ? 0.08 : 0.12}
+            color1="#ef2b2d"
+            color2="#7b1118"
+            color3="#d4d4d8"
+            enableMouseInteraction={!compactWaves}
+            mouseInfluence={0.4}
+          />
+        </div>
+        <div className="pointer-events-none absolute inset-0 z-0 bg-black/68" aria-hidden="true" />
+        <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Private local music identity</p>
             <h1 className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl">{coreTitle}</h1>
@@ -180,6 +200,24 @@ export function OverviewPage({
       />
     </div>
   );
+}
+
+function useCompactHeroMotion() {
+  const [compact, setCompact] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 767px)");
+    const update = () => setCompact(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return compact;
 }
 
 function SummaryMetric({ label, value, detail, compact = false }: { label: string; value: string; detail: string; compact?: boolean }) {
