@@ -1,6 +1,5 @@
 import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import { StatusPill } from "../components/StatusPill";
-import { PageHeader } from "../components/ui/PageHeader";
 import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
 
 interface Props {
@@ -32,37 +31,27 @@ export function SettingsPage({
 }: Props) {
   return (
     <div className="space-y-6">
-      <section className="editorial-panel p-5 md:p-8">
-        <PageHeader
-          eyebrow="Local setup"
-          title="Settings"
-          description="Connection status, demo mode, private authentication guidance, Google Takeout import, and local model readiness."
-          meta={
-            <>
-              <StatusPill ok={auth?.connected || auth?.cached_data_available} label={auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube cached" : "YouTube offline"} />
-              <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} muted={!spotifyStatus?.configured && !spotifyStatus?.connected} />
-              <StatusPill ok={Boolean(prerequisites?.model_installed && prerequisites.ollama_reachable)} label={prerequisites?.model_installed && prerequisites.ollama_reachable ? "Gemma ready" : "Gemma offline"} />
-            </>
-          }
-        />
-      </section>
+      <div>
+        <h1 className="text-3xl font-bold text-white">Settings</h1>
+        <p className="mt-2 text-mist">Local connection status, demo mode, and private authentication guidance.</p>
+      </div>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
           <div>
             <h2 className="text-xl font-semibold text-white">Connect YouTube Music</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
-              Preferred setup uses ytmusicapi OAuth. Credentials stay in <code>backend/private/</code>, which is ignored by Git.
+              Preferred setup uses ytmusicapi OAuth. Credentials stay in the backend's ignored private config folder.
             </p>
           </div>
           <StatusPill ok={auth?.connected || auth?.cached_data_available} label={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data" : "Not connected"} />
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <Info label="Auth file" value={auth?.auth_file_path || "Unknown"} />
+          <Info label="Auth storage" value={auth?.auth_file_exists ? "Configured locally" : "Not created yet"} />
           <Info label="OAuth client configured" value={auth?.oauth_client_configured ? "Yes" : "No"} />
           <Info label="Account" value={auth?.account_name || "Unavailable"} />
           <Info label="Cached YouTube profile" value={auth?.cached_data_available ? `Available${auth.last_refreshed_at ? `, refreshed ${auth.last_refreshed_at}` : ""}` : "Unavailable"} />
-          <Info label="Status" value={auth?.message || "Not checked yet"} />
+          <Info label="Status" value={sanitizePrivateDetails(auth?.message || "Not checked yet")} />
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
           <button className="btn-secondary" onClick={onCheckAuth}>Recheck Connection</button>
@@ -75,7 +64,7 @@ export function SettingsPage({
         </div>
       </section>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
           <div>
             <h2 className="text-xl font-semibold text-white">Connect Spotify</h2>
@@ -99,7 +88,7 @@ export function SettingsPage({
           </div>
           <Info label="Spotify configured" value={spotifyStatus?.configured ? "Yes" : "No"} />
           <Info label="Last Spotify sync" value={spotifyStatus?.last_synced_at || "Never"} />
-          <Info label="Status" value={spotifyStatus?.message || "Not checked yet"} />
+          <Info label="Status" value={sanitizePrivateDetails(spotifyStatus?.message || "Not checked yet")} />
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
           {!spotifyStatus?.connected ? (
@@ -122,7 +111,7 @@ export function SettingsPage({
         </div>
       </section>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-xl font-semibold text-white">Use demo data</h2>
@@ -130,13 +119,13 @@ export function SettingsPage({
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
             <input className="peer sr-only" type="checkbox" checked={useDemo} onChange={(event) => onUseDemoChange(event.target.checked)} />
-            <span className="h-7 w-12 rounded-full bg-white/10 transition peer-checked:bg-red-600" />
+            <span className="h-7 w-12 rounded-full bg-white/10 transition peer-checked:bg-violet" />
             <span className="absolute left-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
           </label>
         </div>
       </section>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <h2 className="text-xl font-semibold text-white">Analytics timezone and duration enrichment</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
           Calendar months, daily charts and streaks use the backend local timezone. Change <code>SMP_LOCAL_TIMEZONE</code> in the backend environment to adjust it.
@@ -147,12 +136,12 @@ export function SettingsPage({
         </div>
       </section>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <h2 className="text-xl font-semibold text-white">Import Google Takeout history</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
           YouTube Music only exposed a short recent web history feed. Upload a Google Takeout YouTube watch-history JSON, HTML, or ZIP file to rebuild analysis with the longest account history Google provides.
         </p>
-        <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/40 hover:bg-white/[0.09]">
+        <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-violet/40 hover:bg-white/[0.09]">
           Choose Takeout file
           <input
             className="sr-only"
@@ -168,7 +157,7 @@ export function SettingsPage({
         </label>
       </section>
 
-      <section className="editorial-panel p-5">
+      <section className="rounded-lg border border-line bg-panel/82 p-5">
         <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
           <ShieldCheck size={20} /> Local prerequisites
         </h2>
@@ -176,7 +165,7 @@ export function SettingsPage({
           {prerequisites?.items.map((item) => (
             <div key={item.name} className="flex flex-col justify-between gap-2 rounded-md bg-white/[0.04] p-4 sm:flex-row sm:items-center">
               <StatusPill ok={item.available} label={item.name} />
-              <p className="text-sm text-mist">{item.detail}</p>
+              <p className="text-sm text-mist">{sanitizePrivateDetails(item.detail)}</p>
             </div>
           ))}
           <div className="rounded-md bg-white/[0.04] p-4 text-sm text-mist">
@@ -196,4 +185,11 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="mt-2 break-words text-sm text-white">{value}</p>
     </div>
   );
+}
+
+function sanitizePrivateDetails(value: string) {
+  return value
+    .replace(/[A-Za-z]:\\[^\s]+/g, "[local private path]")
+    .replace(/backend[\\/]+private[\\/]+\.env/g, "local private settings")
+    .replace(/backend[\\/]+private[\\/]?/g, "local private storage");
 }

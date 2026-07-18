@@ -41,11 +41,11 @@ export function KeySignalsStrip({ repeatScore, discoveryScore, nicheScore, thisM
         <article key={signal.label} className="group bg-ink/84 p-5 transition hover:bg-panelSoft">
           <div className="flex items-start justify-between gap-4">
             <p className="text-sm font-semibold text-white">{signal.label}</p>
-            <span className="text-xs text-red-200">0{index + 1}</span>
+            <span className="text-xs text-violet-200">0{index + 1}</span>
           </div>
           <p className="mt-4 text-3xl font-black text-white">{signal.value}</p>
           <p className="mt-3 line-clamp-3 text-sm leading-6 text-mist">{signal.text}</p>
-          <div className="mt-5 h-px w-12 bg-gradient-to-r from-red-500 to-transparent transition group-hover:w-24" />
+          <div className="mt-5 h-px w-12 bg-gradient-to-r from-violet to-transparent transition group-hover:w-24" />
         </article>
       ))}
     </section>

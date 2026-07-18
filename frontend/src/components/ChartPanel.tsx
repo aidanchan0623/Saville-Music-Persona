@@ -11,12 +11,11 @@ interface Props {
 
 export function ChartPanel({ title, data, type = "bar" }: Props) {
   return (
-    <section className="rounded-lg border border-white/10 bg-white/[0.035] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.18)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/60">Chart</p>
-      <h3 className="mt-2 text-lg font-black text-white">{title}</h3>
+    <section className="rounded-lg border border-line bg-panel/80 p-5">
+      <h3 className="text-lg font-semibold text-white">{title}</h3>
       <div className="mt-4 h-72">
         {data.length === 0 ? (
-          <div className="grid h-full place-items-center rounded-md border border-dashed border-white/10 bg-white/[0.03] px-4 text-center text-sm text-mist">Not enough reliable data for this chart yet.</div>
+          <div className="grid h-full place-items-center rounded-md bg-white/[0.03] text-sm text-mist">Not enough reliable data for this chart yet.</div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {type === "pie" ? (
@@ -26,22 +25,22 @@ export function ChartPanel({ title, data, type = "bar" }: Props) {
                     <Cell key={entry.name} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "#120909", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
               </PieChart>
             ) : type === "line" ? (
               <LineChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
                 <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#120909", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "#fff" }} />
-                <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={3} dot={{ r: 2, fill: "#fecaca" }} activeDot={{ r: 5, fill: "#ef4444" }} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
+                <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={3} dot={false} />
               </LineChart>
             ) : (
               <BarChart data={data}>
                 <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
                 <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#120909", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "#fff" }} />
+                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {data.map((entry, index) => (
                     <Cell key={entry.name} fill={colors[index % colors.length]} />

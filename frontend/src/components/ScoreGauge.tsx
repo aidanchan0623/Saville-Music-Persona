@@ -26,14 +26,14 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
   const degree = Math.min(100, Math.max(0, score.value)) * 3.6;
   return (
     <article
-      className={`relative overflow-hidden rounded-lg border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.065),rgba(255,255,255,0.025))] p-5 shadow-[0_18px_70px_rgba(0,0,0,0.22)] transition hover:border-red-400/30 hover:bg-white/[0.055] md:p-6 ${
+      className={`relative overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.065),rgba(255,255,255,0.025))] p-5 shadow-[0_18px_70px_rgba(0,0,0,0.22)] transition hover:border-violet/25 hover:bg-white/[0.055] md:p-6 ${
         featured ? "lg:col-span-2" : ""
       }`}
     >
-      <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-red-500/15 blur-3xl" />
+      <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-violet/15 blur-3xl" />
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200/80">{presentation.displayName}</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">{presentation.displayName}</p>
           <h3 className="mt-3 text-2xl font-black leading-tight text-white md:text-3xl">{presentation.headline}</h3>
         </div>
         <div
@@ -48,12 +48,7 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
 
       <div className="relative mt-5 max-w-3xl">
         <p className="text-base leading-7 text-mist">{presentation.body}</p>
-        <p className="mt-4 border-l border-red-400/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
-        <details className="mt-4 rounded-md border border-white/10 bg-black/20 p-3 text-sm text-mist">
-          <summary className="cursor-pointer font-semibold text-white">Formula and inputs</summary>
-          <p className="mt-3 leading-6">{score.formula}</p>
-          <p className="mt-2 text-xs leading-5 text-mist/70">{JSON.stringify(score.inputs)}</p>
-        </details>
+        <p className="mt-4 border-l border-violet/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
       </div>
     </article>
   );

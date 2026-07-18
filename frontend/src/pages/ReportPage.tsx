@@ -2,7 +2,6 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
-import { LineWaves } from "../components/LineWaves";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
 interface Props {
@@ -76,14 +75,13 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
   return (
     <div className="space-y-8">
-      <header className="relative overflow-hidden rounded-lg border border-white/10 bg-[linear-gradient(135deg,rgba(41,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(18,8,8,0.98))] shadow-glow">
-        <LineWaves className="opacity-50" amplitude={20} speed={0.0001} waveCount={6} />
+      <header className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(41,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(18,8,8,0.98))] shadow-glow">
         <div className="relative p-6 lg:p-9">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(239,68,68,0.24),transparent_35%)]" />
           <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-5xl">
-              <p className="section-label">Persona Report</p>
-              <h1 className="mt-4 font-display text-5xl uppercase leading-[0.9] tracking-[0.03em] text-white md:text-7xl">{profile.headline}</h1>
+              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Persona Report</p>
+              <h1 className="mt-4 text-5xl font-black leading-[0.95] text-white md:text-7xl">{profile.headline}</h1>
               <p className="mt-5 max-w-4xl text-xl font-semibold leading-8 text-red-100">{profile.subheadline}</p>
               <p className="mt-5 max-w-4xl text-lg leading-8 text-mist">{profile.summary}</p>
             </div>
@@ -105,7 +103,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
       <section className="grid gap-4 lg:grid-cols-3">
         {profile.cards.map((card) => (
-          <article key={card.title} className="rounded-lg border border-white/10 bg-white/[0.04] p-5 shadow-[0_16px_60px_rgba(0,0,0,0.22)]">
+          <article key={card.title} className="rounded-2xl border border-line bg-panel/82 p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">{card.title.split(":", 1)[0]}</p>
             <h2 className="mt-3 text-2xl font-black leading-tight text-white">{card.title.includes(":") ? card.title.split(":").slice(1).join(":").trim() : card.title}</h2>
             <p className="mt-3 text-sm leading-7 text-mist">{card.body}</p>
@@ -114,7 +112,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
       </section>
 
       {topArtists.length ? (
-        <section className="editorial-panel p-5 lg:p-6">
+        <section className="rounded-[1.5rem] border border-line bg-panel/82 p-5 lg:p-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Anchor artists</p>
@@ -147,7 +145,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
 function InterpretationBlock({ title, body, featured = false }: { title: string; body: string; featured?: boolean }) {
   return (
-    <article className={`rounded-lg border p-6 ${featured ? "border-red-500/20 bg-red-950/20" : "border-white/10 bg-white/[0.04]"}`}>
+    <article className={`rounded-[1.5rem] border p-6 ${featured ? "border-red-500/20 bg-red-950/20" : "border-line bg-panel/82"}`}>
       <h2 className="text-3xl font-black leading-tight text-white">{title}</h2>
       <p className="mt-4 text-base leading-8 text-mist">{body}</p>
     </article>
@@ -158,7 +156,7 @@ function ArtistAvatarCard({ artist }: { artist: TopArtist }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [artist.image]);
   return (
-    <article className="flex items-center gap-4 rounded-lg border border-white/10 bg-black/20 p-4">
+    <article className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
       <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white">
         {artist.image && !failed ? (
           <img className="h-full w-full object-cover object-center" src={artist.image} alt={artist.artist} onError={() => setFailed(true)} />
