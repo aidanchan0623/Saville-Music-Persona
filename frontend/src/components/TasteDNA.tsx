@@ -66,11 +66,16 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(239,68,68,0.22),transparent_34%)]" />
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="relative max-w-5xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Sound Profile</p>
-            <h2 className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-5xl">{identity}</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Taste DNA</p>
+            <h2 className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl">{identity}</h2>
             <p className="mt-4 max-w-3xl text-base leading-7 text-mist">
               {buildIdentitySentence(identity, nodes, traits)}
             </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <ProfileBadge label="Period" value={activeLabel} />
+              <ProfileBadge label="Sound families" value={String(nodes.length)} />
+              <ProfileBadge label="Traits mapped" value={String(traits.length)} />
+            </div>
           </div>
           <div className="relative flex flex-wrap gap-2 rounded-xl border border-white/10 bg-black/25 p-2 shadow-[0_18px_60px_rgba(0,0,0,0.2)]">
             <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
@@ -91,12 +96,12 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
         ) : null}
       </div>
 
-      <div className="grid gap-0 xl:grid-cols-[1.18fr_0.82fr]">
-        <div className="border-b border-white/10 p-5 lg:p-6 xl:border-b-0 xl:border-r">
+      <div className="grid gap-0 xl:grid-cols-[1.16fr_0.84fr]">
+        <div className="border-b border-white/10 p-5 lg:p-6 xl:border-b-0 xl:border-r xl:border-white/10">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Core Sound Breakdown</p>
-              <h3 className="mt-2 text-2xl font-black text-white">{activeLabel}</h3>
+              <h3 className="mt-2 text-2xl font-black text-white">How the profile is weighted</h3>
             </div>
           </div>
 
@@ -110,9 +115,11 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
         <div className="p-5 lg:p-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/60">Sonic Traits</p>
           <div className="mt-4 space-y-5">
-            {groupedTraits.map((group) => (
+            {groupedTraits.length ? groupedTraits.map((group) => (
               <TraitGroup key={group.label} label={group.label} traits={group.traits} />
-            ))}
+            )) : (
+              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Trait labels will appear once enough listening signals are mapped.</div>
+            )}
           </div>
 
           <div className="mt-7 rounded-2xl border border-red-500/15 bg-white/[0.045] p-5">
@@ -122,6 +129,15 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
         </div>
       </div>
     </section>
+  );
+}
+
+function ProfileBadge({ label, value }: { label: string; value: string }) {
+  return (
+    <span className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs text-mist">
+      <span className="font-semibold uppercase tracking-[0.14em] text-red-100">{label}</span>
+      <span className="ml-2 text-white">{value}</span>
+    </span>
   );
 }
 
@@ -137,17 +153,17 @@ function SoundFamilyRow({ node, maxShare }: { node: TasteDnaNode; maxShare: numb
   const width = Math.max(8, (node.share / maxShare) * 100);
   const artists = node.top_artists.slice(0, 3).map((artist) => artist.name).join(", ");
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/[0.045] p-5">
+    <article className="rounded-xl border border-white/10 bg-black/20 p-4 transition hover:border-red-500/25 hover:bg-white/[0.045]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-xl font-black text-white">{node.name}</h4>
+            <h4 className="text-lg font-black text-white">{node.name}</h4>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-100">{roleLabel(node.layer)}</span>
           </div>
           <p className="mt-2 text-sm leading-6 text-mist">{artists ? `Top contributors: ${artists}.` : "Top contributing artists are unavailable for this period."}</p>
         </div>
         <div className="shrink-0 text-left md:text-right">
-          <p className="text-3xl font-black text-white">{node.share}%</p>
+          <p className="text-2xl font-black text-white">{node.share}%</p>
           <p className="text-xs uppercase tracking-[0.14em] text-mist/70">of profile</p>
         </div>
       </div>
@@ -162,13 +178,16 @@ function TraitGroup({ label, traits }: { label: string; traits: TasteTraitNode[]
   if (!traits.length) return null;
   return (
     <div>
-      <h4 className="text-sm font-semibold text-white">{label}</h4>
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-sm font-semibold text-white">{label}</h4>
+        <span className="text-xs text-mist/60">{traits.length} signals</span>
+      </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {traits.map((trait) => (
           <span
             key={`${label}-${trait.trait}`}
             title={trait.explanation || undefined}
-            className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1.5 text-sm text-mist"
+            className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-sm text-mist"
           >
             {trait.trait}
           </span>

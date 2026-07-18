@@ -45,8 +45,8 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
 
   if (!character) {
     return (
-      <section className="rounded-[1.5rem] border border-line bg-panel/82 p-6">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Your Music Character</p>
+      <section className="rounded-[1.25rem] border border-line bg-panel/82 p-6">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">Your Music Character</p>
         <p className="mt-3 text-mist">{loading ? "Reading your music character..." : "Music Character will appear after a refresh with listening data."}</p>
       </section>
     );
@@ -73,16 +73,20 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
   };
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-line bg-[linear-gradient(135deg,rgba(20,16,16,0.94),rgba(5,5,5,0.98))] shadow-glow">
+    <section className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(28,8,8,0.96),rgba(5,5,5,0.99)_62%,rgba(13,8,8,0.98))] shadow-glow">
       <div className="grid gap-0 xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="relative border-b border-white/10 p-6 lg:p-8 xl:border-b-0 xl:border-r">
+        <div className="relative border-b border-white/10 p-5 lg:p-6 xl:border-b-0 xl:border-r xl:border-white/10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(239,68,68,0.18),transparent_35%)]" />
           <div className="relative">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">Your Music Character</p>
-                <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-5xl">{headline}</h2>
-                <p className="mt-2 text-sm text-mist">{displayPeriodLabel(character.period.label, period)}</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Your Music Character</p>
+                <h2 className="mt-3 text-3xl font-black leading-tight text-white md:text-4xl">{headline}</h2>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <CharacterBadge label={displayPeriodLabel(character.period.label, period)} />
+                  <CharacterBadge label="Deterministic read" />
+                  <CharacterBadge label={canRewrite ? "Gemma rewrite ready" : "Gemma rewrite offline"} muted={!canRewrite} />
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 rounded-lg border border-white/10 bg-white/[0.035] p-2">
                 <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
@@ -98,12 +102,12 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
 
             {character.sample_warning ? <p className="mt-5 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{character.sample_warning}</p> : null}
 
-            <p className="mt-6 rounded-xl border border-violet/25 bg-violet/10 p-4 text-xl font-black leading-snug text-violet-100">{roast}</p>
+            <p className="mt-6 rounded-xl border border-red-500/20 bg-red-950/25 p-4 text-xl font-black leading-snug text-red-50">{roast}</p>
             <p className="mt-5 max-w-3xl text-base leading-8 text-mist">{profile}</p>
 
             <div className="mt-6 flex flex-wrap gap-2">
               {character.evidence_chips.slice(0, 7).map((chip) => (
-                <span key={chip} className="rounded-full border border-white/10 bg-white/[0.055] px-3 py-1.5 text-sm text-mist">{chip}</span>
+                <span key={chip} className="rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-sm text-mist">{chip}</span>
               ))}
             </div>
 
@@ -116,18 +120,18 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
           </div>
         </div>
 
-        <div className="p-6 lg:p-8">
+        <div className="p-5 lg:p-6">
           <div className="grid gap-4 sm:grid-cols-2">
             <CharacterMini title="Secondary character" value={character.secondary?.name ?? "No strong secondary yet"} body={character.secondary?.profile ?? "The primary character carries most of the signal for this period."} />
             <CharacterMini title="Behaviour modifier" value={character.modifier?.name ?? "No clear modifier"} body={character.modifier?.roast ?? "No behaviour pattern is strong enough to label separately yet."} />
           </div>
 
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/[0.04] p-5">
+          <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-5">
             <h3 className="text-lg font-black text-white">Why it fits</h3>
             <ul className="mt-4 space-y-3 text-sm leading-6 text-mist">
               {(rewrite?.why_it_fits?.length ? rewrite.why_it_fits : primary.evidence).slice(0, 4).map((item) => (
                 <li key={item} className="flex gap-2">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet" />
+                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
                   <span>{item}</span>
                 </li>
               ))}
@@ -139,13 +143,21 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
   );
 }
 
+function CharacterBadge({ label, muted = false }: { label: string; muted?: boolean }) {
+  return (
+    <span className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${muted ? "border-white/10 bg-white/[0.04] text-mist/70" : "border-red-400/25 bg-red-500/10 text-red-100"}`}>
+      {label}
+    </span>
+  );
+}
+
 function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
-  return <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>{label}</button>;
+  return <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-red-600 text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>{label}</button>;
 }
 
 function CharacterMini({ title, value, body }: { title: string; value: string; body: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+    <div className="rounded-xl border border-white/10 bg-black/20 p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/60">{title}</p>
       <p className="mt-3 text-lg font-black leading-6 text-white">{value}</p>
       <p className="mt-3 text-sm leading-6 text-mist">{body}</p>
