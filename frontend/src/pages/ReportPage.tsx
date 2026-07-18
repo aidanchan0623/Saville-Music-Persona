@@ -1,6 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
@@ -11,6 +12,7 @@ interface Props {
   topArtists: TopArtist[];
   onGenerate: (mode: "serious" | "playful" | "roast") => void;
   source: MusicSource;
+  titleAnimationKey: string;
 }
 
 interface PersonaProfile {
@@ -25,11 +27,11 @@ interface PersonaProfile {
   sourceLabel: string;
 }
 
-export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate, source }: Props) {
+export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate, source, titleAnimationKey }: Props) {
   const [rollingCharacter, setRollingCharacter] = useState<MusicCharacterResponse | null>(null);
   const [currentCharacter, setCurrentCharacter] = useState<MusicCharacterResponse | null>(null);
   const [characterError, setCharacterError] = useState<string | null>(null);
-  const [loadingCharacter, setLoadingCharacter] = useState(false);
+  const [loadingCharacter, setLoadingCharacter] = useState(true);
   const modelReady = Boolean(prerequisites?.model_installed);
   const disabled = busy || !modelReady;
 
@@ -61,7 +63,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
   );
 
   if (!profile && loadingCharacter) {
-    return <EmptyState title="Reading your music character" body="Building the deterministic persona profile from your local listening data." />;
+    return <EmptyState title="Reading your music character" body="Building the deterministic persona profile from your local listening data." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
   }
 
   if (!profile) {
@@ -69,6 +71,8 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
       <EmptyState
         title="No persona profile yet"
         body={characterError || (source === "spotify" ? "Connect Spotify and refresh Spotify data, then return here for a Music Character based persona read." : "Refresh YouTube Music data or import Google Takeout history, then return here for a Music Character based persona read.")}
+        titleTag="h1"
+        titleAnimationKey={titleAnimationKey}
       />
     );
   }
@@ -81,7 +85,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
           <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
             <div className="max-w-5xl">
               <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Persona Report</p>
-              <h1 className="mt-4 text-5xl font-black leading-[0.95] text-white md:text-7xl">{profile.headline}</h1>
+              <AnimatedPageTitle animationKey={titleAnimationKey} text={profile.headline} className="mt-4 text-5xl font-black leading-[0.95] text-white md:text-7xl" />
               <p className="mt-5 max-w-4xl text-xl font-semibold leading-8 text-red-100">{profile.subheadline}</p>
               <p className="mt-5 max-w-4xl text-lg leading-8 text-mist">{profile.summary}</p>
             </div>

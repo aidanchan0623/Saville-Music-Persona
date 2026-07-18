@@ -2,10 +2,11 @@ import { ChartPanel } from "../components/ChartPanel";
 import { EmptyState } from "../components/EmptyState";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import type { Charts, ListeningMinutes, MusicSource } from "../types/api";
 import { formatMinutes } from "../utils/format";
 
-export function PatternsPage({ charts, source }: { charts: Charts | null; source: MusicSource }) {
+export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Charts | null; source: MusicSource; titleAnimationKey: string }) {
   const [period, setPeriod] = useState<"this_month" | "month" | "rolling_year">("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
@@ -33,14 +34,14 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
     };
   }, [period, selectedMonth, source]);
 
-  if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." />;
+  if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
   const months = minutes?.period.available_months ?? [];
   const activeCharts = periodCharts ?? charts;
   const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? "Selected period";
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-3xl font-bold text-white">Listening Patterns</h1>
+        <AnimatedPageTitle animationKey={titleAnimationKey} text="Listening Patterns" className="text-3xl font-bold text-white" />
         <p className="mt-2 text-mist">
           {source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
         </p>

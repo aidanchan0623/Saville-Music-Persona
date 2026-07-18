@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { TasteDNA } from "../components/TasteDNA";
 import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
@@ -37,6 +38,7 @@ interface Props {
   onOpenPatterns: () => void;
   onOpenReport: () => void;
   source: MusicSource;
+  titleAnimationKey: string;
 }
 
 export function OverviewPage({
@@ -54,6 +56,7 @@ export function OverviewPage({
   onOpenPatterns,
   onOpenReport,
   source,
+  titleAnimationKey,
 }: Props) {
   const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
   const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
@@ -85,6 +88,8 @@ export function OverviewPage({
       <EmptyState
         title="No listening analysis loaded yet"
         body={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
+        titleTag="h1"
+        titleAnimationKey={titleAnimationKey}
         action={
           <div className="flex flex-wrap justify-center gap-3">
             <button className="btn-primary" onClick={onRefresh} disabled={busy}>
@@ -129,7 +134,7 @@ export function OverviewPage({
         <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Private local music identity</p>
-            <h1 className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl">{coreTitle}</h1>
+            <AnimatedPageTitle animationKey={titleAnimationKey} text={coreTitle} className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl" />
             <p className="mt-4 line-clamp-3 max-w-3xl text-base leading-7 text-mist">{summary}</p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs text-mist">
               <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Source: {sourceLabel}</span>

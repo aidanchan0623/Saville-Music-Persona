@@ -1,4 +1,5 @@
 import { ListPlus, WandSparkles } from "lucide-react";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import type { MusicSource, Recommendation } from "../types/api";
 
@@ -8,9 +9,10 @@ interface Props {
   onGenerate: () => void;
   onCreatePlaylist: () => void;
   source: MusicSource;
+  titleAnimationKey: string;
 }
 
-export function RecommendationsPage({ recommendations, busy, onGenerate, onCreatePlaylist, source }: Props) {
+export function RecommendationsPage({ recommendations, busy, onGenerate, onCreatePlaylist, source, titleAnimationKey }: Props) {
   const groups = RECOMMENDATION_GROUPS.map((group) => ({
     ...group,
     items: recommendations.filter((item) => recommendationGroup(item) === group.group),
@@ -22,7 +24,7 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Recommendation lab</p>
-            <h1 className="mt-3 text-3xl font-black text-white md:text-4xl">Evidence-driven next listens</h1>
+            <AnimatedPageTitle animationKey={titleAnimationKey} text="Evidence-driven next listens" className="mt-3 text-3xl font-black text-white md:text-4xl" />
             <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">
               Twenty picks split into safe matches, nearby discoveries, and riskier edges outside the usual profile.
             </p>

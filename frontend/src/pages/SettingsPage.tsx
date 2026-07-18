@@ -1,5 +1,6 @@
 import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { StatusPill } from "../components/StatusPill";
 import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
 
@@ -15,6 +16,7 @@ interface Props {
   onConnectSpotify: () => void;
   onRefreshSpotify: () => void;
   onDisconnectSpotify: () => void;
+  titleAnimationKey: string;
 }
 
 export function SettingsPage({
@@ -29,12 +31,13 @@ export function SettingsPage({
   onConnectSpotify,
   onRefreshSpotify,
   onDisconnectSpotify,
+  titleAnimationKey,
 }: Props) {
   return (
     <div className="space-y-6">
       <header className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(33,8,8,0.96),rgba(5,5,5,0.99)_62%,rgba(16,8,8,0.98))] p-5 shadow-glow lg:p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Settings</p>
-        <h1 className="mt-3 text-3xl font-black text-white md:text-4xl">Local integrations and data controls</h1>
+        <AnimatedPageTitle animationKey={titleAnimationKey} text="Local integrations and data controls" className="mt-3 text-3xl font-black text-white md:text-4xl" />
         <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">Connection status, demo mode, private auth guidance, and import tools for the local music profile.</p>
         <div className="mt-5 grid gap-3 md:grid-cols-3">
           <StatusSummary label="YouTube Music" value={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data" : "Offline"} ok={Boolean(auth?.connected || auth?.cached_data_available)} />

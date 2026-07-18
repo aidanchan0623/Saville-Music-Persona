@@ -2,6 +2,7 @@ import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import type {
   MusicSource,
@@ -17,7 +18,7 @@ import { formatDate } from "../utils/format";
 
 type TopPeriod = "this_month" | "month" | "rolling_year";
 
-export function Top10Page({ source }: { source: MusicSource }) {
+export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; titleAnimationKey: string }) {
   const [period, setPeriod] = useState<TopPeriod>("this_month");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [tracks, setTracks] = useState<PeriodTopResponse | null>(null);
@@ -110,7 +111,7 @@ export function Top10Page({ source }: { source: MusicSource }) {
   const activeLabel = displayPeriodLabel(tracks?.period.label ?? albums?.period.label, period);
 
   if (!tracks && !artists && !albums && !loading) {
-    return <EmptyState title="No rankings yet" body="Refresh your music data to build period rankings from detected plays." />;
+    return <EmptyState title="No rankings yet" body="Refresh your music data to build period rankings from detected plays." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
   }
 
   return (
@@ -119,7 +120,7 @@ export function Top10Page({ source }: { source: MusicSource }) {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
-            <h1 className="mt-3 text-4xl font-black leading-none text-white md:text-5xl">Top 10</h1>
+            <AnimatedPageTitle animationKey={titleAnimationKey} text="Top 10" className="mt-3 text-4xl font-black leading-none text-white md:text-5xl" />
             <p className="mt-4 max-w-3xl text-base leading-7 text-mist">
               {source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
             </p>

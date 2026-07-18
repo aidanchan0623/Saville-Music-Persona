@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
 import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
@@ -7,7 +8,7 @@ import { asPercent } from "../utils/format";
 
 type ScorePeriod = "this_month" | "month" | "rolling_year";
 
-export function ScoresPage({ scores: initialScores, source }: { scores: ScoreMetric[]; source: MusicSource }) {
+export function ScoresPage({ scores: initialScores, source, titleAnimationKey }: { scores: ScoreMetric[]; source: MusicSource; titleAnimationKey: string }) {
   const [period, setPeriod] = useState<ScorePeriod>("rolling_year");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [scores, setScores] = useState<ScoreMetric[]>(initialScores);
@@ -39,7 +40,7 @@ export function ScoresPage({ scores: initialScores, source }: { scores: ScoreMet
     };
   }, [period, selectedMonth, source]);
 
-  if (!scores.length) return <EmptyState title="No scorecard yet" body="Refresh data to calculate deterministic scores with transparent formulas." />;
+  if (!scores.length) return <EmptyState title="No scorecard yet" body="Refresh data to calculate deterministic scores with transparent formulas." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
   const groups = buildScoreGroups(scores);
   const glanceScores = getAtAGlanceScores(scores);
   const months = minutes?.period.available_months ?? [];
@@ -52,7 +53,7 @@ export function ScoresPage({ scores: initialScores, source }: { scores: ScoreMet
       <header className="flex flex-col gap-6 py-3 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-5xl">
           <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-200">Music listening profile</p>
-          <h1 className="mt-4 text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl">Taste Scores</h1>
+          <AnimatedPageTitle animationKey={titleAnimationKey} text="Taste Scores" className="mt-4 text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl" />
           <p className="mt-5 max-w-3xl text-2xl font-semibold leading-snug text-violet-100">
             {periodLabel} read on how you listen &mdash; not just what you play.
           </p>

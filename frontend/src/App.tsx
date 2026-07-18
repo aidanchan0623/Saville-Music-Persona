@@ -13,8 +13,15 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
 import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
 
+function getHistoryPage(): Page {
+  if (typeof window === "undefined") return "overview";
+  const value = window.history.state?.page;
+  return NAVIGATION_ITEMS.some((item) => item.id === value) ? value : "overview";
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>("overview");
+  const [page, setPage] = useState<Page>(() => getHistoryPage());
+  const [titleVisitId, setTitleVisitId] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [source, setSource] = useState<MusicSource>(() => {
     const querySource = new URLSearchParams(window.location.search).get("source");
@@ -54,6 +61,15 @@ export default function App() {
     setRollingYearMinutes(null);
     setReport(null);
     setRecommendations([]);
+  };
+
+  const navigate = (next: Page) => {
+    if (next !== page) {
+      window.history.pushState({ ...(window.history.state ?? {}), page: next }, "", window.location.href);
+      setTitleVisitId((value) => value + 1);
+    }
+    setPage(next);
+    setMobileOpen(false);
   };
 
   const loadAnalysis = async (activeSource: MusicSource = source) => {
@@ -98,6 +114,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    window.history.replaceState({ ...(window.history.state ?? {}), page }, "", window.location.href);
+    const handlePopState = () => {
+      setPage(getHistoryPage());
+      setTitleVisitId((value) => value + 1);
+      setMobileOpen(false);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
     void loadAnalysis(source).catch((error) => {
       clearAnalysis();
       if (source === "spotify") {
@@ -127,7 +154,7 @@ export default function App() {
     try {
       const nextReport = await api.generateReport(mode, source);
       setReport(nextReport);
-      setPage("report");
+      navigate("report");
       setMessage("Persona report generated locally.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Report generation failed.");
@@ -162,7 +189,7 @@ export default function App() {
       setSource("youtube");
       await loadAnalysis("youtube");
       setMessage(`${result.message} Imported ${result.imported_count} history entries.`);
-      setPage("overview");
+      navigate("overview");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Takeout import failed.");
     } finally {
@@ -226,6 +253,7 @@ export default function App() {
   };
 
   const activePage = useMemo(() => {
+    const titleAnimationKey = `${page}:${titleVisitId}`;
     switch (page) {
       case "overview":
         return (
@@ -239,24 +267,25 @@ export default function App() {
             busy={busy}
             useDemo={useDemo}
             onRefresh={refresh}
-            onOpenSettings={() => setPage("settings")}
-            onOpenTop10={() => setPage("top10")}
-            onOpenScores={() => setPage("scores")}
-            onOpenPatterns={() => setPage("patterns")}
-            onOpenReport={() => setPage("report")}
+            onOpenSettings={() => navigate("settings")}
+            onOpenTop10={() => navigate("top10")}
+            onOpenScores={() => navigate("scores")}
+            onOpenPatterns={() => navigate("patterns")}
+            onOpenReport={() => navigate("report")}
             source={source}
+            titleAnimationKey={titleAnimationKey}
           />
         );
       case "top10":
-        return <Top10Page source={source} />;
+        return <Top10Page source={source} titleAnimationKey={titleAnimationKey} />;
       case "scores":
-        return <ScoresPage scores={scores} source={source} />;
+        return <ScoresPage scores={scores} source={source} titleAnimationKey={titleAnimationKey} />;
       case "patterns":
-        return <PatternsPage charts={charts} source={source} />;
+        return <PatternsPage charts={charts} source={source} titleAnimationKey={titleAnimationKey} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} source={source} />;
+        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
-        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} />;
+        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} titleAnimationKey={titleAnimationKey} />;
       case "settings":
         return (
           <SettingsPage
@@ -279,18 +308,15 @@ export default function App() {
             onConnectSpotify={connectSpotify}
             onRefreshSpotify={refreshSpotify}
             onDisconnectSpotify={disconnectSpotify}
+            titleAnimationKey={titleAnimationKey}
           />
         );
     }
-  }, [page, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
+  }, [page, titleVisitId, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
 
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
   const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
   const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
-  const navigate = (next: Page) => {
-    setPage(next);
-    setMobileOpen(false);
-  };
 
   return (
     <div className="min-h-screen bg-ink text-white">

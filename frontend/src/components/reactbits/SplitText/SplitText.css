@@ -1,0 +1,29 @@
+.smp-split-text {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.smp-split-word,
+.smp-split-char {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+.smp-split-line {
+  display: block;
+  overflow: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smp-split-word,
+  .smp-split-char,
+  .smp-split-line {
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
