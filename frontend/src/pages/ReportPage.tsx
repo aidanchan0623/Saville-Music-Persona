@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
+import { GlowPanel } from "../components/GlowPanel";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
 interface Props {
@@ -79,7 +80,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
   return (
     <div className="space-y-8">
-      <header className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(41,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(18,8,8,0.98))] shadow-glow">
+      <GlowPanel as="header" variant="major" className="overflow-hidden">
         <div className="relative p-6 lg:p-9">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(239,68,68,0.24),transparent_35%)]" />
           <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
@@ -103,20 +104,20 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
             {!modelReady ? <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-amber-100">Expanded Gemma rewrite unavailable - Ollama is offline</span> : null}
           </div>
         </div>
-      </header>
+      </GlowPanel>
 
       <section className="grid gap-4 lg:grid-cols-3">
         {profile.cards.map((card) => (
-          <article key={card.title} className="rounded-2xl border border-line bg-panel/82 p-5">
+          <GlowPanel key={card.title} as="article" variant="card" className="p-5">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">{card.title.split(":", 1)[0]}</p>
             <h2 className="mt-3 text-2xl font-black leading-tight text-white">{card.title.includes(":") ? card.title.split(":").slice(1).join(":").trim() : card.title}</h2>
             <p className="mt-3 text-sm leading-7 text-mist">{card.body}</p>
-          </article>
+          </GlowPanel>
         ))}
       </section>
 
       {topArtists.length ? (
-        <section className="rounded-[1.5rem] border border-line bg-panel/82 p-5 lg:p-6">
+        <GlowPanel as="section" variant="major" className="p-5 lg:p-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Anchor artists</p>
@@ -131,7 +132,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
               <ArtistAvatarCard key={artist.artist} artist={artist} />
             ))}
           </div>
-        </section>
+        </GlowPanel>
       ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
@@ -149,10 +150,10 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
 function InterpretationBlock({ title, body, featured = false }: { title: string; body: string; featured?: boolean }) {
   return (
-    <article className={`rounded-[1.5rem] border p-6 ${featured ? "border-red-500/20 bg-red-950/20" : "border-line bg-panel/82"}`}>
+    <GlowPanel as="article" variant="card" selected={featured} className={`${featured ? "bg-red-950/[0.14]" : ""} p-6`}>
       <h2 className="text-3xl font-black leading-tight text-white">{title}</h2>
       <p className="mt-4 text-base leading-8 text-mist">{body}</p>
-    </article>
+    </GlowPanel>
   );
 }
 
@@ -160,7 +161,7 @@ function ArtistAvatarCard({ artist }: { artist: TopArtist }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [artist.image]);
   return (
-    <article className="flex items-center gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+    <GlowPanel as="article" variant="row" className="flex items-center gap-4 p-4">
       <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white">
         {artist.image && !failed ? (
           <img className="h-full w-full object-cover object-center" src={artist.image} alt={artist.artist} onError={() => setFailed(true)} />
@@ -172,7 +173,7 @@ function ArtistAvatarCard({ artist }: { artist: TopArtist }) {
         <h3 className="truncate text-lg font-black text-white">{artist.artist}</h3>
         <p className="mt-1 line-clamp-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.artist_loyalty_label}</p>
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 

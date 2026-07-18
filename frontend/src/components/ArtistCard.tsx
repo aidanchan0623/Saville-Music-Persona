@@ -1,8 +1,9 @@
 import type { TopArtist } from "../types/api";
+import { GlowPanel } from "./GlowPanel";
 
 export function ArtistCard({ artist }: { artist: TopArtist }) {
   return (
-    <article className="rounded-2xl border border-line bg-panel/80 p-5 transition hover:border-red-400/40 hover:bg-panelSoft/85">
+    <GlowPanel as="article" variant="card" className="p-5 transition">
       <div className="flex items-start gap-4">
         <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white shadow-[0_16px_42px_rgba(0,0,0,0.3)]">
           {artist.image ? <img className="h-full w-full object-cover object-center" src={artist.image} alt="" /> : artist.artist.slice(0, 2).toUpperCase()}
@@ -36,7 +37,7 @@ export function ArtistCard({ artist }: { artist: TopArtist }) {
         <ChipGroup title="Genre tags" items={artist.genre_profile?.display_genres?.length ? artist.genre_profile.display_genres : ["Still learning"]} muted={!artist.genre_profile?.display_genres?.length} />
         <ChipGroup title="Sound family" items={artist.broad_clusters?.length ? artist.broad_clusters : ["Still learning"]} muted={!artist.broad_clusters?.length} />
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 

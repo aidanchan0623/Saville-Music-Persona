@@ -1,0 +1,26 @@
+.smp-glow-panel {
+  color: var(--text-primary);
+}
+
+.smp-glow-panel--major {
+  box-shadow: 0 24px 80px rgb(0 0 0 / 26%), 0 0 42px rgb(239 43 45 / 7%);
+}
+
+.smp-glow-panel--card {
+  box-shadow: 0 18px 58px rgb(0 0 0 / 20%);
+}
+
+.smp-glow-panel--row {
+  box-shadow: 0 10px 32px rgb(0 0 0 / 16%);
+}
+
+.smp-glow-panel--selected {
+  border-color: rgb(248 113 113 / 70%);
+  box-shadow: 0 18px 58px rgb(0 0 0 / 22%), 0 0 0 1px rgb(248 113 113 / 28%);
+}
+
+.smp-glow-panel__content {
+  position: relative;
+  min-width: 0;
+  width: 100%;
+}

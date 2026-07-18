@@ -1,5 +1,6 @@
 import type { ListeningMinutes, ScoreMetric } from "../../types/api";
 import { formatMinutes } from "../../utils/format";
+import { GlowPanel } from "../GlowPanel";
 
 interface Props {
   repeatScore: ScoreMetric;
@@ -36,7 +37,7 @@ export function KeySignalsStrip({ repeatScore, discoveryScore, nicheScore, thisM
   ];
 
   return (
-    <section className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 md:grid-cols-2 xl:grid-cols-4">
+    <GlowPanel as="section" variant="card" className="grid gap-px overflow-hidden md:grid-cols-2 xl:grid-cols-4">
       {signals.map((signal, index) => (
         <article key={signal.label} className="group bg-ink/84 p-5 transition hover:bg-panelSoft">
           <div className="flex items-start justify-between gap-4">
@@ -48,6 +49,6 @@ export function KeySignalsStrip({ repeatScore, discoveryScore, nicheScore, thisM
           <div className="mt-5 h-px w-12 bg-gradient-to-r from-violet to-transparent transition group-hover:w-24" />
         </article>
       ))}
-    </section>
+    </GlowPanel>
   );
 }

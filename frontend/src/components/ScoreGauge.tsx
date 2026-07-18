@@ -1,5 +1,6 @@
 import type { ScoreMetric } from "../types/api";
 import { asPercent } from "../utils/format";
+import { GlowPanel } from "./GlowPanel";
 
 export type ScoreKind =
   | "repeat"
@@ -25,11 +26,7 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
   const presentation = getScorePresentation(score);
   const degree = Math.min(100, Math.max(0, score.value)) * 3.6;
   return (
-    <article
-      className={`relative overflow-hidden rounded-[1.35rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.065),rgba(255,255,255,0.025))] p-5 shadow-[0_18px_70px_rgba(0,0,0,0.22)] transition hover:border-violet/25 hover:bg-white/[0.055] md:p-6 ${
-        featured ? "lg:col-span-2" : ""
-      }`}
-    >
+    <GlowPanel as="article" variant="card" wrapperClassName={featured ? "lg:col-span-2" : ""} className="relative overflow-hidden p-5 transition md:p-6">
       <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-violet/15 blur-3xl" />
       <div className="relative flex items-start justify-between gap-4">
         <div className="min-w-0">
@@ -50,7 +47,7 @@ export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; fe
         <p className="text-base leading-7 text-mist">{presentation.body}</p>
         <p className="mt-4 border-l border-violet/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 

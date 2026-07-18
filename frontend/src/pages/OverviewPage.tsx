@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
+import { GlowPanel } from "../components/GlowPanel";
 import { TasteDNA } from "../components/TasteDNA";
 import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
 import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
@@ -112,7 +113,7 @@ export function OverviewPage({
 
   return (
     <div className="space-y-8">
-      <section className="relative isolate min-h-[19rem] overflow-hidden rounded-xl border border-line bg-surface/88 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:p-6">
+      <GlowPanel as="section" variant="major" className="relative isolate min-h-[19rem] overflow-hidden p-5 md:p-6">
         <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
           <LineWaves
             speed={0.16}
@@ -142,15 +143,15 @@ export function OverviewPage({
               <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Updated: {overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "Not refreshed yet"}</span>
             </div>
           </div>
-          <div className="rounded-lg border border-red-400/15 bg-red-600/[0.08] p-4">
+          <GlowPanel as="div" variant="row" className="p-4">
             <p className="text-sm font-semibold text-red-100">Most active sound</p>
             <p className="mt-2 text-2xl font-black leading-tight text-white">{overview.top_genre_cluster || "Still mapping"}</p>
             <button className="btn-primary mt-5 w-full" type="button" onClick={onOpenReport}>
               Open Persona Report
             </button>
-          </div>
+          </GlowPanel>
         </div>
-      </section>
+      </GlowPanel>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryMetric label="Detected plays" value={overview.total_detected_plays.toLocaleString()} detail={overview.coverage.history_coverage_status} />
@@ -160,14 +161,14 @@ export function OverviewPage({
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-lg border border-line bg-panel/82 p-5">
+        <GlowPanel as="div" variant="card" className="p-5">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/70">Listening overview</p>
           <h2 className="mt-2 text-2xl font-black text-white">Recent scale</h2>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <SummaryMetric label="This month" value={thisMonthMinutes?.metrics.selected_period_total_formatted ?? "Unavailable"} detail={thisMonthMinutes?.summary_sentence ?? "Minute analysis appears after duration enrichment."} compact />
             <SummaryMetric label="Rolling year" value={rollingYearMinutes?.metrics.selected_period_total_formatted ?? "Unavailable"} detail={rollingYearMinutes?.summary_sentence ?? "Detected minutes are limited by duration coverage."} compact />
           </div>
-        </div>
+        </GlowPanel>
         <div className="grid gap-4 lg:grid-cols-2">
           <PreviewList title="Top songs preview" empty="No top songs available yet." items={topTracks.map((track) => ({ key: track.track_id || `${track.rank}-${track.title}`, rank: track.rank, title: track.title, subtitle: track.artist, metric: `${track.play_count.toLocaleString()} plays` }))} />
           <PreviewList title="Top artists preview" empty="No top artists available yet." items={topArtists.map((artist) => ({ key: artist.artist_id || `${artist.rank}-${artist.artist}`, rank: artist.rank, title: artist.artist, subtitle: artist.most_played_song ? `Top song: ${artist.most_played_song}` : `${artist.unique_songs_played} songs`, metric: `${artist.play_count.toLocaleString()} plays` }))} />
@@ -227,11 +228,11 @@ function useCompactHeroMotion() {
 
 function SummaryMetric({ label, value, detail, compact = false }: { label: string; value: string; detail: string; compact?: boolean }) {
   return (
-    <article className={`rounded-lg border border-line bg-white/[0.04] ${compact ? "p-4" : "p-5"}`}>
+    <GlowPanel as="article" variant="card" className={compact ? "p-4" : "p-5"}>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-mist/65">{label}</p>
       <p className={`${compact ? "mt-2 text-2xl" : "mt-3 text-3xl"} font-black leading-tight text-white`}>{value}</p>
       <p className="mt-2 line-clamp-2 text-xs leading-5 text-mist">{detail}</p>
-    </article>
+    </GlowPanel>
   );
 }
 
@@ -245,24 +246,24 @@ function PreviewList({
   items: { key: string; rank: number; title: string; subtitle: string; metric: string }[];
 }) {
   return (
-    <section className="rounded-lg border border-line bg-panel/82 p-5">
+    <GlowPanel as="section" variant="card" className="p-5">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-lg font-black text-white">{title}</h2>
         <span className="text-xs text-mist">{items.length} shown</span>
       </div>
       <div className="mt-4 space-y-2">
         {items.length ? items.map((item) => (
-          <article key={item.key} className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 rounded-md border border-white/10 bg-black/20 p-3">
+          <GlowPanel key={item.key} as="article" variant="row" className="grid grid-cols-[2.5rem_1fr_auto] items-center gap-3 p-3">
             <span className="text-lg font-black text-red-200">#{item.rank}</span>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-white">{item.title}</p>
               <p className="truncate text-xs text-mist">{item.subtitle}</p>
             </div>
             <span className="whitespace-nowrap text-xs font-semibold text-mist">{item.metric}</span>
-          </article>
-        )) : <p className="rounded-md border border-white/10 bg-black/20 p-3 text-sm text-mist">{empty}</p>}
+          </GlowPanel>
+        )) : <GlowPanel as="p" variant="row" className="p-3 text-sm text-mist">{empty}</GlowPanel>}
       </div>
-    </section>
+    </GlowPanel>
   );
 }
 

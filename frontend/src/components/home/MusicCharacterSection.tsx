@@ -2,6 +2,7 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../api/client";
 import type { MusicCharacterResponse, MusicCharacterRewrite, MusicSource, Prerequisites } from "../../types/api";
+import { GlowPanel } from "../GlowPanel";
 
 type CharacterPeriod = "this_month" | "month" | "rolling_year";
 
@@ -45,10 +46,10 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
 
   if (!character) {
     return (
-      <section className="rounded-[1.25rem] border border-line bg-panel/82 p-6">
+      <GlowPanel as="section" variant="card" className="p-6">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">Your Music Character</p>
         <p className="mt-3 text-mist">{loading ? "Reading your music character..." : "Music Character will appear after a refresh with listening data."}</p>
-      </section>
+      </GlowPanel>
     );
   }
 
@@ -73,7 +74,7 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
   };
 
   return (
-    <section className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(28,8,8,0.96),rgba(5,5,5,0.99)_62%,rgba(13,8,8,0.98))] shadow-glow">
+    <GlowPanel as="section" variant="major" className="overflow-hidden">
       <div className="grid gap-0 xl:grid-cols-[1.05fr_0.95fr]">
         <div className="relative border-b border-white/10 p-5 lg:p-6 xl:border-b-0 xl:border-r xl:border-white/10">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(239,68,68,0.18),transparent_35%)]" />
@@ -100,9 +101,9 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
               </div>
             </div>
 
-            {character.sample_warning ? <p className="mt-5 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">{character.sample_warning}</p> : null}
+            {character.sample_warning ? <GlowPanel as="p" variant="row" wrapperClassName="mt-5" className="bg-amber-200/10 p-3 text-sm text-amber-100">{character.sample_warning}</GlowPanel> : null}
 
-            <p className="mt-6 rounded-xl border border-red-500/20 bg-red-950/25 p-4 text-xl font-black leading-snug text-red-50">{roast}</p>
+            <GlowPanel as="p" variant="row" wrapperClassName="mt-6" className="p-4 text-xl font-black leading-snug text-red-50">{roast}</GlowPanel>
             <p className="mt-5 max-w-3xl text-base leading-8 text-mist">{profile}</p>
 
             <div className="mt-6 flex flex-wrap gap-2">
@@ -126,7 +127,7 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
             <CharacterMini title="Behaviour modifier" value={character.modifier?.name ?? "No clear modifier"} body={character.modifier?.roast ?? "No behaviour pattern is strong enough to label separately yet."} />
           </div>
 
-          <div className="mt-6 rounded-xl border border-white/10 bg-black/20 p-5">
+          <GlowPanel as="div" variant="row" wrapperClassName="mt-6" className="p-5">
             <h3 className="text-lg font-black text-white">Why it fits</h3>
             <ul className="mt-4 space-y-3 text-sm leading-6 text-mist">
               {(rewrite?.why_it_fits?.length ? rewrite.why_it_fits : primary.evidence).slice(0, 4).map((item) => (
@@ -136,10 +137,10 @@ export function MusicCharacterSection({ prerequisites, source }: Props) {
                 </li>
               ))}
             </ul>
-          </div>
+          </GlowPanel>
         </div>
       </div>
-    </section>
+    </GlowPanel>
   );
 }
 
@@ -157,11 +158,11 @@ function PeriodButton({ active, label, onClick }: { active: boolean; label: stri
 
 function CharacterMini({ title, value, body }: { title: string; value: string; body: string }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+    <GlowPanel as="div" variant="row" className="p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/60">{title}</p>
       <p className="mt-3 text-lg font-black leading-6 text-white">{value}</p>
       <p className="mt-3 text-sm leading-6 text-mist">{body}</p>
-    </div>
+    </GlowPanel>
   );
 }
 

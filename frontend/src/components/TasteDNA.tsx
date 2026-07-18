@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { GlowPanel } from "./GlowPanel";
 import type { MusicSource, TasteDNA as TasteDNAType, TasteDnaExplorer, TasteDnaNode, TasteInterpretation, TasteTraitNode } from "../types/api";
 
 type TastePeriod = "this_month" | "month" | "rolling_year";
@@ -61,7 +62,7 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
   if (!dna && !interpretation && !explorer) return null;
 
   return (
-    <section className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(24,9,9,0.96),rgba(5,5,5,0.99)_60%,rgba(15,8,8,0.98))] shadow-glow">
+    <GlowPanel as="section" variant="major" className="overflow-hidden">
       <div className="relative border-b border-white/10 p-5 lg:p-6">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(239,68,68,0.22),transparent_34%)]" />
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -90,9 +91,9 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
         </div>
 
         {limitedMonthlySample ? (
-          <p className="mt-5 rounded-md border border-amber-200/10 bg-amber-200/10 p-3 text-sm text-amber-100">
+          <GlowPanel as="p" variant="row" wrapperClassName="mt-5" className="bg-amber-200/10 p-3 text-sm text-amber-100">
             Limited monthly sample - this view may be shaped by short-term spikes.
-          </p>
+          </GlowPanel>
         ) : null}
       </div>
 
@@ -107,7 +108,7 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
 
           <div className="mt-6 space-y-4">
             {nodes.length ? nodes.map((node) => <SoundFamilyRow key={node.id} node={node} maxShare={maxShare} />) : (
-              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Sound-family data is unavailable for this period.</div>
+              <GlowPanel as="div" variant="row" className="p-4 text-sm text-mist">Sound-family data is unavailable for this period.</GlowPanel>
             )}
           </div>
         </div>
@@ -118,17 +119,17 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
             {groupedTraits.length ? groupedTraits.map((group) => (
               <TraitGroup key={group.label} label={group.label} traits={group.traits} />
             )) : (
-              <div className="rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Trait labels will appear once enough listening signals are mapped.</div>
+              <GlowPanel as="div" variant="row" className="p-4 text-sm text-mist">Trait labels will appear once enough listening signals are mapped.</GlowPanel>
             )}
           </div>
 
-          <div className="mt-7 rounded-2xl border border-red-500/15 bg-white/[0.045] p-5">
+          <GlowPanel as="div" variant="row" wrapperClassName="mt-7" className="p-5">
             <h3 className="text-lg font-black text-white">What this means</h3>
             <p className="mt-3 text-sm leading-7 text-mist">{buildProfileExplanation(nodes, traits, explorer?.summary)}</p>
-          </div>
+          </GlowPanel>
         </div>
       </div>
-    </section>
+    </GlowPanel>
   );
 }
 
@@ -153,7 +154,7 @@ function SoundFamilyRow({ node, maxShare }: { node: TasteDnaNode; maxShare: numb
   const width = Math.max(8, (node.share / maxShare) * 100);
   const artists = node.top_artists.slice(0, 3).map((artist) => artist.name).join(", ");
   return (
-    <article className="rounded-xl border border-white/10 bg-black/20 p-4 transition hover:border-red-500/25 hover:bg-white/[0.045]">
+    <GlowPanel as="article" variant="row" className="p-4 transition">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -170,7 +171,7 @@ function SoundFamilyRow({ node, maxShare }: { node: TasteDnaNode; maxShare: numb
       <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full bg-gradient-to-r from-red-700 via-red-500 to-red-200" style={{ width: `${width}%` }} />
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 

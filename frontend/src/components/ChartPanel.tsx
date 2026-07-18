@@ -1,5 +1,6 @@
 import type { ChartPoint } from "../types/api";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { GlowPanel } from "./GlowPanel";
 
 const colors = ["#ff4a4d", "#ef2b2d", "#c21f25", "#7b1118", "#a4a4ad", "#f87171", "#fecaca", "#451a1a"];
 const axisColor = "#a4a4ad";
@@ -20,11 +21,11 @@ interface Props {
 
 export function ChartPanel({ title, data, type = "bar" }: Props) {
   return (
-    <section className="min-w-0 rounded-lg border border-line bg-panel/82 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.18)] md:p-5">
+    <GlowPanel as="section" variant="card" className="min-w-0 p-4 md:p-5">
       <h3 className="text-base font-semibold leading-6 text-white md:text-lg">{title}</h3>
       <div className="mt-4 h-64 min-w-0 sm:h-72">
         {data.length === 0 ? (
-          <div className="grid h-full place-items-center rounded-md border border-dashed border-white/10 bg-white/[0.03] px-4 text-center text-sm leading-6 text-mist">Not enough reliable data for this chart yet.</div>
+          <GlowPanel as="div" variant="row" className="grid h-full place-items-center px-4 text-center text-sm leading-6 text-mist">Not enough reliable data for this chart yet.</GlowPanel>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {type === "pie" ? (
@@ -60,6 +61,6 @@ export function ChartPanel({ title, data, type = "bar" }: Props) {
           </ResponsiveContainer>
         )}
       </div>
-    </section>
+    </GlowPanel>
   );
 }

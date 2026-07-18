@@ -1,6 +1,7 @@
 import { Menu, Music2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
+import { GlowPanel } from "./components/GlowPanel";
 import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
 import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
 import type { Page } from "./components/navigation/navigation";
@@ -374,9 +375,9 @@ export default function App() {
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
           <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
           {message ? (
-            <div className="mb-5 rounded-lg border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-mist">
+            <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="px-4 py-3 text-sm text-mist">
               {message}
-            </div>
+            </GlowPanel>
           ) : null}
           {activePage}
         </main>
@@ -398,7 +399,7 @@ function SourceSwitcher({
 }) {
   const label = source === "spotify" ? "Spotify" : "YouTube Music";
   return (
-    <section className="mb-5 rounded-lg border border-line bg-panel/72 p-3">
+    <GlowPanel as="section" variant="card" wrapperClassName="mb-5" className="p-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-mist/70">Music source</p>
@@ -421,6 +422,6 @@ function SourceSwitcher({
           ) : null}
         </div>
       </div>
-    </section>
+    </GlowPanel>
   );
 }

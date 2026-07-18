@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
+import { GlowPanel } from "../components/GlowPanel";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
 import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
 import { asPercent } from "../utils/format";
@@ -75,7 +76,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         </div>
       </header>
 
-      <section className="rounded-lg border border-line bg-panel/80 p-4 text-sm text-mist">
+      <GlowPanel as="section" variant="card" className="p-4 text-sm text-mist">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-semibold text-white">Analysing {periodLabel}</span>
           {loading ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Updating...</span> : null}
@@ -83,9 +84,9 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
           {source === "spotify" ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Spotify top-item based</span> : null}
           {limitedSample ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">Limited sample for this month</span> : null}
         </div>
-      </section>
+      </GlowPanel>
 
-      <section className="flex flex-col gap-4 border-y border-white/10 py-5 lg:flex-row lg:items-center">
+      <GlowPanel as="section" variant="card" className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center">
         <div className="lg:w-44">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">At a glance</p>
         </div>
@@ -100,7 +101,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
             );
           })}
         </div>
-      </section>
+      </GlowPanel>
 
       <div className="space-y-14">
         {groups.map((group) => (

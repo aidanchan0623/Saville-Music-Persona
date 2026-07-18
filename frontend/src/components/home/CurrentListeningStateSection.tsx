@@ -1,5 +1,6 @@
 import type { ListeningMinutes, PeriodTopItem, ScoreMetric, TasteDnaComparison, TasteDnaExplorer } from "../../types/api";
 import { formatMinutes } from "../../utils/format";
+import { GlowPanel } from "../GlowPanel";
 
 interface Props {
   currentMinutes: ListeningMinutes | null;
@@ -32,7 +33,7 @@ export function CurrentListeningStateSection({ currentMinutes, currentTaste, com
       : "Your recent listening still sits inside your established emotional alternative world.";
 
   return (
-    <section className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(135deg,rgba(20,16,16,0.92),rgba(5,5,5,0.96))]">
+    <GlowPanel as="section" variant="major" className="overflow-hidden">
       <div className="grid gap-0 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="relative min-h-[20rem] border-b border-white/10 p-6 lg:border-b-0 lg:border-r lg:p-8">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(239,68,68,0.18),transparent_35%),radial-gradient(circle_at_80%_70%,rgba(153,27,27,0.22),transparent_30%)]" />
@@ -83,20 +84,20 @@ export function CurrentListeningStateSection({ currentMinutes, currentTaste, com
           </div>
 
           {comparison?.summary_sentence ? (
-            <p className="mt-6 rounded-xl bg-white/[0.04] p-4 text-sm leading-6 text-mist">{comparison.summary_sentence}</p>
+            <GlowPanel as="p" variant="row" wrapperClassName="mt-6" className="p-4 text-sm leading-6 text-mist">{comparison.summary_sentence}</GlowPanel>
           ) : null}
         </div>
       </div>
-    </section>
+    </GlowPanel>
   );
 }
 
 function StateItem({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <div className="rounded-2xl bg-white/[0.045] p-4">
+    <GlowPanel as="div" variant="row" className="p-4">
       <p className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</p>
       <p className="mt-3 text-lg font-black leading-6 text-white">{value}</p>
       <p className="mt-2 text-xs leading-5 text-mist">{caption}</p>
-    </div>
+    </GlowPanel>
   );
 }

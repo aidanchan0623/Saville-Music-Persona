@@ -1,9 +1,10 @@
 import type { TopTrack } from "../types/api";
 import { formatDate } from "../utils/format";
+import { GlowPanel } from "./GlowPanel";
 
 export function TrackCard({ track }: { track: TopTrack }) {
   return (
-    <article className="group grid grid-cols-[3rem_4.5rem_1fr] gap-4 rounded-lg border border-line bg-panel/80 p-4 transition hover:border-violet/40 hover:bg-panelSoft/85">
+    <GlowPanel as="article" variant="row" className="group grid grid-cols-[3rem_4.5rem_1fr] gap-4 p-4 transition">
       <div className="text-3xl font-black text-white/20">#{track.rank}</div>
       <div className="h-[4.5rem] w-[4.5rem] overflow-hidden rounded-md bg-white/10">
         {track.thumbnail ? <img className="h-full w-full object-cover" src={track.thumbnail} alt="" /> : <div className="h-full w-full bg-violet/20" />}
@@ -18,6 +19,6 @@ export function TrackCard({ track }: { track: TopTrack }) {
         </div>
         <p className="mt-3 text-sm leading-6 text-mist">{track.why_it_ranked}</p>
       </div>
-    </article>
+    </GlowPanel>
   );
 }

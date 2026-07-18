@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
+import { GlowPanel } from "../components/GlowPanel";
 import type {
   MusicSource,
   PeriodTopItem,
@@ -116,7 +117,7 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
 
   return (
     <div className="space-y-8">
-      <header className="overflow-hidden rounded-xl border border-red-500/15 bg-surface/88 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] lg:p-6">
+      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
@@ -150,13 +151,13 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
           {source === "spotify" ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Top-item based, not exact Spotify history</span> : null}
           {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
         </div>
-      </header>
+      </GlowPanel>
 
       {(tracks?.sample_warning || albums?.sample_warning || error) ? (
         <section className="space-y-3">
-          {tracks?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{tracks.sample_warning}</p> : null}
-          {albums?.sample_warning ? <p className="rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm text-amber-100">{albums.sample_warning}</p> : null}
-          {error ? <p className="rounded-xl border border-red-300/10 bg-red-400/10 p-4 text-sm text-red-100">{error}</p> : null}
+          {tracks?.sample_warning ? <GlowPanel as="p" variant="row" className="bg-amber-200/10 p-4 text-sm text-amber-100">{tracks.sample_warning}</GlowPanel> : null}
+          {albums?.sample_warning ? <GlowPanel as="p" variant="row" className="bg-amber-200/10 p-4 text-sm text-amber-100">{albums.sample_warning}</GlowPanel> : null}
+          {error ? <GlowPanel as="p" variant="row" className="bg-red-400/10 p-4 text-sm text-red-100">{error}</GlowPanel> : null}
         </section>
       ) : null}
 
@@ -220,7 +221,7 @@ function TopList({
   source: MusicSource;
 }) {
   return (
-    <section className="rounded-xl border border-line bg-panel/82 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.2)] lg:p-5">
+    <GlowPanel as="section" variant="major" className="p-4 lg:p-5">
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">{title}</h2>
@@ -241,10 +242,10 @@ function TopList({
             />
           ))
         ) : (
-          <div className="rounded-lg border border-line bg-black/20 p-5 text-sm text-mist">No detected plays in this period.</div>
+          <GlowPanel as="div" variant="row" className="p-5 text-sm text-mist">No detected plays in this period.</GlowPanel>
         )}
       </div>
-    </section>
+    </GlowPanel>
   );
 }
 
@@ -254,7 +255,7 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
 
   if (artistList) {
     return (
-      <article className={`rounded-lg border bg-black/20 p-4 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
+      <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-artist-card">
         <div className="grid gap-4 sm:grid-cols-[5rem_1fr]">
           <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-20 w-20" />
           <div className="min-w-0">
@@ -284,12 +285,12 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
             ) : null}
           </div>
         </div>
-      </article>
+      </GlowPanel>
     );
   }
 
   return (
-    <article className="rounded-lg border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
+    <GlowPanel as="article" variant="row" className="p-4 transition" data-testid="top-song-card">
       <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto] lg:items-center">
         <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-lg" sizeClass="h-20 w-20" />
         <div className="min-w-0">
@@ -307,13 +308,13 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
           <Movement movement={item.movement} />
         </div>
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 
 function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs, source }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   return (
-    <section className="rounded-xl border border-line bg-panel/82 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.2)] lg:p-5">
+    <GlowPanel as="section" variant="major" className="p-4 lg:p-5">
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">Favourite Albums</h2>
@@ -328,16 +329,16 @@ function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs,
           ))}
         </div>
       ) : (
-        <div className="rounded-lg border border-line bg-black/20 p-5 text-sm text-mist">Album data is unavailable for this period.</div>
+        <GlowPanel as="div" variant="row" className="p-5 text-sm text-mist">Album data is unavailable for this period.</GlowPanel>
       )}
-    </section>
+    </GlowPanel>
   );
 }
 
 function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   const rank = `#${String(album.rank).padStart(2, "0")}`;
   return (
-    <article className={`rounded-lg border bg-black/20 p-4 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
+    <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-album-card">
       <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto]">
         <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-lg" sizeClass="h-20 w-20" />
         <div className="min-w-0">
@@ -365,7 +366,7 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
           </button>
         </div>
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 
@@ -427,7 +428,7 @@ function DrilldownShell({
   songs: TopDrilldownSong[];
 }) {
   return (
-    <section className="rounded-[1.5rem] border border-line bg-panel/85 p-5 shadow-glow lg:p-6" data-testid="songs-drilldown">
+    <GlowPanel as="section" variant="major" className="p-5 lg:p-6" data-testid="songs-drilldown">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           {visual}
@@ -442,20 +443,20 @@ function DrilldownShell({
         </button>
       </div>
       {summary.length ? <MetricPills items={summary} /> : null}
-      {loading ? <p className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">Loading songs...</p> : null}
+      {loading ? <GlowPanel as="p" variant="row" wrapperClassName="mt-5" className="p-4 text-sm text-mist">Loading songs...</GlowPanel> : null}
       {!loading && songs.length ? (
         <div className="mt-5 space-y-2">
           {songs.map((song) => <DrilldownSongRow key={`${song.rank}-${song.track_id ?? song.title}`} song={song} />)}
         </div>
       ) : null}
-      {!loading && !songs.length ? <p className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm text-mist">{emptyMessage}</p> : null}
-    </section>
+      {!loading && !songs.length ? <GlowPanel as="p" variant="row" wrapperClassName="mt-5" className="p-4 text-sm text-mist">{emptyMessage}</GlowPanel> : null}
+    </GlowPanel>
   );
 }
 
 function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
-    <article className="grid gap-4 rounded-xl border border-white/10 bg-white/[0.035] p-3 sm:grid-cols-[4.5rem_1fr]">
+    <GlowPanel as="article" variant="row" className="grid gap-4 p-3 sm:grid-cols-[4.5rem_1fr]">
       <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} rounded="rounded-xl" sizeClass="h-16 w-16" />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
@@ -471,7 +472,7 @@ function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
           ]}
         />
       </div>
-    </article>
+    </GlowPanel>
   );
 }
 

@@ -1,4 +1,5 @@
 import type { TasteInterpretation } from "../../types/api";
+import { GlowPanel } from "../GlowPanel";
 
 interface Props {
   taste: TasteInterpretation;
@@ -22,17 +23,17 @@ export function TasteNarrativeSection({ taste }: Props) {
         </p>
       </div>
 
-      <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-[linear-gradient(145deg,rgba(255,255,255,0.07),rgba(255,255,255,0.025))] p-6">
+      <GlowPanel as="div" variant="card" className="relative overflow-hidden p-6">
         <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-violet/20 blur-3xl" />
         <SoundList title="Core genres" items={core} accent="violet" />
         <SoundList title="Secondary influences" items={secondary} accent="indigo" />
         <SoundList title="Sonic traits" items={traits} accent="magenta" />
         {taste.coverage.unknown_artist_coverage_percent > 30 ? (
-          <p className="mt-6 rounded-xl border border-amber-200/10 bg-amber-200/10 p-4 text-sm leading-6 text-amber-100">
+          <GlowPanel as="p" variant="row" wrapperClassName="mt-6" className="bg-amber-200/10 p-4 text-sm leading-6 text-amber-100">
             Smaller artists still have partial genre coverage, so the clearest claims come from the dominant mapped artists.
-          </p>
+          </GlowPanel>
         ) : null}
-      </div>
+      </GlowPanel>
     </section>
   );
 }

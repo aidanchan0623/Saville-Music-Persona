@@ -1,6 +1,7 @@
 import { ListPlus, WandSparkles } from "lucide-react";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
+import { GlowPanel } from "../components/GlowPanel";
 import type { MusicSource, Recommendation } from "../types/api";
 
 interface Props {
@@ -20,7 +21,7 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
   const spotifyMode = source === "spotify";
   return (
     <div className="space-y-6">
-      <header className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(33,8,8,0.96),rgba(5,5,5,0.99)_62%,rgba(16,8,8,0.98))] p-5 shadow-glow lg:p-6">
+      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Recommendation lab</p>
@@ -43,27 +44,27 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
             </button>
           </div>
         </div>
-      </header>
+      </GlowPanel>
       <div className="grid gap-3 md:grid-cols-3">
         {groups.map(({ group, items }) => (
-          <div key={group} className="rounded-xl border border-line bg-panel/70 p-4">
+          <GlowPanel key={group} as="div" variant="card" className="p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-red-200">{group}</p>
             <p className="mt-2 text-2xl font-black text-white">{items.length}</p>
             <p className="mt-1 text-sm text-mist/80">picks in this lane</p>
-          </div>
+          </GlowPanel>
         ))}
       </div>
       {spotifyMode ? (
-        <p className="rounded-xl border border-amber-200/15 bg-amber-200/10 p-4 text-sm leading-6 text-amber-100">
+        <GlowPanel as="p" variant="row" className="bg-amber-200/10 p-4 text-sm leading-6 text-amber-100">
           Recommendations and playlist creation currently use YouTube Music history. Switch back to YouTube Music to generate them.
-        </p>
+        </GlowPanel>
       ) : null}
       {!recommendations.length ? (
         <EmptyState title="No recommendations yet" body={spotifyMode ? "Recommendations currently use YouTube Music history. Switch back to YouTube Music to generate them." : "Generate recommendations after refreshing data. The app excludes heavily played tracks and obvious duplicates before ranking candidates."} />
       ) : (
         <div className="space-y-6">
           {groups.filter((group) => group.items.length).map(({ group, description, items }) => (
-            <section key={group} className="min-w-0 rounded-[1.25rem] border border-line bg-panel/72 p-4 lg:p-5">
+            <GlowPanel key={group} as="section" variant="major" className="min-w-0 p-4 lg:p-5">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">{group}</p>
@@ -76,7 +77,7 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
                   <RecommendationCard key={`${item.rank}-${item.track_title}-${item.artist}`} item={item} />
                 ))}
               </div>
-            </section>
+            </GlowPanel>
           ))}
         </div>
       )}
@@ -86,7 +87,7 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
 
 function RecommendationCard({ item }: { item: Recommendation }) {
   return (
-    <article className="min-w-0 rounded-xl border border-white/10 bg-black/20 p-4 transition hover:border-red-500/30 hover:bg-white/[0.045]">
+    <GlowPanel as="article" variant="card" className="min-w-0 p-4 transition">
       <div className="flex gap-4">
         <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-red-950/45 text-lg font-black text-white/70">
           {item.album_art ? <img className="h-full w-full object-cover" src={item.album_art} alt="" /> : `#${item.rank}`}
@@ -103,9 +104,9 @@ function RecommendationCard({ item }: { item: Recommendation }) {
         </div>
       </div>
       <p className="mt-4 break-words text-sm leading-6 text-mist">{item.why_this_fits}</p>
-      {item.musical_connection ? <p className="mt-3 break-words rounded-lg border border-red-500/15 bg-red-950/18 p-3 text-xs leading-5 text-red-100">{item.musical_connection}</p> : null}
+      {item.musical_connection ? <GlowPanel as="p" variant="row" wrapperClassName="mt-3" className="break-words bg-red-950/[0.18] p-3 text-xs leading-5 text-red-100">{item.musical_connection}</GlowPanel> : null}
       <p className="mt-3 break-words text-xs text-mist/70">Source reason: {item.source_reason}</p>
-    </article>
+    </GlowPanel>
   );
 }
 

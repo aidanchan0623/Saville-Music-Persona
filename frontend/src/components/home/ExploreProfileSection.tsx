@@ -1,4 +1,5 @@
 import { ArrowUpRight, BarChart3, Disc3, Gauge, Sparkles } from "lucide-react";
+import { GlowPanel } from "../GlowPanel";
 
 interface Props {
   onOpenTop10: () => void;
@@ -44,7 +45,7 @@ export function ExploreProfileSection({ onOpenTop10, onOpenScores, onOpenPattern
         </div>
         <p className="max-w-lg text-sm leading-6 text-mist">The homepage gives the identity. These sections show the evidence behind it.</p>
       </div>
-      <div className="grid gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 md:grid-cols-2 xl:grid-cols-4">
+      <GlowPanel as="div" variant="card" className="grid gap-px overflow-hidden md:grid-cols-2 xl:grid-cols-4">
         {tiles.map((tile) => {
           const Icon = tile.icon;
           return (
@@ -60,7 +61,7 @@ export function ExploreProfileSection({ onOpenTop10, onOpenScores, onOpenPattern
             </button>
           );
         })}
-      </div>
+      </GlowPanel>
     </section>
   );
 }

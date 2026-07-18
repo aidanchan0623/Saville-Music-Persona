@@ -1,6 +1,7 @@
 import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
+import { GlowPanel } from "../components/GlowPanel";
 import { StatusPill } from "../components/StatusPill";
 import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
 
@@ -35,7 +36,7 @@ export function SettingsPage({
 }: Props) {
   return (
     <div className="space-y-6">
-      <header className="overflow-hidden rounded-[1.25rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(33,8,8,0.96),rgba(5,5,5,0.99)_62%,rgba(16,8,8,0.98))] p-5 shadow-glow lg:p-6">
+      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Settings</p>
         <AnimatedPageTitle animationKey={titleAnimationKey} text="Local integrations and data controls" className="mt-3 text-3xl font-black text-white md:text-4xl" />
         <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">Connection status, demo mode, private auth guidance, and import tools for the local music profile.</p>
@@ -44,7 +45,7 @@ export function SettingsPage({
           <StatusSummary label="Spotify" value={spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Not configured"} ok={Boolean(spotifyStatus?.connected)} />
           <StatusSummary label="Gemma" value={prerequisites?.model_installed ? "Ready" : "Offline"} ok={Boolean(prerequisites?.model_installed)} />
         </div>
-      </header>
+      </GlowPanel>
 
       <SettingsCard>
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
@@ -70,9 +71,9 @@ export function SettingsPage({
             <ExternalLink size={17} /> See docs/AUTH_SETUP.md in the repo
           </a>
         </div>
-        <div className="mt-5 rounded-lg border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
+        <GlowPanel as="div" variant="row" wrapperClassName="mt-5" className="bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
           Browser-header authentication is deliberately not automated. If you use it as an advanced fallback, treat the header file like account-access data and keep it out of Git.
-        </div>
+        </GlowPanel>
       </SettingsCard>
 
       <SettingsCard>
@@ -87,7 +88,7 @@ export function SettingsPage({
           <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Connected" : "Optional"} />
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <div className="rounded-md bg-white/[0.04] p-4">
+          <GlowPanel as="div" variant="row" className="p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-mist/60">Account</p>
             <div className="mt-3 flex items-center gap-3">
               {spotifyStatus?.profile_image ? (
@@ -97,7 +98,7 @@ export function SettingsPage({
               )}
               <p className="text-sm text-white">{spotifyStatus?.display_name || "Not connected"}</p>
             </div>
-          </div>
+          </GlowPanel>
           <Info label="Spotify configured" value={spotifyStatus?.configured ? "Yes" : "No"} />
           <Info label="Last Spotify sync" value={spotifyStatus?.last_synced_at || "Never"} />
           <Info label="Status" value={sanitizePrivateDetails(spotifyStatus?.message || "Not checked yet")} />
@@ -118,9 +119,9 @@ export function SettingsPage({
             </>
           )}
         </div>
-        <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-mist">
+        <GlowPanel as="div" variant="row" wrapperClassName="mt-5" className="p-4 text-sm leading-6 text-mist">
           Spotify does not provide Google Takeout-style full historical play counts. Initial Spotify profiles are based on top items, saved music, playlists, and recent sync data; monthly history improves after repeated syncs.
-        </div>
+        </GlowPanel>
       </SettingsCard>
 
       <SettingsCard>
@@ -179,15 +180,15 @@ export function SettingsPage({
         </h2>
         <div className="mt-4 grid gap-3">
           {prerequisites?.items.map((item) => (
-            <div key={item.name} className="flex flex-col justify-between gap-2 rounded-md bg-white/[0.04] p-4 sm:flex-row sm:items-center">
+            <GlowPanel key={item.name} as="div" variant="row" className="flex flex-col justify-between gap-2 p-4 sm:flex-row sm:items-center">
               <StatusPill ok={item.available} label={item.name} />
               <p className="text-sm text-mist">{sanitizePrivateDetails(item.detail)}</p>
-            </div>
+            </GlowPanel>
           ))}
-          <div className="rounded-md bg-white/[0.04] p-4 text-sm text-mist">
+          <GlowPanel as="div" variant="row" className="p-4 text-sm text-mist">
             Ollama model: <span className="text-white">{prerequisites?.ollama_model || "gemma3:4b"}</span>. Model installed:{" "}
             <span className="text-white">{prerequisites?.model_installed ? "Yes" : "No"}</span>.
-          </div>
+          </GlowPanel>
         </div>
       </SettingsCard>
     </div>
@@ -196,27 +197,27 @@ export function SettingsPage({
 
 function SettingsCard({ children }: { children: ReactNode }) {
   return (
-    <section className="rounded-[1.25rem] border border-line bg-panel/78 p-5 shadow-[0_18px_70px_rgba(0,0,0,0.18)]">
+    <GlowPanel as="section" variant="card" className="p-5">
       {children}
-    </section>
+    </GlowPanel>
   );
 }
 
 function StatusSummary({ label, value, ok }: { label: string; value: string; ok: boolean }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-black/25 p-4">
+    <GlowPanel as="div" variant="row" className="p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/60">{label}</p>
       <p className={`mt-2 text-sm font-semibold ${ok ? "text-red-100" : "text-mist"}`}>{value}</p>
-    </div>
+    </GlowPanel>
   );
 }
 
 function Info({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-black/20 p-4">
+    <GlowPanel as="div" variant="row" className="p-4">
       <p className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</p>
       <p className="mt-2 break-words text-sm text-white">{value}</p>
-    </div>
+    </GlowPanel>
   );
 }
 

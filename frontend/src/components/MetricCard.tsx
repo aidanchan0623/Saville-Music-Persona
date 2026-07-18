@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { GlowPanel } from "./GlowPanel";
 
 interface Props {
   label: string;
@@ -14,10 +15,10 @@ export function MetricCard({ label, value, caption, accent = "violet" }: Props) 
     magenta: "from-magenta/20 to-magenta/0 text-red-100",
   };
   return (
-    <section className={`rounded-lg border border-line bg-gradient-to-br ${accents[accent]} p-5 shadow-glow`}>
+    <GlowPanel as="section" variant="card" className={`bg-gradient-to-br ${accents[accent]} p-5`}>
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist/70">{label}</p>
       <div className="mt-3 text-3xl font-semibold text-white">{value}</div>
       {caption ? <p className="mt-2 text-sm leading-6 text-mist">{caption}</p> : null}
-    </section>
+    </GlowPanel>
   );
 }
