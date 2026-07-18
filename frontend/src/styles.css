@@ -22,25 +22,82 @@
   background: var(--background);
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+  scrollbar-color: var(--red-dark) var(--background-elevated);
+}
+
 body {
   margin: 0;
   min-width: 320px;
-  background: var(--background);
+  background:
+    radial-gradient(circle at 76% -10%, rgba(239, 43, 45, 0.13), transparent 32rem),
+    radial-gradient(circle at 8% 88%, rgba(123, 17, 24, 0.14), transparent 28rem),
+    var(--background);
   color: var(--text-primary);
+  text-rendering: geometricPrecision;
 }
 
 button,
+input,
 select {
   font: inherit;
 }
 
+button,
+select,
+input,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--red-bright);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgba(239, 43, 45, 0.42);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background-elevated);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(239, 43, 45, 0.42);
+  border: 3px solid var(--background-elevated);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 74, 77, 0.58);
+}
+
+#root {
+  min-height: 100vh;
+}
+
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-violet/40 bg-gradient-to-r from-violet to-magenta px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-red-400/30 bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-glow transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-violet/40 hover:bg-red-950/30 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.055] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/35 hover:bg-white/[0.085] disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .nav-item {
