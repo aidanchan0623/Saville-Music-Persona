@@ -114,13 +114,13 @@ export function Top10Page({ source }: { source: MusicSource }) {
   }
 
   return (
-    <div className="space-y-10">
-      <header className="overflow-hidden rounded-[2rem] border border-red-500/15 bg-[linear-gradient(135deg,rgba(37,9,9,0.96),rgba(5,5,5,0.99)_58%,rgba(17,8,8,0.98))] p-6 shadow-glow lg:p-8">
+    <div className="space-y-8">
+      <header className="overflow-hidden rounded-xl border border-red-500/15 bg-surface/88 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] lg:p-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-4xl">
             <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
-            <h1 className="mt-3 text-5xl font-black leading-none text-white md:text-7xl">Top 10</h1>
-            <p className="mt-4 max-w-3xl text-lg leading-8 text-mist">
+            <h1 className="mt-3 text-4xl font-black leading-none text-white md:text-5xl">Top 10</h1>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-mist">
               {source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
             </p>
           </div>
@@ -219,15 +219,15 @@ function TopList({
   source: MusicSource;
 }) {
   return (
-    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section className="rounded-xl border border-line bg-panel/82 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.2)] lg:p-5">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">{title}</h2>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{caption}</p>
+          <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">{title}</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
         </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}
       </div>
-      <div className={artistList ? "grid gap-4 xl:grid-cols-2" : "space-y-4"}>
+      <div className={artistList ? "grid gap-3 xl:grid-cols-2" : "space-y-3"}>
         {response?.items.length ? (
           response.items.map((item) => (
             <PeriodTopCard
@@ -240,7 +240,7 @@ function TopList({
             />
           ))
         ) : (
-          <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">No detected plays in this period.</div>
+          <div className="rounded-lg border border-line bg-black/20 p-5 text-sm text-mist">No detected plays in this period.</div>
         )}
       </div>
     </section>
@@ -253,20 +253,20 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
 
   if (artistList) {
     return (
-      <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
-        <div className="grid gap-5 sm:grid-cols-[7rem_1fr]">
-          <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-28 w-28" />
+      <article className={`rounded-lg border bg-black/20 p-4 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-artist-card">
+        <div className="grid gap-4 sm:grid-cols-[5rem_1fr]">
+          <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-20 w-20" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-black text-red-200">{rank}</span>
+              <span className="text-xl font-black text-red-200">{rank}</span>
               <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, true)}</span>
             </div>
-            <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
+            <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
             <p className="mt-2 text-sm leading-6 text-mist">
               {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
             </p>
-            <div className="mt-5 flex flex-wrap items-center gap-3">
-              <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, true)}</span>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, true)}</span>
               {detectedMinutesLabel(item) ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{detectedMinutesLabel(item)}</span> : null}
               <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{item.share_of_period}% share</span>
               <Movement movement={item.movement} />
@@ -274,7 +274,7 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
             {onViewSongs ? (
               <button
                 aria-label={`View songs by ${item.artist}`}
-                className="mt-5 rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
+                className="mt-4 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
                 type="button"
                 onClick={() => onViewSongs(item.artist)}
               >
@@ -288,20 +288,20 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
   }
 
   return (
-    <article className="rounded-2xl border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
-      <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto] lg:items-center">
-        <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
+    <article className="rounded-lg border border-white/10 bg-black/20 p-4 transition hover:border-red-400/45" data-testid="top-song-card">
+      <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto] lg:items-center">
+        <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-lg" sizeClass="h-20 w-20" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-3xl font-black text-red-200">{rank}</span>
+            <span className="text-xl font-black text-red-200">{rank}</span>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, false)}</span>
           </div>
-          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{title}</h3>
+          <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
           <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
           {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
         </div>
         <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
-          <span className="text-2xl font-black text-white">{spotifyEvidenceLabel(item, source, false)}</span>
+          <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, false)}</span>
           {detectedMinutesLabel(item) ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{detectedMinutesLabel(item)}</span> : null}
           <Movement movement={item.movement} />
         </div>
@@ -312,22 +312,22 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
 
 function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs, source }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   return (
-    <section className="rounded-[1.75rem] border border-line bg-panel/82 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] lg:p-7">
-      <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section className="rounded-xl border border-line bg-panel/82 p-4 shadow-[0_18px_60px_rgba(0,0,0,0.2)] lg:p-5">
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-3xl font-black leading-tight text-white md:text-5xl">Favourite Albums</h2>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-mist">{source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."}</p>
+          <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">Favourite Albums</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."}</p>
         </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}
       </div>
       {response?.albums.length ? (
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-3 xl:grid-cols-2">
           {response.albums.map((album) => (
             <AlbumCard key={album.key} album={album} selected={selectedAlbum?.key === album.key} onViewSongs={onViewSongs} source={source} />
           ))}
         </div>
       ) : (
-        <div className="rounded-2xl border border-line bg-black/20 p-6 text-sm text-mist">Album data is unavailable for this period.</div>
+        <div className="rounded-lg border border-line bg-black/20 p-5 text-sm text-mist">Album data is unavailable for this period.</div>
       )}
     </section>
   );
@@ -336,18 +336,18 @@ function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs,
 function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumItem; selected: boolean; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
   const rank = `#${String(album.rank).padStart(2, "0")}`;
   return (
-    <article className={`rounded-2xl border bg-black/20 p-5 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
-      <div className="grid gap-5 sm:grid-cols-[7rem_1fr] lg:grid-cols-[8rem_1fr_auto]">
-        <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-2xl" sizeClass="h-28 w-28 md:h-32 md:w-32" />
+    <article className={`rounded-lg border bg-black/20 p-4 transition hover:border-red-400/45 ${selected ? "border-red-400/70" : "border-white/10"}`} data-testid="top-album-card">
+      <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto]">
+        <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-lg" sizeClass="h-20 w-20" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-black text-red-200">{rank}</span>
+            <span className="text-xl font-black text-red-200">{rank}</span>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{album.label}</span>
           </div>
-          <h3 className="mt-3 truncate text-2xl font-black leading-tight text-white md:text-3xl">{album.album}</h3>
+          <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{album.album}</h3>
           <p className="mt-2 truncate text-base font-semibold text-mist">{album.artist}</p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
+            <span className="text-lg font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
             <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{album.unique_songs} songs</span>
           </div>
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
@@ -356,7 +356,7 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
         <div className="flex items-start justify-end">
           <button
             aria-label={`View songs from ${album.album}`}
-            className="whitespace-nowrap rounded-lg border border-white/10 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
+            className="whitespace-nowrap rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
             type="button"
             onClick={() => onViewSongs(album)}
           >
