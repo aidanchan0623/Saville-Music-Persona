@@ -1,7 +1,16 @@
 import type { ChartPoint } from "../types/api";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const colors = ["#ef4444", "#dc2626", "#b91c1c", "#991b1b", "#f87171", "#7f1d1d", "#fecaca", "#451a1a"];
+const colors = ["#ff4a4d", "#ef2b2d", "#c21f25", "#7b1118", "#a4a4ad", "#f87171", "#fecaca", "#451a1a"];
+const axisColor = "#a4a4ad";
+const gridColor = "rgba(255,255,255,0.07)";
+const tooltipStyle = {
+  background: "#111114",
+  border: "1px solid rgba(255,255,255,0.14)",
+  borderRadius: "8px",
+  color: "#f5f5f5",
+};
+const tooltipLabelStyle = { color: "#ffffff", fontWeight: 700 };
 
 interface Props {
   title: string;
@@ -11,36 +20,36 @@ interface Props {
 
 export function ChartPanel({ title, data, type = "bar" }: Props) {
   return (
-    <section className="rounded-lg border border-line bg-panel/80 p-5">
-      <h3 className="text-lg font-semibold text-white">{title}</h3>
-      <div className="mt-4 h-72">
+    <section className="min-w-0 rounded-lg border border-line bg-panel/82 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.18)] md:p-5">
+      <h3 className="text-base font-semibold leading-6 text-white md:text-lg">{title}</h3>
+      <div className="mt-4 h-64 min-w-0 sm:h-72">
         {data.length === 0 ? (
-          <div className="grid h-full place-items-center rounded-md bg-white/[0.03] text-sm text-mist">Not enough reliable data for this chart yet.</div>
+          <div className="grid h-full place-items-center rounded-md border border-dashed border-white/10 bg-white/[0.03] px-4 text-center text-sm leading-6 text-mist">Not enough reliable data for this chart yet.</div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             {type === "pie" ? (
-              <PieChart>
+              <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
                 <Pie data={data} dataKey="value" nameKey="name" innerRadius={54} outerRadius={96} paddingAngle={3}>
                   {data.map((entry, index) => (
                     <Cell key={entry.name} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
-                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={{ color: "#f5f5f5" }} />
               </PieChart>
             ) : type === "line" ? (
-              <LineChart data={data}>
-                <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
-                <Line type="monotone" dataKey="value" stroke="#ef4444" strokeWidth={3} dot={false} />
+              <LineChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="name" stroke={axisColor} tick={{ fontSize: 12, fill: axisColor }} tickLine={false} axisLine={false} minTickGap={12} height={36} />
+                <YAxis stroke={axisColor} tick={{ fontSize: 12, fill: axisColor }} tickLine={false} axisLine={false} width={44} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={{ color: "#f5f5f5" }} />
+                <Line type="monotone" dataKey="value" stroke="#ff4a4d" strokeWidth={3} dot={false} activeDot={{ r: 5, fill: "#ff4a4d", stroke: "#111114", strokeWidth: 2 }} />
               </LineChart>
             ) : (
-              <BarChart data={data}>
-                <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                <XAxis dataKey="name" stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#b8b0b0" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "#141010", border: "1px solid rgba(255,80,80,0.16)", color: "#fff" }} />
+              <BarChart data={data} margin={{ top: 12, right: 12, bottom: 8, left: 0 }}>
+                <CartesianGrid stroke={gridColor} vertical={false} />
+                <XAxis dataKey="name" stroke={axisColor} tick={{ fontSize: 12, fill: axisColor }} tickLine={false} axisLine={false} minTickGap={10} height={42} />
+                <YAxis stroke={axisColor} tick={{ fontSize: 12, fill: axisColor }} tickLine={false} axisLine={false} width={44} />
+                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={{ color: "#f5f5f5" }} cursor={{ fill: "rgba(239,43,45,0.08)" }} />
                 <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                   {data.map((entry, index) => (
                     <Cell key={entry.name} fill={colors[index % colors.length]} />

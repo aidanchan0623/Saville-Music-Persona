@@ -46,10 +46,10 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
         </p>
       </div>
 
-      <section className="rounded-lg border border-violet/20 bg-panel/82 p-5 shadow-glow">
+      <section className="rounded-xl border border-red-400/15 bg-panel/82 p-4 shadow-[0_20px_70px_rgba(0,0,0,0.22)] md:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm uppercase tracking-[0.16em] text-violet-200">Daily Listening Minutes</p>
+            <p className="text-sm uppercase tracking-[0.16em] text-red-200">Daily Listening Minutes</p>
             <h2 className="mt-1 text-2xl font-black text-white">{activeLabel}</h2>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
               A practical view of when you listened most, with quiet days kept visible instead of smoothed away.
@@ -61,7 +61,7 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
               ["month", "Select Month"],
               ["rolling_year", "Rolling Year"],
             ] as const).map(([value, label]) => (
-              <button key={value} className={`rounded-md px-3 py-2 text-sm font-semibold ${period === value ? "bg-violet text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => setPeriod(value)}>
+              <button key={value} className={`rounded-md px-3 py-2 text-sm font-semibold ${period === value ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => setPeriod(value)}>
                 {label}
               </button>
             ))}
@@ -81,7 +81,7 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
               <MinuteStat label="Current streak" value={`${minutes.metrics.current_listening_streak_days} days`} caption="Active day = at least one detected music play" />
             </div>
             <p className="mt-4 rounded-md bg-white/[0.04] p-3 text-sm text-mist">{minutes.summary_sentence}</p>
-            <div className="mt-5 grid gap-5 xl:grid-cols-3">
+            <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-3">
               <ChartPanel title="Daily detected minutes" data={minutes.daily} type="line" />
               <ChartPanel title="Weekly aggregate minutes" data={minutes.weekly} />
               <ChartPanel title="Monthly aggregate minutes" data={minutes.monthly} />
@@ -93,7 +93,7 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
         )}
       </section>
 
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <ChartPanel title={`Listening by release decade - ${activeLabel}`} data={activeCharts.release_decades} />
         <ChartPanel title={`Dominant genre families - ${activeLabel}`} data={activeCharts.top_genre_clusters} type="pie" />
         <ChartPanel title={`Top artists by plays - ${activeLabel}`} data={activeCharts.top_artists} />
@@ -110,7 +110,7 @@ export function PatternsPage({ charts, source }: { charts: Charts | null; source
 
 function MinuteStat({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <div className="rounded-md bg-white/[0.05] p-4">
+    <div className="rounded-md border border-white/10 bg-white/[0.045] p-4">
       <p className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</p>
       <p className="mt-2 text-xl font-black text-white">{value}</p>
       <p className="mt-1 text-xs text-mist">{caption}</p>
@@ -122,10 +122,10 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
   if (!values.length) return null;
   const max = Math.max(...values.map((item) => item.value), 1);
   return (
-    <div className="mt-5 rounded-md bg-white/[0.04] p-4">
+    <div className="mt-5 rounded-lg border border-line bg-white/[0.035] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-white">Recent daily intensity</h3>
-        <p className="text-xs text-mist">Darker cells mean more listening time.</p>
+        <p className="text-xs text-mist">Brighter red cells mean more detected listening time.</p>
       </div>
       <div className="grid gap-1 overflow-x-auto pb-1" style={{ gridTemplateColumns: "repeat(20, minmax(1rem, 1rem))" }}>
         {values.map((item) => {
