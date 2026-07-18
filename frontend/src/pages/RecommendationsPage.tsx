@@ -21,7 +21,7 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
   const spotifyMode = source === "spotify";
   return (
     <div className="space-y-6">
-      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
+      <GlowPanel as="header" variant="major" lined className="overflow-hidden p-5 lg:p-6">
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Recommendation lab</p>

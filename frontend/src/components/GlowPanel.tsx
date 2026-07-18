@@ -11,6 +11,7 @@ interface GlowPanelProps {
   variant?: GlowPanelVariant;
   className?: string;
   wrapperClassName?: string;
+  lined?: boolean;
   selected?: boolean;
   "data-testid"?: string;
 }
@@ -57,6 +58,7 @@ export function GlowPanel({
   variant = "card",
   className = "",
   wrapperClassName = "",
+  lined = false,
   selected = false,
   "data-testid": testId,
 }: GlowPanelProps) {
@@ -64,6 +66,7 @@ export function GlowPanel({
   const panelClasses = [
     "smp-glow-panel",
     `smp-glow-panel--${variant}`,
+    lined ? "smp-glow-panel--lined" : "",
     selected ? "smp-glow-panel--selected" : "",
     wrapperClassName,
   ].filter(Boolean).join(" ");

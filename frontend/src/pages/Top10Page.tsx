@@ -167,6 +167,7 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
         response={tracks}
         loading={loading}
         source={source}
+        lined
       />
 
       <TopList
@@ -210,6 +211,7 @@ function TopList({
   selectedArtist,
   onViewSongs,
   source,
+  lined = false,
 }: {
   title: string;
   caption: string;
@@ -219,9 +221,10 @@ function TopList({
   selectedArtist?: string | null;
   onViewSongs?: (artist: string) => void;
   source: MusicSource;
+  lined?: boolean;
 }) {
   return (
-    <GlowPanel as="section" variant="major" className="p-4 lg:p-5">
+    <GlowPanel as="section" variant="major" lined={lined} className="p-4 lg:p-5">
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">{title}</h2>

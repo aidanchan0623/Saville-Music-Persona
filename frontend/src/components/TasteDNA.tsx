@@ -62,7 +62,7 @@ export function TasteDNA({ dna, interpretation, source }: Props) {
   if (!dna && !interpretation && !explorer) return null;
 
   return (
-    <GlowPanel as="section" variant="major" className="overflow-hidden">
+    <GlowPanel as="section" variant="major" lined className="overflow-hidden">
       <div className="relative border-b border-white/10 p-5 lg:p-6">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_18%_0%,rgba(239,68,68,0.22),transparent_34%)]" />
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">

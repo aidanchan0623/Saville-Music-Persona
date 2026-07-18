@@ -48,7 +48,7 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
         </p>
       </div>
 
-      <GlowPanel as="section" variant="major" className="p-4 md:p-5">
+      <GlowPanel as="section" variant="major" lined className="p-4 md:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.16em] text-red-200">Daily Listening Minutes</p>

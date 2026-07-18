@@ -86,7 +86,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         </div>
       </GlowPanel>
 
-      <GlowPanel as="section" variant="card" className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center">
+      <GlowPanel as="section" variant="card" lined className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center">
         <div className="lg:w-44">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">At a glance</p>
         </div>

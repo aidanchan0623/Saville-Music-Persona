@@ -80,7 +80,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
   return (
     <div className="space-y-8">
-      <GlowPanel as="header" variant="major" className="overflow-hidden">
+      <GlowPanel as="header" variant="major" lined className="overflow-hidden">
         <div className="relative p-6 lg:p-9">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(239,68,68,0.24),transparent_35%)]" />
           <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">

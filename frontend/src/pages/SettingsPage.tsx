@@ -36,7 +36,7 @@ export function SettingsPage({
 }: Props) {
   return (
     <div className="space-y-6">
-      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
+      <GlowPanel as="header" variant="major" lined className="overflow-hidden p-5 lg:p-6">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Settings</p>
         <AnimatedPageTitle animationKey={titleAnimationKey} text="Local integrations and data controls" className="mt-3 text-3xl font-black text-white md:text-4xl" />
         <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">Connection status, demo mode, private auth guidance, and import tools for the local music profile.</p>
