@@ -101,10 +101,10 @@ a:focus-visible {
   }
 
   .nav-item {
-    @apply flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium text-mist transition hover:bg-red-950/30 hover:text-white;
+    @apply flex w-full items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-left text-sm font-medium text-mist transition hover:border-white/10 hover:bg-white/[0.055] hover:text-white;
   }
 
   .nav-item-active {
-    @apply bg-violet/15 text-white ring-1 ring-violet/30;
+    @apply border-red-400/25 bg-red-600/[0.14] text-white ring-1 ring-red-500/20;
   }
 }

@@ -1,4 +1,4 @@
-import { BarChart3, Disc3, Gauge, Home, Library, Music2, Settings, Sparkles } from "lucide-react";
+import { BarChart3, Disc3, Gauge, Home, Library, Menu, Music2, Settings, Sparkles, X } from "lucide-react";
 import type { ElementType } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
@@ -26,6 +26,7 @@ const nav: { id: Page; label: string; icon: ElementType }[] = [
 
 export default function App() {
   const [page, setPage] = useState<Page>("overview");
+  const [mobileOpen, setMobileOpen] = useState(false);
   const [source, setSource] = useState<MusicSource>(() => {
     const querySource = new URLSearchParams(window.location.search).get("source");
     if (querySource === "spotify") return "spotify";
@@ -296,45 +297,88 @@ export default function App() {
 
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
   const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
+  const currentNav = nav.find((item) => item.id === page) ?? nav[0];
+  const navigate = (next: Page) => {
+    setPage(next);
+    setMobileOpen(false);
+  };
 
   return (
     <div className="min-h-screen bg-ink text-white">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,68,68,0.18),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(153,27,27,0.16),transparent_25%)]" />
-      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-line bg-ink/92 p-5 backdrop-blur-xl lg:flex">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,43,45,0.16),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(123,17,24,0.15),transparent_25%)]" />
+      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-line bg-backgroundElevated/95 p-5 shadow-[18px_0_70px_rgba(0,0,0,0.28)] backdrop-blur-xl lg:flex">
         <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-lg bg-gradient-to-br from-violet to-magenta">
+          <div className="grid h-11 w-11 place-items-center rounded-lg border border-red-400/25 bg-red-600/[0.18] text-red-100">
             <Music2 size={22} />
           </div>
           <div>
-            <p className="font-bold">Saville Music</p>
-            <p className="text-xs text-mist">Music identity</p>
+            <p className="font-bold leading-5">Saville Music</p>
+            <p className="text-xs text-mist">Private taste analysis</p>
           </div>
         </div>
         <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Primary navigation">
           {nav.map((item) => {
             const Icon = item.icon;
             return (
-              <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => setPage(item.id)} aria-current={page === item.id ? "page" : undefined}>
+              <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}>
                 <Icon size={18} />
                 {item.label}
               </button>
             );
           })}
         </nav>
-        <div className="mt-6 space-y-2 border-t border-line pt-4">
+        <div className="mt-6 space-y-2 rounded-lg border border-line bg-white/[0.035] p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/70">Local status</p>
           <StatusPill ok={youtubeReady} label={youtubeLabel} />
           <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} />
           <StatusPill ok={Boolean(prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma offline"} />
         </div>
       </aside>
 
-      <div className="min-w-0 lg:pl-60">
-        <header className="sticky top-0 z-20 border-b border-line bg-ink/78 px-4 py-3 backdrop-blur-xl lg:hidden">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-bold">
-              <Music2 size={20} /> Saville
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button className="absolute inset-0 bg-black/72 backdrop-blur-sm" type="button" aria-label="Close navigation overlay" onClick={() => setMobileOpen(false)} />
+          <aside className="relative flex h-full w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-line bg-backgroundElevated p-5 shadow-[24px_0_80px_rgba(0,0,0,0.5)]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-lg border border-red-400/25 bg-red-600/[0.18] text-red-100">
+                  <Music2 size={20} />
+                </div>
+                <div>
+                  <p className="font-bold">Saville Music</p>
+                  <p className="text-xs text-mist">Navigation</p>
+                </div>
+              </div>
+              <button className="grid h-10 w-10 place-items-center rounded-md border border-line bg-white/[0.055] text-mist hover:text-white" type="button" aria-label="Close navigation" onClick={() => setMobileOpen(false)}>
+                <X size={18} />
+              </button>
             </div>
-            <select className="rounded-md border border-line bg-panel px-3 py-2 text-sm" value={page} onChange={(event) => setPage(event.target.value as Page)}>
+            <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto" aria-label="Mobile navigation">
+              {nav.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}>
+                    <Icon size={18} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+        </div>
+      ) : null}
+
+      <div className="min-w-0 lg:pl-60">
+        <header className="sticky top-0 z-20 border-b border-line bg-backgroundElevated/90 px-4 py-3 backdrop-blur-xl lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <button className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-line bg-white/[0.055] text-white" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
+              <Menu size={19} />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold">Saville</p>
+              <p className="truncate text-xs text-mist">{currentNav.label}</p>
+            </div>
+            <select className="max-w-[11rem] rounded-md border border-line bg-panel px-3 py-2 text-sm text-white" value={page} onChange={(event) => navigate(event.target.value as Page)} aria-label="Go to page">
               {nav.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </div>
