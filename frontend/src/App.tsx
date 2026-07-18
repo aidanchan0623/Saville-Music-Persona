@@ -1,8 +1,9 @@
-import { BarChart3, Disc3, Gauge, Home, Library, Menu, Music2, Settings, Sparkles, X } from "lucide-react";
-import type { ElementType } from "react";
+import { Menu, Music2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
-import { StatusPill } from "./components/StatusPill";
+import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
+import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
+import type { Page } from "./components/navigation/navigation";
 import { OverviewPage } from "./pages/OverviewPage";
 import { PatternsPage } from "./pages/PatternsPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -11,18 +12,6 @@ import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
 import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
-
-type Page = "overview" | "top10" | "scores" | "patterns" | "report" | "recommendations" | "settings";
-
-const nav: { id: Page; label: string; icon: ElementType }[] = [
-  { id: "overview", label: "Overview", icon: Home },
-  { id: "top10", label: "Top 10", icon: Disc3 },
-  { id: "scores", label: "Scores", icon: Gauge },
-  { id: "patterns", label: "Patterns", icon: BarChart3 },
-  { id: "report", label: "Persona Report", icon: Sparkles },
-  { id: "recommendations", label: "Recommendations", icon: Library },
-  { id: "settings", label: "Settings", icon: Settings },
-];
 
 export default function App() {
   const [page, setPage] = useState<Page>("overview");
@@ -297,7 +286,7 @@ export default function App() {
 
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
   const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
-  const currentNav = nav.find((item) => item.id === page) ?? nav[0];
+  const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
   const navigate = (next: Page) => {
     setPage(next);
     setMobileOpen(false);
@@ -306,34 +295,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-ink text-white">
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,43,45,0.16),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(123,17,24,0.15),transparent_25%)]" />
-      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-line bg-backgroundElevated/95 p-5 shadow-[18px_0_70px_rgba(0,0,0,0.28)] backdrop-blur-xl lg:flex">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-lg border border-red-400/25 bg-red-600/[0.18] text-red-100">
-            <Music2 size={22} />
-          </div>
-          <div>
-            <p className="font-bold leading-5">Saville Music</p>
-            <p className="text-xs text-mist">Private taste analysis</p>
-          </div>
-        </div>
-        <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Primary navigation">
-          {nav.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}>
-                <Icon size={18} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="mt-6 space-y-2 rounded-lg border border-line bg-white/[0.035] p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/70">Local status</p>
-          <StatusPill ok={youtubeReady} label={youtubeLabel} />
-          <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Spotify connected" : "Spotify optional"} />
-          <StatusPill ok={Boolean(prerequisites?.model_installed)} label={prerequisites?.model_installed ? "Gemma ready" : "Gemma offline"} />
-        </div>
-      </aside>
+      <DesktopSidebar activePage={page} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={prerequisites?.model_installed} onNavigate={navigate} />
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -354,7 +316,7 @@ export default function App() {
               </button>
             </div>
             <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto" aria-label="Mobile navigation">
-              {nav.map((item) => {
+              {NAVIGATION_ITEMS.map((item) => {
                 const Icon = item.icon;
                 return (
                   <button key={item.id} className={`nav-item ${page === item.id ? "nav-item-active" : ""}`} onClick={() => navigate(item.id)} aria-current={page === item.id ? "page" : undefined}>
@@ -379,7 +341,7 @@ export default function App() {
               <p className="truncate text-xs text-mist">{currentNav.label}</p>
             </div>
             <select className="max-w-[11rem] rounded-md border border-line bg-panel px-3 py-2 text-sm text-white" value={page} onChange={(event) => navigate(event.target.value as Page)} aria-label="Go to page">
-              {nav.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+              {NAVIGATION_ITEMS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
             </select>
           </div>
         </header>
