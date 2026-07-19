@@ -1,9 +1,9 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
 interface Props {
@@ -80,31 +80,35 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
   return (
     <div className="space-y-8">
-      <GlowPanel as="header" variant="major" lined className="overflow-hidden">
-        <div className="relative p-6 lg:p-9">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(239,68,68,0.24),transparent_35%)]" />
-          <div className="relative flex flex-col gap-7 xl:flex-row xl:items-end xl:justify-between">
-            <div className="max-w-5xl">
-              <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Persona Report</p>
-              <AnimatedPageTitle animationKey={titleAnimationKey} text={profile.headline} className="mt-4 text-5xl font-black leading-[0.95] text-white md:text-7xl" />
-              <p className="mt-5 max-w-4xl text-xl font-semibold leading-8 text-red-100">{profile.subheadline}</p>
-              <p className="mt-5 max-w-4xl text-lg leading-8 text-mist">{profile.summary}</p>
-            </div>
-            <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
+      <PageTitlePanel
+        eyebrow="Persona Report"
+        title={profile.headline}
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-5xl font-black leading-[0.95] text-white md:text-7xl"
+        subtitle={
+          <>
+            <p className="max-w-4xl text-xl font-semibold leading-8 text-red-100">{profile.subheadline}</p>
+            <p className="mt-5 max-w-4xl text-lg leading-8 text-mist">{profile.summary}</p>
+          </>
+        }
+        subtitleClassName="mt-5"
+        actions={
+          <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
               <button className="btn-secondary" disabled={disabled} onClick={() => onGenerate("serious")}>
                 <Sparkles size={16} /> Editorial Rewrite
               </button>
               <button className="btn-secondary" disabled={disabled} onClick={() => onGenerate("playful")}>More Playful</button>
               <button className="btn-secondary" disabled={disabled} onClick={() => onGenerate("roast")}>Light Roast</button>
             </div>
-          </div>
-          <div className="relative mt-7 flex flex-wrap gap-3 text-sm">
+        }
+        metadata={
+          <>
             <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{profile.sourceLabel}</span>
             <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Character rules stay deterministic</span>
             {!modelReady ? <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-amber-100">Expanded Gemma rewrite unavailable - Ollama is offline</span> : null}
-          </div>
-        </div>
-      </GlowPanel>
+          </>
+        }
+      />
 
       <section className="grid gap-4 lg:grid-cols-3">
         {profile.cards.map((card) => (

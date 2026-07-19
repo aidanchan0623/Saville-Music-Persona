@@ -1,7 +1,7 @@
 import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ReactNode } from "react";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import { StatusPill } from "../components/StatusPill";
 import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
 
@@ -36,16 +36,20 @@ export function SettingsPage({
 }: Props) {
   return (
     <div className="space-y-6">
-      <GlowPanel as="header" variant="major" lined className="overflow-hidden p-5 lg:p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Settings</p>
-        <AnimatedPageTitle animationKey={titleAnimationKey} text="Local integrations and data controls" className="mt-3 text-3xl font-black text-white md:text-4xl" />
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">Connection status, demo mode, private auth guidance, and import tools for the local music profile.</p>
-        <div className="mt-5 grid gap-3 md:grid-cols-3">
+      <PageTitlePanel
+        eyebrow="Settings"
+        title="Local integrations and data controls"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-3xl font-black text-white md:text-4xl"
+        subtitle="Connection status, demo mode, private auth guidance, and import tools for the local music profile."
+        metadata={
+          <div className="grid w-full gap-3 md:grid-cols-3">
           <StatusSummary label="YouTube Music" value={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data" : "Offline"} ok={Boolean(auth?.connected || auth?.cached_data_available)} />
           <StatusSummary label="Spotify" value={spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Not configured"} ok={Boolean(spotifyStatus?.connected)} />
           <StatusSummary label="Gemma" value={prerequisites?.model_installed ? "Ready" : "Offline"} ok={Boolean(prerequisites?.model_installed)} />
-        </div>
-      </GlowPanel>
+          </div>
+        }
+      />
 
       <SettingsCard>
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">

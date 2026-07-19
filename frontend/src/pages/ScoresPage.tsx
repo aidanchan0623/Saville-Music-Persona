@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
 import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
 import { asPercent } from "../utils/format";
@@ -51,20 +51,26 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
 
   return (
     <div className="space-y-12">
-      <header className="flex flex-col gap-6 py-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-5xl">
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-violet-200">Music listening profile</p>
-          <AnimatedPageTitle animationKey={titleAnimationKey} text="Taste Scores" className="mt-4 text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl" />
-          <p className="mt-5 max-w-3xl text-2xl font-semibold leading-snug text-violet-100">
-            {periodLabel} read on how you listen &mdash; not just what you play.
-          </p>
-          <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
+      <PageTitlePanel
+        eyebrow="Music listening profile"
+        title="Taste Scores"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl"
+        subtitle={
+          <>
+            <p className="max-w-3xl text-2xl font-semibold leading-snug text-red-100">
+              {periodLabel} read on how you listen - not just what you play.
+            </p>
+            <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
             {source === "spotify"
               ? "Spotify scores translate top-item, saved-library, playlist, and recent-sync signals into the same music-profile framework."
               : "These scores translate the selected period into a music profile: replay, discovery, artist pull, and the shape of your sound world."}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
+            </p>
+          </>
+        }
+        subtitleClassName="mt-5"
+        actions={
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
           <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
           <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
@@ -73,8 +79,9 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
               {months.map((month) => <option key={month.value} value={month.value}>{month.label}</option>)}
             </select>
           ) : null}
-        </div>
-      </header>
+          </div>
+        }
+      />
 
       <GlowPanel as="section" variant="card" className="p-4 text-sm text-mist">
         <div className="flex flex-wrap items-center gap-2">

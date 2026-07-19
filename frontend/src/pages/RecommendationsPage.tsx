@@ -1,7 +1,7 @@
 import { ListPlus, WandSparkles } from "lucide-react";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { MusicSource, Recommendation } from "../types/api";
 
 interface Props {
@@ -21,20 +21,13 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
   const spotifyMode = source === "spotify";
   return (
     <div className="space-y-6">
-      <GlowPanel as="header" variant="major" lined className="overflow-hidden p-5 lg:p-6">
-        <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Recommendation lab</p>
-            <AnimatedPageTitle animationKey={titleAnimationKey} text="Evidence-driven next listens" className="mt-3 text-3xl font-black text-white md:text-4xl" />
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">
-              Twenty picks split into safe matches, nearby discoveries, and riskier edges outside the usual profile.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <RecommendationBadge label={spotifyMode ? "Spotify view" : "YouTube Music view"} muted={spotifyMode} />
-              <RecommendationBadge label={`${recommendations.length} saved picks`} />
-              <RecommendationBadge label={spotifyMode ? "Generation paused" : "Playlist tools ready"} muted={spotifyMode} />
-            </div>
-          </div>
+      <PageTitlePanel
+        eyebrow="Recommendation lab"
+        title="Evidence-driven next listens"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-3xl font-black text-white md:text-4xl"
+        subtitle="Twenty picks split into safe matches, nearby discoveries, and riskier edges outside the usual profile."
+        actions={
           <div className="flex flex-wrap gap-2">
             <button className="btn-primary" disabled={busy || spotifyMode} onClick={onGenerate}>
               <WandSparkles size={17} /> {busy ? "Generating..." : "Generate 20 Recommendations"}
@@ -43,8 +36,15 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
               <ListPlus size={17} /> Create "Saville Recommendations" Playlist
             </button>
           </div>
-        </div>
-      </GlowPanel>
+        }
+        metadata={
+          <>
+              <RecommendationBadge label={spotifyMode ? "Spotify view" : "YouTube Music view"} muted={spotifyMode} />
+              <RecommendationBadge label={`${recommendations.length} saved picks`} />
+              <RecommendationBadge label={spotifyMode ? "Generation paused" : "Playlist tools ready"} muted={spotifyMode} />
+          </>
+        }
+      />
       <div className="grid gap-3 md:grid-cols-3">
         {groups.map(({ group, items }) => (
           <GlowPanel key={group} as="div" variant="card" className="p-4">

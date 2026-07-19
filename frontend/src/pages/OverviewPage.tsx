@@ -1,16 +1,15 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import { TasteDNA } from "../components/TasteDNA";
 import { CurrentListeningStateSection } from "../components/home/CurrentListeningStateSection";
 import { ExploreProfileSection } from "../components/home/ExploreProfileSection";
 import { KeySignalsStrip } from "../components/home/KeySignalsStrip";
 import { MusicCharacterSection } from "../components/home/MusicCharacterSection";
 import { TasteNarrativeSection } from "../components/home/TasteNarrativeSection";
-import LineWaves from "../components/reactbits/LineWaves/LineWaves";
 import type {
   AuthStatus,
   ListeningMinutes,
@@ -62,7 +61,6 @@ export function OverviewPage({
   const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
   const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
   const [currentTopArtist, setCurrentTopArtist] = useState<PeriodTopItem | null>(null);
-  const compactWaves = useCompactHeroMotion();
 
   useEffect(() => {
     if (!overview) return;
@@ -113,36 +111,15 @@ export function OverviewPage({
 
   return (
     <div className="space-y-8">
-      <GlowPanel as="section" variant="major" className="relative isolate min-h-[19rem] overflow-hidden p-5 md:p-6">
-        <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
-          <LineWaves
-            speed={0.16}
-            innerLineCount={compactWaves ? 16 : 28}
-            outerLineCount={compactWaves ? 20 : 34}
-            warpIntensity={0.65}
-            rotation={-35}
-            edgeFadeWidth={0.12}
-            colorCycleSpeed={0.3}
-            brightness={compactWaves ? 0.08 : 0.12}
-            color1="#ef2b2d"
-            color2="#7b1118"
-            color3="#d4d4d8"
-            enableMouseInteraction={!compactWaves}
-            mouseInfluence={0.4}
-          />
-        </div>
-        <div className="pointer-events-none absolute inset-0 z-0 bg-black/68" aria-hidden="true" />
-        <div className="relative z-10 grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Private local music identity</p>
-            <AnimatedPageTitle animationKey={titleAnimationKey} text={coreTitle} className="mt-3 max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl" />
-            <p className="mt-4 line-clamp-3 max-w-3xl text-base leading-7 text-mist">{summary}</p>
-            <div className="mt-5 flex flex-wrap gap-2 text-xs text-mist">
-              <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Source: {sourceLabel}</span>
-              <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">{overview.coverage.days_represented.toLocaleString()} days represented</span>
-              <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Updated: {overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "Not refreshed yet"}</span>
-            </div>
-          </div>
+      <PageTitlePanel
+        eyebrow="Private local music identity"
+        title={coreTitle}
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl"
+        subtitle={summary}
+        subtitleClassName="mt-4 line-clamp-3 max-w-3xl text-base leading-7 text-mist"
+        lineMode="animated"
+        actions={
           <GlowPanel as="div" variant="row" className="p-4">
             <p className="text-sm font-semibold text-red-100">Most active sound</p>
             <p className="mt-2 text-2xl font-black leading-tight text-white">{overview.top_genre_cluster || "Still mapping"}</p>
@@ -150,8 +127,15 @@ export function OverviewPage({
               Open Persona Report
             </button>
           </GlowPanel>
-        </div>
-      </GlowPanel>
+        }
+        metadata={
+          <>
+            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Source: {sourceLabel}</span>
+            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">{overview.coverage.days_represented.toLocaleString()} days represented</span>
+            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Updated: {overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "Not refreshed yet"}</span>
+          </>
+        }
+      />
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryMetric label="Detected plays" value={overview.total_detected_plays.toLocaleString()} detail={overview.coverage.history_coverage_status} />
@@ -206,24 +190,6 @@ export function OverviewPage({
       />
     </div>
   );
-}
-
-function useCompactHeroMotion() {
-  const [compact, setCompact] = useState(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-    return window.matchMedia("(max-width: 767px)").matches;
-  });
-
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(max-width: 767px)");
-    const update = () => setCompact(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-
-  return compact;
 }
 
 function SummaryMetric({ label, value, detail, compact = false }: { label: string; value: string; detail: string; compact?: boolean }) {

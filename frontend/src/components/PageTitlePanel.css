@@ -1,0 +1,104 @@
+.smp-page-title-panel {
+  overflow: hidden;
+}
+
+.smp-page-title-panel .border-glow-inner {
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.smp-page-title-panel__inner {
+  position: relative;
+  isolation: isolate;
+  min-height: clamp(12rem, 22vw, 17.5rem);
+  overflow: hidden;
+  padding: clamp(1.25rem, 2.6vw, 2.25rem);
+}
+
+.smp-page-title-panel__lines,
+.smp-page-title-panel__overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.smp-page-title-panel--static .smp-page-title-panel__lines {
+  opacity: 0.56;
+  background-image:
+    radial-gradient(circle at 82% 20%, rgb(239 43 45 / 18%), transparent 42%),
+    radial-gradient(circle at 16% 92%, rgb(123 17 24 / 14%), transparent 35%),
+    repeating-linear-gradient(-8deg, transparent 0, transparent 8px, rgb(239 43 45 / 9%) 9px, transparent 10px);
+  mask-image: linear-gradient(90deg, transparent, black 18%, black 100%);
+}
+
+.smp-page-title-panel--animated .smp-page-title-panel__lines {
+  opacity: 1;
+}
+
+.smp-page-title-panel__overlay {
+  background:
+    linear-gradient(90deg, rgb(5 5 5 / 94%), rgb(5 5 5 / 66%), rgb(5 5 5 / 34%)),
+    linear-gradient(180deg, rgb(5 5 5 / 18%), rgb(5 5 5 / 62%));
+}
+
+.smp-page-title-panel__content {
+  position: relative;
+  z-index: 1;
+}
+
+.smp-page-title-panel__row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: clamp(1.25rem, 3vw, 2.5rem);
+}
+
+.smp-page-title-panel__actions {
+  display: flex;
+  min-width: min(100%, 18rem);
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.smp-page-title-panel__metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 767px) {
+  .smp-page-title-panel__inner {
+    min-height: auto;
+    padding: 1.25rem;
+  }
+
+  .smp-page-title-panel--static .smp-page-title-panel__lines {
+    opacity: 0.34;
+    mask-image: linear-gradient(90deg, transparent, black 8%, black 100%);
+  }
+
+  .smp-page-title-panel__overlay {
+    background: linear-gradient(180deg, rgb(5 5 5 / 94%), rgb(5 5 5 / 70%));
+  }
+
+  .smp-page-title-panel__row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .smp-page-title-panel__actions {
+    justify-content: flex-start;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .smp-page-title-panel__metadata {
+    margin-top: 1.25rem;
+  }
+}

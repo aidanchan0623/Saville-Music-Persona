@@ -2,9 +2,9 @@ import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import type {
   MusicSource,
   PeriodTopItem,
@@ -117,15 +117,13 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
 
   return (
     <div className="space-y-8">
-      <GlowPanel as="header" variant="major" className="overflow-hidden p-5 lg:p-6">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-4xl">
-            <p className="text-sm font-semibold uppercase tracking-[0.24em] text-red-200">Music leaders</p>
-            <AnimatedPageTitle animationKey={titleAnimationKey} text="Top 10" className="mt-3 text-4xl font-black leading-none text-white md:text-5xl" />
-            <p className="mt-4 max-w-3xl text-base leading-7 text-mist">
-              {source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
-            </p>
-          </div>
+      <PageTitlePanel
+        eyebrow="Music leaders"
+        title="Top 10"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-4xl font-black leading-none text-white md:text-5xl"
+        subtitle={source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
+        actions={
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
           <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
@@ -142,16 +140,17 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
             </select>
           ) : null}
           </div>
-        </div>
-
-        <div className="mt-7 flex flex-wrap gap-3 text-sm">
+        }
+        metadata={
+          <>
           <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{activeLabel}</span>
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{(tracks?.total_play_count ?? 0).toLocaleString()} detected plays</span>
           {source === "spotify" ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Top-item based, not exact Spotify history</span> : null}
           {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
-        </div>
-      </GlowPanel>
+          </>
+        }
+      />
 
       {(tracks?.sample_warning || albums?.sample_warning || error) ? (
         <section className="space-y-3">

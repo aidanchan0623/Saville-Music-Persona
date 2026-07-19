@@ -2,8 +2,8 @@ import { ChartPanel } from "../components/ChartPanel";
 import { EmptyState } from "../components/EmptyState";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { AnimatedPageTitle } from "../components/AnimatedPageTitle";
 import { GlowPanel } from "../components/GlowPanel";
+import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { Charts, ListeningMinutes, MusicSource } from "../types/api";
 import { formatMinutes } from "../utils/format";
 
@@ -41,12 +41,13 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
   const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? "Selected period";
   return (
     <div className="space-y-5">
-      <div>
-        <AnimatedPageTitle animationKey={titleAnimationKey} text="Listening Patterns" className="text-3xl font-bold text-white" />
-        <p className="mt-2 text-mist">
-          {source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
-        </p>
-      </div>
+      <PageTitlePanel
+        eyebrow="Listening evidence"
+        title="Listening Patterns"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-4xl font-black leading-tight text-white md:text-5xl"
+        subtitle={source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
+      />
 
       <GlowPanel as="section" variant="major" lined className="p-4 md:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
