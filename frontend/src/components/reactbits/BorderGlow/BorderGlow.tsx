@@ -4,6 +4,7 @@ import "./BorderGlow.css";
 interface BorderGlowProps {
   children?: ReactNode;
   className?: string;
+  glowMode?: "full" | "directional";
   edgeSensitivity?: number;
   glowColor?: string;
   backgroundColor?: string;
@@ -107,6 +108,7 @@ function prefersReducedMotion() {
 export default function BorderGlow({
   children,
   className = "",
+  glowMode = "full",
   edgeSensitivity = 45,
   glowColor = "0 86 58",
   backgroundColor = "#111114",
@@ -159,7 +161,7 @@ export default function BorderGlow({
   const handlePointerMove = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const card = cardRef.current;
-      if (!card || !canTrackPointerRef.current) return;
+      if (glowMode !== "directional" || !card || !canTrackPointerRef.current) return;
 
       const rect = card.getBoundingClientRect();
       const x = event.clientX - rect.left;
@@ -168,16 +170,20 @@ export default function BorderGlow({
       card.style.setProperty("--edge-proximity", `${(getEdgeProximity(card, x, y) * 100).toFixed(3)}`);
       card.style.setProperty("--cursor-angle", `${getCursorAngle(card, x, y).toFixed(3)}deg`);
     },
-    [getCursorAngle, getEdgeProximity],
+    [getCursorAngle, getEdgeProximity, glowMode],
   );
 
   const handlePointerLeave = useCallback(() => {
     const card = cardRef.current;
-    if (!card) return;
+    if (glowMode !== "directional" || !card) return;
     card.style.setProperty("--edge-proximity", "0");
-  }, []);
+  }, [glowMode]);
 
   useEffect(() => {
+    if (glowMode !== "directional") {
+      canTrackPointerRef.current = false;
+      return;
+    }
     if (typeof window.matchMedia !== "function") return;
     const media = window.matchMedia("(hover: hover) and (pointer: fine)");
     const update = () => {
@@ -186,10 +192,10 @@ export default function BorderGlow({
     update();
     media.addEventListener("change", update);
     return () => media.removeEventListener("change", update);
-  }, []);
+  }, [glowMode]);
 
   useEffect(() => {
-    if (!animated || prefersReducedMotion() || !cardRef.current) return;
+    if (glowMode !== "directional" || !animated || prefersReducedMotion() || !cardRef.current) return;
     const card = cardRef.current;
     const angleStart = 110;
     const angleEnd = 465;
@@ -236,7 +242,7 @@ export default function BorderGlow({
       cancellations.forEach((cancel) => cancel());
       card.classList.remove("sweep-active");
     };
-  }, [animated]);
+  }, [animated, glowMode]);
 
   const glowVars = buildGlowVars(glowColor, glowIntensity);
 
@@ -246,6 +252,7 @@ export default function BorderGlow({
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
       className={`border-glow-card${className ? ` ${className}` : ""}`}
+      data-glow-mode={glowMode}
       style={
         {
           "--card-bg": backgroundColor,

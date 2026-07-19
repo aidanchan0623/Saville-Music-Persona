@@ -18,6 +18,7 @@ interface GlowPanelProps {
 
 const VARIANT_CONFIG = {
   major: {
+    glowMode: "full",
     edgeSensitivity: 35,
     glowColor: "0 90 62",
     backgroundColor: "#0d0d0f",
@@ -29,6 +30,7 @@ const VARIANT_CONFIG = {
     fillOpacity: 0.12,
   },
   card: {
+    glowMode: "full",
     edgeSensitivity: 45,
     glowColor: "0 86 58",
     backgroundColor: "#111114",
@@ -40,6 +42,7 @@ const VARIANT_CONFIG = {
     fillOpacity: 0.08,
   },
   row: {
+    glowMode: "full",
     edgeSensitivity: 55,
     glowColor: "0 82 56",
     backgroundColor: "#0b0b0d",
