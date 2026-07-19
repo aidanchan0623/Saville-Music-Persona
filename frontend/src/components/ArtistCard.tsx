@@ -1,13 +1,12 @@
 import type { TopArtist } from "../types/api";
+import { Artwork } from "./Artwork";
 import { GlowPanel } from "./GlowPanel";
 
 export function ArtistCard({ artist }: { artist: TopArtist }) {
   return (
     <GlowPanel as="article" variant="card" className="p-5 transition">
       <div className="flex items-start gap-4">
-        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white shadow-[0_16px_42px_rgba(0,0,0,0.3)]">
-          {artist.image ? <img className="h-full w-full object-cover object-center" src={artist.image} alt="" /> : artist.artist.slice(0, 2).toUpperCase()}
-        </div>
+        <Artwork src={artist.image} alt={artist.artist} kind="artist" size="md" fallbackLabel={artist.artist.slice(0, 2).toUpperCase()} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <span className="text-2xl font-black text-white/20">#{artist.rank}</span>

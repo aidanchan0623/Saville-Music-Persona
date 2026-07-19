@@ -1,7 +1,8 @@
-import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Minus, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
+import { Artwork } from "../components/Artwork";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
@@ -299,7 +300,7 @@ function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: {
           </span>
         </div>
         <div className="ranking-story__hero-art">
-          <Artwork src={activeItem?.thumbnail} label={activeTitle} fallback={fallback} icon={kind === "artists" ? UserRound : Music2} rounded={kind === "artists" ? "rounded-[1.5rem]" : "rounded-[1.2rem]"} sizeClass="ranking-story__hero-artwork" />
+          <Artwork src={activeItem?.thumbnail} alt={activeTitle} kind={kind === "artists" ? "artist" : "song"} size="hero" priority fallbackLabel={fallback} shape="rounded" className="ranking-story__hero-artwork" />
         </div>
         <div className="ranking-story__hero-copy">
           <span className="text-6xl font-black leading-none text-white/10">#{activeItem?.rank ?? "--"}</span>
@@ -359,7 +360,7 @@ function RankingStoryCard({
     <div ref={register} className="ranking-story__item" data-active={active ? "true" : "false"} data-ranking-id={itemId}>
       <GlowPanel as="article" variant="row" selected={active || selected} className="ranking-story__card" data-testid={isArtist ? "top-artist-card" : "top-song-card"}>
         <div className="ranking-story__card-grid">
-          <Artwork src={item.thumbnail} label={title} fallback={isArtist ? initials(item.artist) : rank} icon={isArtist ? UserRound : Music2} rounded={isArtist ? "rounded-full" : "rounded-xl"} sizeClass="ranking-story__row-artwork" />
+          <Artwork src={item.thumbnail} alt={title} kind={isArtist ? "artist" : "song"} size="md" fallbackLabel={isArtist ? initials(item.artist) : rank} shape={isArtist ? "circle" : "rounded"} className="ranking-story__row-artwork" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-xl font-black text-red-200">{rank}</span>
@@ -513,7 +514,7 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
   return (
     <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-album-card">
       <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto]">
-        <Artwork src={album.thumbnail} label={album.album} fallback={rank} icon={Album} rounded="rounded-lg" sizeClass="h-20 w-20" />
+        <Artwork src={album.thumbnail} alt={album.album} kind="song" size="md" fallbackLabel={rank} />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl font-black text-red-200">{rank}</span>
@@ -548,7 +549,7 @@ function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: 
     <DrilldownShell
       title={`Songs by ${artist} - ${response?.period_label ?? "Selected Period"}`}
       subtitle="Song-level data for this artist in the selected period."
-      visual={<Artwork src={response?.artist_thumbnail} label={artist} fallback={initials(artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-24 w-24" />}
+      visual={<Artwork src={response?.artist_thumbnail} alt={artist} kind="artist" size="lg" fallbackLabel={initials(artist)} />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Song-level data for this artist is not available in the selected period."
@@ -567,7 +568,7 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
     <DrilldownShell
       title={`Songs from ${album.album} - ${response?.period_label ?? "Selected Period"}`}
       subtitle={album.artist}
-      visual={<Artwork src={album.thumbnail} label={album.album} fallback={initials(album.album)} icon={Album} rounded="rounded-2xl" sizeClass="h-24 w-24" />}
+      visual={<Artwork src={album.thumbnail} alt={album.album} kind="song" size="lg" fallbackLabel={initials(album.album)} />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Album data is unavailable for this period."
@@ -630,7 +631,7 @@ function DrilldownShell({
 function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
     <GlowPanel as="article" variant="row" className="grid gap-4 p-3 sm:grid-cols-[4.5rem_1fr]">
-      <Artwork src={song.thumbnail} label={song.title ?? "Song"} fallback={`#${song.rank}`} icon={Music2} rounded="rounded-xl" sizeClass="h-16 w-16" />
+      <Artwork src={song.thumbnail} alt={song.title ?? "Song"} kind="song" size="sm" fallbackLabel={`#${song.rank}`} />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{song.rank}</span>
@@ -646,34 +647,6 @@ function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
         />
       </div>
     </GlowPanel>
-  );
-}
-
-function Artwork({
-  src,
-  label,
-  fallback,
-  icon: Icon = Music2,
-  rounded = "rounded-lg",
-  sizeClass = "h-16 w-16",
-}: {
-  src: string | null | undefined;
-  label: string;
-  fallback?: string;
-  icon?: typeof Music2;
-  rounded?: string;
-  sizeClass?: string;
-}) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
-  return (
-    <div className={`relative grid shrink-0 place-items-center overflow-hidden border border-white/10 bg-[linear-gradient(135deg,rgba(127,29,29,0.9),rgba(5,5,5,0.95))] text-white shadow-[0_18px_50px_rgba(0,0,0,0.32)] ${sizeClass} ${rounded}`}>
-      {src && !failed ? <img className="h-full w-full object-cover object-center" src={src} alt={label} onError={() => setFailed(true)} /> : (
-        <div className="grid h-full w-full place-items-center">
-          {fallback ? <span className="text-base font-black text-white/85">{fallback}</span> : <Icon size={24} />}
-        </div>
-      )}
-    </div>
   );
 }
 

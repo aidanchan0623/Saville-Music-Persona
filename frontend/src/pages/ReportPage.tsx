@@ -1,6 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
+import { Artwork } from "../components/Artwork";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
@@ -162,17 +163,9 @@ function InterpretationBlock({ title, body, featured = false }: { title: string;
 }
 
 function ArtistAvatarCard({ artist }: { artist: TopArtist }) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [artist.image]);
   return (
     <GlowPanel as="article" variant="row" className="flex items-center gap-4 p-4">
-      <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-full border border-white/10 bg-red-950/70 text-xl font-black text-white">
-        {artist.image && !failed ? (
-          <img className="h-full w-full object-cover object-center" src={artist.image} alt={artist.artist} onError={() => setFailed(true)} />
-        ) : (
-          <span>{initials(artist.artist)}</span>
-        )}
-      </div>
+      <Artwork src={artist.image} alt={artist.artist} kind="artist" size="md" fallbackLabel={initials(artist.artist)} />
       <div className="min-w-0">
         <h3 className="truncate text-lg font-black text-white">{artist.artist}</h3>
         <p className="mt-1 line-clamp-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.artist_loyalty_label}</p>

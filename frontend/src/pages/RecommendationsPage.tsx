@@ -1,4 +1,5 @@
 import { ListPlus, WandSparkles } from "lucide-react";
+import { Artwork } from "../components/Artwork";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
@@ -89,9 +90,7 @@ function RecommendationCard({ item }: { item: Recommendation }) {
   return (
     <GlowPanel as="article" variant="card" className="min-w-0 p-4 transition">
       <div className="flex gap-4">
-        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/10 bg-red-950/45 text-lg font-black text-white/70">
-          {item.album_art ? <img className="h-full w-full object-cover" src={item.album_art} alt="" /> : `#${item.rank}`}
-        </div>
+        <Artwork src={item.album_art} alt={item.track_title} kind="song" size="md" fallbackLabel={`#${item.rank}`} />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-black text-white/25">#{item.rank}</span>

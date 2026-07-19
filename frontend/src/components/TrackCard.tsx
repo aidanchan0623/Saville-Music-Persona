@@ -1,14 +1,13 @@
 import type { TopTrack } from "../types/api";
 import { formatDate } from "../utils/format";
+import { Artwork } from "./Artwork";
 import { GlowPanel } from "./GlowPanel";
 
 export function TrackCard({ track }: { track: TopTrack }) {
   return (
     <GlowPanel as="article" variant="row" className="group grid grid-cols-[3rem_4.5rem_1fr] gap-4 p-4 transition">
       <div className="text-3xl font-black text-white/20">#{track.rank}</div>
-      <div className="h-[4.5rem] w-[4.5rem] overflow-hidden rounded-md bg-white/10">
-        {track.thumbnail ? <img className="h-full w-full object-cover" src={track.thumbnail} alt="" /> : <div className="h-full w-full bg-violet/20" />}
-      </div>
+      <Artwork src={track.thumbnail} alt={track.title} kind="song" size="sm" fallbackLabel={`#${track.rank}`} className="track-card-artwork" />
       <div className="min-w-0">
         <h3 className="truncate text-lg font-semibold text-white">{track.title}</h3>
         <p className="mt-1 truncate text-sm text-violet-100">{track.artist}</p>
