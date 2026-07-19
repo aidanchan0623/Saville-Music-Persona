@@ -468,10 +468,14 @@ def thumbnail_url(thumbnails: Any, video_id: Any = None) -> str | None:
     return best_thumbnail_url(thumbnails) or youtube_video_thumbnail(video_id)
 
 
-def artist_metadata_for(artist: str, artist_metadata: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def artist_metadata_for(
+    artist: str,
+    artist_metadata: dict[str, dict[str, Any]],
+    normalised_lookup: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     if artist in artist_metadata:
         return artist_metadata[artist]
-    lookup = {normalise_match_text(name): meta for name, meta in artist_metadata.items()}
+    lookup = normalised_lookup if normalised_lookup is not None else {normalise_match_text(name): meta for name, meta in artist_metadata.items()}
     return lookup.get(normalise_match_text(artist), {})
 
 
@@ -551,12 +555,13 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     )
     result = []
     metadata = artist_metadata or {}
+    normalised_metadata_lookup = {normalise_match_text(name): meta for name, meta in metadata.items()} if kind == "artists" and metadata else {}
     for key in ranked:
         if kind == "artists":
             artist = key
             meta_track = None
             title = None
-            artist_meta = artist_metadata_for(artist, metadata)
+            artist_meta = artist_metadata_for(artist, metadata, normalised_metadata_lookup)
             image = thumbnail_url(artist_meta.get("thumbnails"))
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
             album = None
