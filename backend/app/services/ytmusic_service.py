@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+import unicodedata
 
 from app.analysis.duration import extract_duration_seconds
 from app.analysis.normalizer import UNKNOWN_ARTIST, extract_artist_ids, extract_artist_names, extract_tracks
+from app.analysis.thumbnails import best_thumbnail
 from app.config import Settings
 
 
@@ -181,27 +184,32 @@ class YTMusicService:
             attempted += 1
             try:
                 payload = None
+                matched_browse_id = artist_id
                 if artist_id:
                     try:
                         payload = yt.get_artist(str(artist_id))
                     except Exception:
                         payload = None
                 if not artist_payload_has_thumbnail(payload):
-                    payload = first_artist_search_result(yt, artist)
-                entry = artist_cache_entry(artist, payload)
+                    search_match = first_artist_search_result(yt, artist)
+                    matched_browse_id = browse_id_from_payload(search_match) or matched_browse_id
+                    if matched_browse_id:
+                        try:
+                            payload = yt.get_artist(str(matched_browse_id))
+                        except Exception:
+                            artist_cache[artist] = artist_cache_failure_entry(artist, matched_browse_id, "artist_page_failed")
+                            failed += 1
+                            continue
+                    else:
+                        payload = None
+                entry = artist_cache_entry(artist, payload, artist_id=matched_browse_id)
                 if entry.get("thumbnails"):
                     added += 1
                 else:
                     failed += 1
                 artist_cache[artist] = entry
             except Exception:
-                artist_cache[artist] = {
-                    "artist": artist,
-                    "artist_id": artist_id,
-                    "thumbnails": [],
-                    "source": "ytmusicapi.artist_lookup",
-                    "fetched_at": datetime.now(timezone.utc).isoformat(),
-                }
+                artist_cache[artist] = artist_cache_failure_entry(artist, artist_id, "upstream_exception")
                 failed += 1
         raw["artist_image_cache"] = artist_cache
         return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
@@ -338,20 +346,13 @@ def seed_artist_cache_from_library(raw: dict[str, Any], artist_cache: dict[str, 
             continue
         name = artist.get("artist") or artist.get("name")
         thumbnails = artist.get("thumbnails") or []
-        if not name or not thumbnails:
+        if not name or not best_thumbnail(thumbnails):
             continue
         key = str(name).strip()
         cached = artist_cache.get(key)
         if artist_cache_has_thumbnail(cached):
             continue
-        artist_cache[key] = {
-            "artist": key,
-            "artist_id": artist.get("browseId") or artist.get("id"),
-            "subscribers": artist.get("subscribers"),
-            "thumbnails": thumbnails,
-            "source": "ytmusicapi.library_artists",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
+        artist_cache[key] = artist_cache_entry(key, artist, artist_id=artist.get("browseId") or artist.get("id"), source="ytmusicapi.library_artists")
         seeded += 1
     return seeded
 
@@ -371,52 +372,129 @@ def top_artist_targets(raw: dict[str, Any], limit: int = 40) -> list[tuple[str, 
 
 
 def artist_cache_has_thumbnail(value: Any) -> bool:
-    return isinstance(value, dict) and bool(value.get("thumbnails"))
+    if not isinstance(value, dict):
+        return False
+    return bool(value.get("thumbnail_url") or best_thumbnail(value.get("thumbnails")))
 
 
 def artist_cache_has_result(value: Any) -> bool:
-    return artist_cache_has_thumbnail(value)
+    if not isinstance(value, dict):
+        return False
+    if artist_cache_has_thumbnail(value):
+        return True
+    retry_after = value.get("retry_after")
+    if not retry_after:
+        return False
+    try:
+        retry_at = datetime.fromisoformat(str(retry_after).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return retry_at > datetime.now(timezone.utc)
 
 
 def artist_payload_has_thumbnail(payload: Any) -> bool:
-    return isinstance(payload, dict) and bool(payload.get("thumbnails"))
+    return isinstance(payload, dict) and bool(best_thumbnail(payload))
 
 
 def first_artist_search_result(yt: Any, artist: str) -> dict[str, Any] | None:
-    results = yt.search(str(artist), filter="artists", limit=3)
+    results = yt.search(str(artist), filter="artists", limit=5)
     if not isinstance(results, list):
         return None
     normalised = normalise_artist_name(artist)
     for item in results:
         if not isinstance(item, dict):
             continue
-        candidate_name = item.get("artist") or item.get("name")
-        if candidate_name and normalise_artist_name(candidate_name) == normalised:
-            return item
-    for item in results:
-        if isinstance(item, dict) and item.get("thumbnails"):
+        candidate_names = artist_candidate_names(item)
+        if any(normalise_artist_name(candidate) == normalised for candidate in candidate_names):
             return item
     return None
 
 
-def artist_cache_entry(artist: str, payload: Any) -> dict[str, Any]:
+def artist_cache_entry(artist: str, payload: Any, artist_id: Any = None, source: str = "ytmusicapi.artist_lookup") -> dict[str, Any]:
     if not isinstance(payload, dict):
-        return {
-            "artist": artist,
-            "artist_id": None,
-            "thumbnails": [],
-            "source": "ytmusicapi.artist_lookup",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-        }
-    return {
-        "artist": payload.get("artist") or payload.get("name") or artist,
-        "artist_id": payload.get("browseId") or payload.get("artist_id") or payload.get("id"),
+        return artist_cache_failure_entry(artist, artist_id, "no_exact_artist_match")
+    selected = best_thumbnail(payload)
+    canonical_name = str(payload.get("artist") or payload.get("name") or artist).strip() or artist
+    browse_id = browse_id_from_payload(payload) or artist_id
+    entry = {
+        "artist": canonical_name,
+        "canonical_artist": canonical_name,
+        "normalised_name": normalise_artist_name(canonical_name),
+        "artist_id": browse_id,
+        "browse_id": browse_id,
+        "channel_id": payload.get("channelId") or payload.get("channel_id"),
         "subscribers": payload.get("subscribers"),
-        "thumbnails": payload.get("thumbnails") or [],
-        "source": "ytmusicapi.artist_lookup",
+        "aliases": artist_candidate_names(payload),
+        "thumbnails": [selected] if selected else [],
+        "thumbnail_url": selected.get("url") if selected else None,
+        "thumbnail_width": selected.get("width") if selected else None,
+        "thumbnail_height": selected.get("height") if selected else None,
+        "source": source,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }
+    if selected:
+        entry["last_successful_update_at"] = entry["fetched_at"]
+    else:
+        entry["failure_reason"] = "missing_thumbnails"
+        entry["retry_after"] = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    return entry
 
 
 def normalise_artist_name(value: Any) -> str:
-    return " ".join(str(value or "").strip().lower().split())
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = text.casefold().strip()
+    text = re.sub(r"\s*-\s*topic$", "", text)
+    text = text.replace("&", " and ")
+    text = re.sub(r"[/_.·•]+", " ", text)
+    text = re.sub(r"[^\w\s'-]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def artist_candidate_names(payload: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for key in ("artist", "name", "title"):
+        if payload.get(key):
+            names.append(str(payload[key]).strip())
+    aliases = payload.get("aliases") or payload.get("alternateNames") or []
+    if isinstance(aliases, str):
+        names.append(aliases.strip())
+    elif isinstance(aliases, list):
+        for alias in aliases:
+            if alias:
+                names.append(str(alias).strip())
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        normalised = normalise_artist_name(name)
+        if normalised and normalised not in seen:
+            seen.add(normalised)
+            result.append(name)
+    return result
+
+
+def browse_id_from_payload(payload: Any) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("browseId") or payload.get("artist_id") or payload.get("id")
+    return str(value) if value else None
+
+
+def artist_cache_failure_entry(artist: str, artist_id: Any, reason: str) -> dict[str, Any]:
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "artist": artist,
+        "canonical_artist": artist,
+        "normalised_name": normalise_artist_name(artist),
+        "artist_id": artist_id,
+        "browse_id": artist_id,
+        "thumbnails": [],
+        "thumbnail_url": None,
+        "thumbnail_width": None,
+        "thumbnail_height": None,
+        "source": "ytmusicapi.artist_lookup",
+        "fetched_at": fetched_at,
+        "failure_reason": reason,
+        "retry_after": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+    }

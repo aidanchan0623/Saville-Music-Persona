@@ -8,6 +8,7 @@ from typing import Any
 from app.analysis.normalizer import UNKNOWN_ARTIST, clamp, parse_release_year
 from app.analysis.score_interpretations import attach_score_interpretations
 from app.analysis.taste_model import build_taste_model, enrich_artist
+from app.analysis.thumbnails import best_thumbnail_url
 
 
 def score_label(score: float, bands: list[tuple[int, int, str]]) -> str:
@@ -18,15 +19,7 @@ def score_label(score: float, bands: list[tuple[int, int, str]]) -> str:
 
 
 def thumbnail_url(thumbnails: Any, video_id: Any = None) -> str | None:
-    if isinstance(thumbnails, str) and thumbnails:
-        return thumbnails
-    if isinstance(thumbnails, list):
-        candidates = [item for item in thumbnails if isinstance(item, dict) and item.get("url")]
-        if candidates:
-            return str(candidates[-1]["url"])
-    if video_id:
-        return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
-    return None
+    return best_thumbnail_url(thumbnails) or (f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else None)
 
 
 def repeat_score(total_track_plays: int, unique_tracks: int) -> dict[str, Any]:

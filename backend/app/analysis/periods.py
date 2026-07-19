@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from app.analysis.duration import duration_quality, usable_duration_seconds
 from app.analysis.normalizer import UNKNOWN_ARTIST
 from app.analysis.taste_model import build_taste_model, profile_for_artist
+from app.analysis.thumbnails import best_thumbnail_url
 
 
 MIN_COMPARISON_PLAYS = 25
@@ -464,14 +465,7 @@ def youtube_video_thumbnail(video_id: Any) -> str | None:
 
 
 def thumbnail_url(thumbnails: Any, video_id: Any = None) -> str | None:
-    if isinstance(thumbnails, str):
-        return thumbnails or None
-    if not isinstance(thumbnails, list):
-        return youtube_video_thumbnail(video_id)
-    candidates = [item for item in thumbnails if isinstance(item, dict) and item.get("url")]
-    if not candidates:
-        return youtube_video_thumbnail(video_id)
-    return str(candidates[-1]["url"])
+    return best_thumbnail_url(thumbnails) or youtube_video_thumbnail(video_id)
 
 
 def artist_metadata_for(artist: str, artist_metadata: dict[str, dict[str, Any]]) -> dict[str, Any]:
