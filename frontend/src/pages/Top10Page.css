@@ -1,0 +1,168 @@
+.ranking-story {
+  display: grid;
+  grid-template-columns: minmax(18.75rem, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: start;
+  padding-block: clamp(1rem, 2vw, 2rem);
+}
+
+.ranking-story__visual {
+  position: sticky;
+  top: 2rem;
+}
+
+.ranking-story__visual-shell .border-glow-inner {
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+.ranking-story__visual-panel {
+  position: relative;
+  min-height: min(72vh, 45rem);
+  overflow: hidden;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.ranking-story__visual-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 82% 12%, rgb(239 43 45 / 18%), transparent 35%),
+    radial-gradient(circle at 14% 82%, rgb(123 17 24 / 15%), transparent 38%),
+    linear-gradient(180deg, transparent, rgb(0 0 0 / 28%));
+}
+
+.ranking-story__visual-content {
+  position: relative;
+  z-index: 1;
+  animation: ranking-visual-in 0.36s ease-out both;
+}
+
+.ranking-story__hero-art {
+  display: grid;
+  place-items: center;
+  margin-top: clamp(1.25rem, 3vw, 2rem);
+}
+
+.ranking-story__hero-artwork {
+  width: min(100%, 22rem);
+  aspect-ratio: 1 / 1;
+}
+
+.ranking-story__hero-copy {
+  margin-top: clamp(1.25rem, 3vw, 2rem);
+}
+
+.ranking-story__blur {
+  pointer-events: none;
+}
+
+.ranking-story__items {
+  min-width: 0;
+}
+
+.ranking-story__chapter {
+  margin-bottom: 1rem;
+  padding: clamp(0.25rem, 1vw, 0.75rem) 0 clamp(0.75rem, 2vw, 1.25rem);
+}
+
+.ranking-story__item {
+  min-height: clamp(9.5rem, 20vh, 13.5rem);
+  padding-block: 0.5rem;
+  opacity: 0.58;
+  transform: translateY(1rem);
+  transition: opacity 0.32s ease-out, transform 0.32s ease-out;
+}
+
+.ranking-story__item[data-active="true"] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ranking-story__card {
+  padding: clamp(1rem, 2vw, 1.35rem);
+}
+
+.ranking-story__card-grid {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+}
+
+.ranking-story__row-artwork {
+  width: 5.5rem;
+  aspect-ratio: 1 / 1;
+}
+
+.ranking-transition {
+  position: relative;
+  overflow: hidden;
+}
+
+.ranking-transition::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 92% 0%, rgb(239 43 45 / 14%), transparent 34%),
+    linear-gradient(90deg, rgb(239 43 45 / 7%), transparent 46%);
+}
+
+.ranking-transition > * {
+  position: relative;
+}
+
+@keyframes ranking-visual-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 1023px) {
+  .ranking-story {
+    display: block;
+    padding-block: 0;
+  }
+
+  .ranking-story__visual {
+    display: none;
+  }
+
+  .ranking-story__chapter {
+    margin-top: 0;
+  }
+
+  .ranking-story__item {
+    min-height: 0;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 639px) {
+  .ranking-story__card-grid {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.85rem;
+  }
+
+  .ranking-story__row-artwork {
+    width: 4.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ranking-story__visual-content,
+  .ranking-story__item {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
+}

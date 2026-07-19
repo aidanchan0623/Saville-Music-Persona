@@ -1,10 +1,11 @@
 import { Album, ArrowDown, ArrowUp, Minus, Music2, Sparkles, UserRound, X } from "lucide-react";
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
+import GradualBlur from "../components/reactbits/GradualBlur/GradualBlur";
 import type {
   MusicSource,
   PeriodTopItem,
@@ -16,8 +17,10 @@ import type {
   TopDrilldownSong,
 } from "../types/api";
 import { formatDate } from "../utils/format";
+import "./Top10Page.css";
 
 type TopPeriod = "this_month" | "month" | "rolling_year";
+type RankingKind = "songs" | "artists";
 
 export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; titleAnimationKey: string }) {
   const [period, setPeriod] = useState<TopPeriod>("this_month");
@@ -160,21 +163,23 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
         </section>
       ) : null}
 
-      <TopList
+      <RankingStorySection
+        kind="songs"
         title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`}
         caption={source === "spotify" ? "Your clearest Spotify top-track signals. Exact lifetime play counts are not available from Spotify." : "Your clearest song leaders, ranked by local play history."}
         response={tracks}
         loading={loading}
         source={source}
-        lined
       />
 
-      <TopList
+      <RankingTransition />
+
+      <RankingStorySection
+        kind="artists"
         title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
         caption={source === "spotify" ? "Official Spotify artist images and genres where available." : "The artists pulling the most attention in this period."}
         response={artists}
         loading={loading}
-        artistList
         source={source}
         selectedArtist={selectedArtist}
         onViewSongs={setSelectedArtist}
@@ -201,81 +206,183 @@ function PeriodButton({ active, label, onClick }: { active: boolean; label: stri
   );
 }
 
-function TopList({
+function RankingStorySection({
+  kind,
   title,
   caption,
   response,
   loading,
-  artistList = false,
   selectedArtist,
   onViewSongs,
   source,
-  lined = false,
 }: {
+  kind: RankingKind;
   title: string;
   caption: string;
   response: PeriodTopResponse | null;
   loading: boolean;
-  artistList?: boolean;
   selectedArtist?: string | null;
   onViewSongs?: (artist: string) => void;
   source: MusicSource;
-  lined?: boolean;
 }) {
-  return (
-    <GlowPanel as="section" variant="major" lined={lined} className="p-4 lg:p-5">
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">{title}</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
+  const items = response?.items ?? [];
+  const { activeId, registerItem } = useActiveRanking(items, kind);
+  const activeItem = useMemo(() => items.find((item) => rankingItemId(item, kind) === activeId) ?? items[0] ?? null, [activeId, items, kind]);
+  const label = kind === "artists" ? "Top Artists" : "Top Songs";
+
+  if (!items.length) {
+    return (
+      <GlowPanel as="section" variant="major" lined className="p-5 lg:p-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-red-200">{label}</p>
+            <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
+          </div>
+          {loading ? <span className="text-sm text-mist">Loading...</span> : null}
         </div>
-        {loading ? <span className="text-sm text-mist">Loading...</span> : null}
+        <GlowPanel as="div" variant="row" wrapperClassName="mt-5" className="p-5 text-sm text-mist">
+          {loading ? "Loading rankings..." : "No detected plays in this period."}
+        </GlowPanel>
+      </GlowPanel>
+    );
+  }
+
+  return (
+    <section className={`ranking-story ranking-story--${kind}`} aria-labelledby={`ranking-story-${kind}`}>
+      <div className="ranking-story__visual">
+        <StickyRankingVisual kind={kind} caption={caption} activeItem={activeItem} itemCount={items.length} source={source} />
       </div>
-      <div className={artistList ? "grid gap-3 xl:grid-cols-2" : "space-y-3"}>
-        {response?.items.length ? (
-          response.items.map((item) => (
-            <PeriodTopCard
-              key={item.key}
+      <div className="ranking-story__items">
+        <div className="ranking-story__chapter">
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">{label}</p>
+          <h2 id={`ranking-story-${kind}`} className="mt-3 text-3xl font-black leading-tight text-white md:text-4xl">{title}</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
+          {loading ? <span className="mt-4 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs text-mist">Loading...</span> : null}
+        </div>
+        {items.map((item) => {
+          const itemId = rankingItemId(item, kind);
+          const active = itemId === activeId;
+          return (
+            <RankingStoryCard
+              key={itemId}
               item={item}
-              artistList={artistList}
-              selected={artistList && selectedArtist === item.artist}
+              kind={kind}
+              active={active}
+              selected={kind === "artists" && selectedArtist === item.artist}
               onViewSongs={onViewSongs}
               source={source}
+              register={(node) => registerItem(item, node)}
             />
-          ))
-        ) : (
-          <GlowPanel as="div" variant="row" className="p-5 text-sm text-mist">No detected plays in this period.</GlowPanel>
-        )}
+          );
+        })}
       </div>
+    </section>
+  );
+}
+
+function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: { kind: RankingKind; caption: string; activeItem: PeriodTopItem | null; itemCount: number; source: MusicSource }) {
+  const activeId = activeItem ? rankingItemId(activeItem, kind) : "empty";
+  const activeTitle = activeItem ? rankingItemTitle(activeItem, kind) : "No ranking yet";
+  const activeSubtitle = activeItem ? rankingItemSubtitle(activeItem, kind) : caption;
+  const label = kind === "artists" ? "Artist chapter" : "Song chapter";
+  const fallback = activeItem ? (kind === "artists" ? initials(activeItem.artist) : `#${activeItem.rank}`) : "?";
+
+  return (
+    <GlowPanel as="div" variant="major" wrapperClassName="ranking-story__visual-shell" className="ranking-story__visual-panel">
+      <div className="ranking-story__visual-bg" aria-hidden="true" />
+      <div className="ranking-story__visual-content" key={activeId}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">{label}</p>
+          <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-semibold text-mist">
+            {activeItem ? `${String(activeItem.rank).padStart(2, "0")} / ${String(itemCount).padStart(2, "0")}` : `00 / ${String(itemCount).padStart(2, "0")}`}
+          </span>
+        </div>
+        <div className="ranking-story__hero-art">
+          <Artwork src={activeItem?.thumbnail} label={activeTitle} fallback={fallback} icon={kind === "artists" ? UserRound : Music2} rounded={kind === "artists" ? "rounded-[1.5rem]" : "rounded-[1.2rem]"} sizeClass="ranking-story__hero-artwork" />
+        </div>
+        <div className="ranking-story__hero-copy">
+          <span className="text-6xl font-black leading-none text-white/10">#{activeItem?.rank ?? "--"}</span>
+          <h3 className="mt-3 text-3xl font-black leading-tight text-white">{activeTitle}</h3>
+          <p className="mt-2 line-clamp-2 text-base font-semibold text-red-100">{activeSubtitle}</p>
+          {activeItem ? (
+            <div className="mt-5 flex flex-wrap gap-2 text-xs text-mist">
+              <span className="rounded-full bg-white/10 px-3 py-1">{displayListLabel(activeItem.interpretation_label, kind === "artists")}</span>
+              <span className="rounded-full bg-white/10 px-3 py-1">{spotifyEvidenceLabel(activeItem, source, kind === "artists")}</span>
+              {detectedMinutesLabel(activeItem) ? <span className="rounded-full bg-white/10 px-3 py-1">{detectedMinutesLabel(activeItem)}</span> : null}
+              <span className="rounded-full bg-white/10 px-3 py-1">{activeItem.share_of_period}% share</span>
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <GradualBlur
+        target="parent"
+        position="bottom"
+        height="5rem"
+        strength={1.4}
+        divCount={6}
+        curve="bezier"
+        exponential={false}
+        opacity={0.72}
+        animated="scroll"
+        duration="0.35s"
+        zIndex={4}
+        className="ranking-story__blur"
+      />
     </GlowPanel>
   );
 }
 
-function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { item: PeriodTopItem; artistList: boolean; selected?: boolean; onViewSongs?: (artist: string) => void; source: MusicSource }) {
-  const title = artistList ? item.artist : item.title ?? "Unknown track";
+function RankingStoryCard({
+  item,
+  kind,
+  active,
+  selected,
+  onViewSongs,
+  source,
+  register,
+}: {
+  item: PeriodTopItem;
+  kind: RankingKind;
+  active: boolean;
+  selected?: boolean;
+  onViewSongs?: (artist: string) => void;
+  source: MusicSource;
+  register: (node: HTMLDivElement | null) => void;
+}) {
+  const isArtist = kind === "artists";
+  const title = rankingItemTitle(item, kind);
   const rank = `#${String(item.rank).padStart(2, "0")}`;
+  const itemId = rankingItemId(item, kind);
 
-  if (artistList) {
-    return (
-      <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-artist-card">
-        <div className="grid gap-4 sm:grid-cols-[5rem_1fr]">
-          <Artwork src={item.thumbnail} label={title} fallback={initials(item.artist)} icon={UserRound} rounded="rounded-full" sizeClass="h-20 w-20" />
+  return (
+    <div ref={register} className="ranking-story__item" data-active={active ? "true" : "false"} data-ranking-id={itemId}>
+      <GlowPanel as="article" variant="row" selected={active || selected} className="ranking-story__card" data-testid={isArtist ? "top-artist-card" : "top-song-card"}>
+        <div className="ranking-story__card-grid">
+          <Artwork src={item.thumbnail} label={title} fallback={isArtist ? initials(item.artist) : rank} icon={isArtist ? UserRound : Music2} rounded={isArtist ? "rounded-full" : "rounded-xl"} sizeClass="ranking-story__row-artwork" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-xl font-black text-red-200">{rank}</span>
-              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, true)}</span>
+              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, isArtist)}</span>
             </div>
-            <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
-            <p className="mt-2 text-sm leading-6 text-mist">
-              {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
-            </p>
+            <h3 className="mt-2 line-clamp-2 break-words text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
+            {isArtist ? (
+              <p className="mt-2 text-sm leading-6 text-mist">
+                {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
+                {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
+              </>
+            )}
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, true)}</span>
+              <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, isArtist)}</span>
               {detectedMinutesLabel(item) ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{detectedMinutesLabel(item)}</span> : null}
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{item.share_of_period}% share</span>
+              {isArtist ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{item.share_of_period}% share</span> : null}
               <Movement movement={item.movement} />
             </div>
-            {onViewSongs ? (
+            {isArtist && onViewSongs ? (
               <button
                 aria-label={`View songs by ${item.artist}`}
                 className="mt-4 rounded-md border border-white/10 px-3 py-2 text-sm font-semibold text-white transition hover:border-red-400/50 hover:bg-red-500/15"
@@ -288,30 +395,94 @@ function PeriodTopCard({ item, artistList, selected, onViewSongs, source }: { it
           </div>
         </div>
       </GlowPanel>
-    );
-  }
+    </div>
+  );
+}
 
+function RankingTransition() {
   return (
-    <GlowPanel as="article" variant="row" className="p-4 transition" data-testid="top-song-card">
-      <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto] lg:items-center">
-        <Artwork src={item.thumbnail} label={title} fallback={rank} icon={Music2} rounded="rounded-lg" sizeClass="h-20 w-20" />
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-xl font-black text-red-200">{rank}</span>
-            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, false)}</span>
-          </div>
-          <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
-          <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
-          {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-3 lg:flex-col lg:items-end">
-          <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, false)}</span>
-          {detectedMinutesLabel(item) ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{detectedMinutesLabel(item)}</span> : null}
-          <Movement movement={item.movement} />
-        </div>
-      </div>
+    <GlowPanel as="section" variant="card" className="ranking-transition p-5 md:p-6">
+      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Next chapter</p>
+      <h2 className="mt-2 text-2xl font-black text-white">From tracks you replay to the artists shaping the whole pattern.</h2>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
+        The artist section uses the same detected-play rankings, then shifts the sticky stage toward artist-level identity and song breadth.
+      </p>
     </GlowPanel>
   );
+}
+
+function useActiveRanking(items: PeriodTopItem[], kind: RankingKind) {
+  const firstId = items[0] ? rankingItemId(items[0], kind) : "";
+  const [activeId, setActiveId] = useState(firstId);
+  const elementsRef = useRef(new Map<string, HTMLDivElement>());
+  const visibilityRef = useRef(new Map<string, { ratio: number; order: number }>());
+
+  useEffect(() => {
+    const ids = new Set(items.map((item) => rankingItemId(item, kind)));
+    setActiveId((current) => (current && ids.has(current) ? current : firstId));
+    visibilityRef.current.clear();
+  }, [firstId, items, kind]);
+
+  const registerItem = useCallback(
+    (item: PeriodTopItem, node: HTMLDivElement | null) => {
+      const id = rankingItemId(item, kind);
+      if (node) {
+        elementsRef.current.set(id, node);
+      } else {
+        elementsRef.current.delete(id);
+        visibilityRef.current.delete(id);
+      }
+    },
+    [kind],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof IntersectionObserver === "undefined" || !items.length) return;
+    const order = new Map(items.map((item, index) => [rankingItemId(item, kind), index]));
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.getAttribute("data-ranking-id");
+          if (!id) continue;
+          if (entry.isIntersecting) {
+            visibilityRef.current.set(id, { ratio: entry.intersectionRatio, order: order.get(id) ?? 0 });
+          } else {
+            visibilityRef.current.delete(id);
+          }
+        }
+        const candidates = [...visibilityRef.current.entries()].filter(([id]) => order.has(id));
+        if (!candidates.length) return;
+        candidates.sort(([, a], [, b]) => b.ratio - a.ratio || a.order - b.order);
+        setActiveId(candidates[0][0]);
+      },
+      { rootMargin: "-35% 0px -45% 0px", threshold: [0, 0.15, 0.35, 0.6, 0.9] },
+    );
+
+    for (const item of items) {
+      const node = elementsRef.current.get(rankingItemId(item, kind));
+      if (node) observer.observe(node);
+    }
+
+    return () => observer.disconnect();
+  }, [items, kind]);
+
+  return { activeId: activeId || firstId, registerItem };
+}
+
+function rankingItemId(item: PeriodTopItem, kind: RankingKind) {
+  if (kind === "artists") return item.source_artist_id || item.key || item.artist;
+  return item.source_track_id || item.track_id || item.video_id || item.key || `${item.title ?? "unknown"}::${item.artist}`;
+}
+
+function rankingItemTitle(item: PeriodTopItem, kind: RankingKind) {
+  return kind === "artists" ? item.artist : item.title ?? "Unknown track";
+}
+
+function rankingItemSubtitle(item: PeriodTopItem, kind: RankingKind) {
+  if (kind === "artists") {
+    return `${item.unique_songs ?? 0} unique songs${item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}`;
+  }
+  return item.album ? `${item.artist} - ${item.album}` : item.artist;
 }
 
 function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs, source }: { response: TopAlbumsResponse | null; loading: boolean; selectedAlbum: TopAlbumItem | null; onViewSongs: (album: TopAlbumItem) => void; source: MusicSource }) {
