@@ -2,7 +2,6 @@ import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
 import { Artwork } from "../components/Artwork";
-import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
@@ -65,16 +64,25 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
   );
 
   if (!profile && loadingCharacter) {
-    return <EmptyState title="Reading your music character" body="Building the deterministic persona profile from your local listening data." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
+    return (
+      <PageTitlePanel
+        eyebrow="Persona Report"
+        title="Reading your music character"
+        titleAnimationKey={titleAnimationKey}
+        titleClassName="text-5xl font-black leading-[0.95] text-white md:text-7xl"
+        subtitle="Building the deterministic persona profile from your local listening data."
+      />
+    );
   }
 
   if (!profile) {
     return (
-      <EmptyState
+      <PageTitlePanel
+        eyebrow="Persona Report"
         title="No persona profile yet"
-        body={characterError || (source === "spotify" ? "Connect Spotify and refresh Spotify data, then return here for a Music Character based persona read." : "Refresh YouTube Music data or import Google Takeout history, then return here for a Music Character based persona read.")}
-        titleTag="h1"
         titleAnimationKey={titleAnimationKey}
+        titleClassName="text-5xl font-black leading-[0.95] text-white md:text-7xl"
+        subtitle={characterError || (source === "spotify" ? "Connect Spotify and refresh Spotify data, then return here for a Music Character based persona read." : "Refresh YouTube Music data or import Google Takeout history, then return here for a Music Character based persona read.")}
       />
     );
   }

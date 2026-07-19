@@ -1,7 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { TasteDNA } from "../components/TasteDNA";
@@ -84,12 +83,13 @@ export function OverviewPage({
 
   if (!overview) {
     return (
-      <EmptyState
+      <div className="space-y-6">
+      <PageTitlePanel
+        eyebrow="Private local music identity"
         title="No listening analysis loaded yet"
-        body={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
-        titleTag="h1"
         titleAnimationKey={titleAnimationKey}
-        action={
+        subtitle={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
+        actions={
           <div className="flex flex-wrap justify-center gap-3">
             <button className="btn-primary" onClick={onRefresh} disabled={busy}>
               <RefreshCw size={17} /> {busy ? "Refreshing..." : useDemo ? "Load Demo Data" : "Refresh My Music Data"}
@@ -98,6 +98,7 @@ export function OverviewPage({
           </div>
         }
       />
+      </div>
     );
   }
 

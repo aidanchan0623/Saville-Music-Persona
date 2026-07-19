@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
@@ -41,7 +40,20 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
     };
   }, [period, selectedMonth, source]);
 
-  if (!scores.length) return <EmptyState title="No scorecard yet" body="Refresh data to calculate deterministic scores with transparent formulas." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
+  if (!scores.length) {
+    return (
+      <div className="space-y-6">
+        <PageTitlePanel
+          eyebrow="Music listening profile"
+          title="Taste Scores"
+          titleAnimationKey={titleAnimationKey}
+          titleClassName="text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl"
+          subtitle="Refresh data to calculate deterministic scores with transparent formulas."
+        />
+        <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No scorecard yet.</GlowPanel>
+      </div>
+    );
+  }
   const groups = buildScoreGroups(scores);
   const glanceScores = getAtAGlanceScores(scores);
   const months = minutes?.period.available_months ?? [];

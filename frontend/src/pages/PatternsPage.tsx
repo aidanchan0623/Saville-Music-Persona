@@ -1,5 +1,4 @@
 import { ChartPanel } from "../components/ChartPanel";
-import { EmptyState } from "../components/EmptyState";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { GlowPanel } from "../components/GlowPanel";
@@ -35,7 +34,20 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
     };
   }, [period, selectedMonth, source]);
 
-  if (!charts) return <EmptyState title="No listening patterns yet" body="Refresh data to build charts from local cached analysis." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
+  if (!charts) {
+    return (
+      <div className="space-y-6">
+        <PageTitlePanel
+          eyebrow="Listening evidence"
+          title="Listening Patterns"
+          titleAnimationKey={titleAnimationKey}
+          titleClassName="text-4xl font-black leading-tight text-white md:text-5xl"
+          subtitle="Refresh data to build charts from local cached analysis."
+        />
+        <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No listening patterns yet.</GlowPanel>
+      </div>
+    );
+  }
   const months = minutes?.period.available_months ?? [];
   const activeCharts = periodCharts ?? charts;
   const activeLabel = period === "rolling_year" ? "Rolling Year" : minutes?.period.label ?? "Selected period";

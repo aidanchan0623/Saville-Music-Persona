@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { Artwork } from "../components/Artwork";
-import { EmptyState } from "../components/EmptyState";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import GradualBlur from "../components/reactbits/GradualBlur/GradualBlur";
@@ -116,7 +115,18 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
   const activeLabel = displayPeriodLabel(tracks?.period.label ?? albums?.period.label, period);
 
   if (!tracks && !artists && !albums && !loading) {
-    return <EmptyState title="No rankings yet" body="Refresh your music data to build period rankings from detected plays." titleTag="h1" titleAnimationKey={titleAnimationKey} />;
+    return (
+      <div className="space-y-6">
+        <PageTitlePanel
+          eyebrow="Music leaders"
+          title="Top 10"
+          titleAnimationKey={titleAnimationKey}
+          titleClassName="text-4xl font-black leading-none text-white md:text-5xl"
+          subtitle="Refresh your music data to build period rankings from detected plays."
+        />
+        <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No rankings yet.</GlowPanel>
+      </div>
+    );
   }
 
   return (
