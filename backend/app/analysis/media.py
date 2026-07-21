@@ -9,6 +9,7 @@ from app.analysis.thumbnails import best_thumbnail_url
 
 
 ARTIST_IMAGE_CACHE_SCHEMA_VERSION = 2
+ALBUM_IMAGE_CACHE_SCHEMA_VERSION = 1
 
 
 def normalise_artist_name(value: Any) -> str:
@@ -33,8 +34,36 @@ def artist_name_key(name: Any) -> str | None:
     return f"artist-name:{normalised}" if normalised else None
 
 
+def normalise_album_name(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    text = text.casefold().strip()
+    text = text.replace("&", " and ")
+    text = re.sub(r"[/_.\u00b7\u2022]+", " ", text)
+    text = re.sub(r"[^\w\s'-]+", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def album_id_key(album_id: Any) -> str | None:
+    text = str(album_id or "").strip()
+    return f"album:{text}" if text else None
+
+
+def album_name_artist_key(album: Any, artist: Any) -> str | None:
+    normalised_album = normalise_album_name(album)
+    normalised_artist = normalise_artist_name(artist)
+    if not normalised_album or not normalised_artist:
+        return None
+    return f"album-name:{normalised_artist}::{normalised_album}"
+
+
 def empty_artist_image_cache() -> dict[str, Any]:
     return {"schemaVersion": ARTIST_IMAGE_CACHE_SCHEMA_VERSION, "items": {}}
+
+
+def empty_album_image_cache() -> dict[str, Any]:
+    return {"schemaVersion": ALBUM_IMAGE_CACHE_SCHEMA_VERSION, "items": {}, "index": {}}
 
 
 def ensure_artist_image_cache_schema(cache: Any) -> dict[str, Any]:
@@ -47,9 +76,32 @@ def ensure_artist_image_cache_schema(cache: Any) -> dict[str, Any]:
     return cache
 
 
+def ensure_album_image_cache_schema(cache: Any) -> dict[str, Any]:
+    if not isinstance(cache, dict):
+        return empty_album_image_cache()
+    if cache.get("schemaVersion") == ALBUM_IMAGE_CACHE_SCHEMA_VERSION and isinstance(cache.get("items"), dict):
+        cache.setdefault("index", {})
+        if not isinstance(cache["index"], dict):
+            cache["index"] = {}
+        return cache
+    cache.clear()
+    cache.update(empty_album_image_cache())
+    return cache
+
+
 def artist_cache_items(cache: dict[str, Any]) -> dict[str, Any]:
     ensured = ensure_artist_image_cache_schema(cache)
     return ensured.setdefault("items", {})
+
+
+def album_cache_items(cache: dict[str, Any]) -> dict[str, Any]:
+    ensured = ensure_album_image_cache_schema(cache)
+    return ensured.setdefault("items", {})
+
+
+def album_cache_index(cache: dict[str, Any]) -> dict[str, str]:
+    ensured = ensure_album_image_cache_schema(cache)
+    return ensured.setdefault("index", {})
 
 
 def artist_cache_lookup(cache: dict[str, Any], artist: Any, artist_id: Any = None) -> dict[str, Any] | None:
@@ -62,6 +114,22 @@ def artist_cache_lookup(cache: dict[str, Any], artist: Any, artist_id: Any = Non
     return None
 
 
+def album_cache_lookup(cache: dict[str, Any], album_id: Any = None, album: Any = None, artist: Any = None) -> dict[str, Any] | None:
+    items = album_cache_items(cache)
+    direct_key = album_id_key(album_id)
+    if direct_key and isinstance(items.get(direct_key), dict):
+        value = items[direct_key]
+        if value.get("schemaVersion") == ALBUM_IMAGE_CACHE_SCHEMA_VERSION and value.get("mediaType") == "album":
+            return value
+    alias_key = album_name_artist_key(album, artist)
+    mapped_key = album_cache_index(cache).get(alias_key) if alias_key else None
+    if mapped_key and isinstance(items.get(mapped_key), dict):
+        value = items[mapped_key]
+        if value.get("schemaVersion") == ALBUM_IMAGE_CACHE_SCHEMA_VERSION and value.get("mediaType") == "album":
+            return value
+    return None
+
+
 def artist_cache_set(cache: dict[str, Any], artist: Any, entry: dict[str, Any], artist_id: Any = None) -> None:
     items = artist_cache_items(cache)
     keys = [
@@ -71,6 +139,17 @@ def artist_cache_set(cache: dict[str, Any], artist: Any, entry: dict[str, Any], 
     for key in keys:
         if key:
             items[key] = entry
+
+
+def album_cache_set(cache: dict[str, Any], entry: dict[str, Any], album_id: Any = None, album: Any = None, artist: Any = None) -> None:
+    key = album_id_key(album_id or entry.get("entityId") or entry.get("album_id") or entry.get("browse_id"))
+    if not key:
+        return
+    items = album_cache_items(cache)
+    items[key] = entry
+    alias_key = album_name_artist_key(album or entry.get("album") or entry.get("entityName"), artist or entry.get("artist"))
+    if alias_key:
+        album_cache_index(cache)[alias_key] = key
 
 
 def youtube_video_thumbnail(video_id: Any) -> str | None:
@@ -87,15 +166,21 @@ def album_thumbnail_candidates(item: dict[str, Any]) -> Any:
 
 
 def album_image_url(item: dict[str, Any]) -> str | None:
-    return (
-        str(item.get("album_art_url") or item.get("albumImageUrl") or "").strip()
-        or best_thumbnail_url(album_thumbnail_candidates(item))
-    )
+    explicit = str(item.get("album_art_url") or item.get("albumImageUrl") or item.get("album_image_url") or "").strip()
+    if explicit:
+        return explicit
+    if item.get("mediaType") == "album":
+        cached = str(item.get("thumbnail_url") or "").strip()
+        if cached:
+            return cached
+    return best_thumbnail_url(album_thumbnail_candidates(item))
 
 
 def album_image_source(item: dict[str, Any]) -> str | None:
     if item.get("album_art_source"):
         return str(item["album_art_source"])
+    if item.get("album_image_source"):
+        return str(item["album_image_source"])
     if album_image_url(item):
         source = str(item.get("source") or "").lower()
         return "spotify_album_image" if source == "spotify" else "youtube_album_cover"
@@ -172,6 +257,39 @@ def artist_cache_success_entry(artist: str, payload: dict[str, Any], selected_ur
     }
 
 
+def album_cache_success_entry(album: str, artist: str, payload: dict[str, Any], selected_url: str | None, album_id: Any = None, source: str = "ytmusicapi.album_lookup") -> dict[str, Any]:
+    canonical_album = str(payload.get("title") or payload.get("album") or payload.get("name") or album).strip() or album
+    browse_id = payload.get("browseId") or payload.get("album_id") or payload.get("id") or album_id
+    resolved_at = datetime.now(timezone.utc).isoformat()
+    thumbnail = best_thumbnail_url(payload.get("thumbnails") or payload.get("thumbnail") or payload.get("images") or payload.get("image")) or selected_url
+    return {
+        "schemaVersion": ALBUM_IMAGE_CACHE_SCHEMA_VERSION,
+        "mediaType": "album",
+        "entityId": browse_id,
+        "entityName": canonical_album,
+        "album": canonical_album,
+        "artist": artist,
+        "normalisedAlbum": normalise_album_name(canonical_album),
+        "normalisedArtist": normalise_artist_name(artist),
+        "album_id": browse_id,
+        "browse_id": browse_id,
+        "thumbnails": [{"url": thumbnail}] if thumbnail else [],
+        "thumbnail_url": thumbnail,
+        "url": thumbnail,
+        "album_image_url": thumbnail,
+        "album_art_url": thumbnail,
+        "source": source,
+        "album_image_source": "youtube_album_cover",
+        "album_art_source": "youtube_album_cover",
+        "resolvedAt": resolved_at,
+        "fetched_at": resolved_at,
+        "last_successful_update_at": resolved_at if thumbnail else None,
+        "failureReason": None if thumbnail else "missing_thumbnails",
+        "failure_reason": None if thumbnail else "missing_thumbnails",
+        "retry_after": None if thumbnail else (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+    }
+
+
 def artist_cache_failure(artist: str, artist_id: Any, reason: str) -> dict[str, Any]:
     resolved_at = datetime.now(timezone.utc).isoformat()
     return {
@@ -190,6 +308,35 @@ def artist_cache_failure(artist: str, artist_id: Any, reason: str) -> dict[str, 
         "url": None,
         "source": "ytmusicapi.artist_lookup",
         "artist_image_source": "youtube_artist_profile",
+        "resolvedAt": resolved_at,
+        "fetched_at": resolved_at,
+        "failureReason": reason,
+        "failure_reason": reason,
+        "retry_after": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+    }
+
+
+def album_cache_failure(album: str, artist: str, album_id: Any, reason: str) -> dict[str, Any]:
+    resolved_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "schemaVersion": ALBUM_IMAGE_CACHE_SCHEMA_VERSION,
+        "mediaType": "album",
+        "entityId": album_id,
+        "entityName": album,
+        "album": album,
+        "artist": artist,
+        "normalisedAlbum": normalise_album_name(album),
+        "normalisedArtist": normalise_artist_name(artist),
+        "album_id": album_id,
+        "browse_id": album_id,
+        "thumbnails": [],
+        "thumbnail_url": None,
+        "url": None,
+        "album_image_url": None,
+        "album_art_url": None,
+        "source": "ytmusicapi.album_lookup",
+        "album_image_source": "youtube_album_cover",
+        "album_art_source": "youtube_album_cover",
         "resolvedAt": resolved_at,
         "fetched_at": resolved_at,
         "failureReason": reason,

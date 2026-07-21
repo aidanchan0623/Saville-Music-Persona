@@ -2,7 +2,7 @@ import { Music2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { StatusPill } from "../StatusPill";
 import LineSidebar from "../reactbits/LineSidebar/LineSidebar";
-import { NAVIGATION_ITEMS, USE_REACT_BITS_DESKTOP_SIDEBAR } from "./navigation";
+import { NAVIGATION_ITEMS } from "./navigation";
 import type { Page } from "./navigation";
 
 interface DesktopSidebarProps {
@@ -19,7 +19,7 @@ export function DesktopSidebar(props: DesktopSidebarProps) {
 
   if (!desktopMounted) return null;
 
-  return USE_REACT_BITS_DESKTOP_SIDEBAR ? <ReactBitsDesktopSidebar {...props} /> : <StandardSidebar {...props} />;
+  return <ReactBitsDesktopSidebar {...props} />;
 }
 
 function ReactBitsDesktopSidebar({ activePage, youtubeReady, youtubeLabel, spotifyConnected, modelInstalled, onNavigate }: DesktopSidebarProps) {
@@ -38,38 +38,23 @@ function ReactBitsDesktopSidebar({ activePage, youtubeReady, youtubeLabel, spoti
             if (item) onNavigate(item.id);
           }}
           ariaLabel="Primary navigation"
-          accentColor="#ef2b2d"
-          textColor="#a4a4ad"
-          markerColor="#3f3f46"
-          markerLength={24}
+          accentColor="#e52b32"
+          textColor="#96969d"
+          markerColor="#29292e"
+          showIndex={false}
+          showMarker
+          proximityRadius={90}
+          maxShift={10}
+          falloff="smooth"
+          markerLength={28}
           markerGap={9}
-          itemGap={16}
-          maxShift={7}
-          proximityRadius={72}
+          tickScale={0.35}
+          itemGap={18}
+          fontSize={0.95}
           smoothing={150}
           className="w-full"
         />
       </div>
-      <LocalStatusPanel youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyConnected} modelInstalled={modelInstalled} />
-    </aside>
-  );
-}
-
-function StandardSidebar({ activePage, youtubeReady, youtubeLabel, spotifyConnected, modelInstalled, onNavigate }: DesktopSidebarProps) {
-  return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-60 flex-col border-r border-line bg-backgroundElevated/95 p-5 shadow-[18px_0_70px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-      <SidebarBrand subtitle="Private taste analysis" />
-      <nav className="mt-8 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1" aria-label="Primary navigation">
-        {NAVIGATION_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <button key={item.id} className={`nav-item ${activePage === item.id ? "nav-item-active" : ""}`} onClick={() => onNavigate(item.id)} aria-current={activePage === item.id ? "page" : undefined}>
-              <Icon size={18} />
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
       <LocalStatusPanel youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyConnected} modelInstalled={modelInstalled} />
     </aside>
   );

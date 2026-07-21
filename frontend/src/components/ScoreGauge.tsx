@@ -1,6 +1,9 @@
+import { useEffect, useId, useState } from "react";
+import { PolarAngleAxis, RadialBar, RadialBarChart, ResponsiveContainer } from "recharts";
 import type { ScoreMetric } from "../types/api";
-import { asPercent } from "../utils/format";
+import CountUp from "./reactbits/CountUp/CountUp";
 import { GlowPanel } from "./GlowPanel";
+import "./ScoreGauge.css";
 
 export type ScoreKind =
   | "repeat"
@@ -18,36 +21,100 @@ interface ScorePresentation {
   displayName: string;
   tag: string;
   headline: string;
-  body: string;
-  evidenceLine: string;
+  measures: string;
+  calculation: string;
+  resultMeaning: string;
+  limitations: string;
 }
 
-export function ScoreGauge({ score, featured = false }: { score: ScoreMetric; featured?: boolean }) {
+export function ScoreGauge({
+  score,
+  featured = false,
+  open,
+  onToggle,
+}: {
+  score: ScoreMetric;
+  featured?: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
   const presentation = getScorePresentation(score);
-  const degree = Math.min(100, Math.max(0, score.value)) * 3.6;
+  const detailsId = useId();
+  const value = clampScore(score.value);
+  const decimals = Number.isInteger(score.value) ? 0 : 1;
+
   return (
-    <GlowPanel as="article" variant="card" wrapperClassName={featured ? "lg:col-span-2" : ""} className="relative overflow-hidden p-5 transition md:p-6">
-      <div className="absolute -right-12 -top-16 h-40 w-40 rounded-full bg-violet/15 blur-3xl" />
-      <div className="relative flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-200">{presentation.displayName}</p>
-          <h3 className="mt-3 text-2xl font-black leading-tight text-white md:text-3xl">{presentation.headline}</h3>
+    <GlowPanel as="article" variant="card" wrapperClassName={featured ? "lg:col-span-2" : ""} className="score-card p-5 md:p-6">
+      <div className="score-card__layout">
+        <div className="score-card__copy">
+          <p className="score-card__eyebrow">{presentation.displayName}</p>
+          <h3 className="score-card__title">{presentation.headline}</h3>
+          <div className="score-card__number-row" aria-label={`${presentation.displayName}: ${score.value} out of 100`}>
+            <CountUp from={0} to={score.value} duration={1.2} separator="," decimals={decimals} className="score-number" />
+            <span className="score-card__unit">/100</span>
+          </div>
+          <p className="score-card__tag">{presentation.tag}</p>
         </div>
-        <div
-          className="grid h-20 w-20 shrink-0 place-items-center rounded-full shadow-[0_0_40px_rgba(239,68,68,0.2)] md:h-24 md:w-24"
-          style={{
-            background: `conic-gradient(#ef4444 0deg, #dc2626 ${degree}deg, rgba(255,255,255,0.09) ${degree}deg)`,
-          }}
-        >
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-[#090505] text-sm font-black text-white md:h-16 md:w-16">{asPercent(score.value)}</div>
-        </div>
+        <ScoreRadialChart label={presentation.displayName} value={value} />
       </div>
 
-      <div className="relative mt-5 max-w-3xl">
-        <p className="text-base leading-7 text-mist">{presentation.body}</p>
-        <p className="mt-4 border-l border-violet/35 pl-4 text-sm leading-6 text-mist/85">{presentation.evidenceLine}</p>
-      </div>
+      <ScoreDetails id={detailsId} open={open} onToggle={onToggle} presentation={presentation} score={score} />
     </GlowPanel>
+  );
+}
+
+function ScoreRadialChart({ label, value }: { label: string; value: number }) {
+  const reducedMotion = useReducedMotion();
+  const data = [{ name: label, value, fill: "#e52b32" }];
+  return (
+    <div className="score-radial" aria-hidden="true">
+      <ResponsiveContainer width="100%" height="100%">
+        <RadialBarChart data={data} startAngle={90} endAngle={-270} innerRadius="72%" outerRadius="96%">
+          <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+          <RadialBar dataKey="value" background={{ fill: "rgba(255,255,255,0.08)" }} cornerRadius={10} fill="#e52b32" isAnimationActive={!reducedMotion} animationDuration={900} />
+        </RadialBarChart>
+      </ResponsiveContainer>
+      <span className="score-radial__center">{Math.round(value)}%</span>
+    </div>
+  );
+}
+
+function ScoreDetails({
+  id,
+  open,
+  onToggle,
+  presentation,
+  score,
+}: {
+  id: string;
+  open: boolean;
+  onToggle: () => void;
+  presentation: ScorePresentation;
+  score: ScoreMetric;
+}) {
+  return (
+    <div className="score-details-wrap">
+      <button className="score-details-button" type="button" aria-expanded={open} aria-controls={id} onClick={onToggle}>
+        {open ? "Hide explanation" : "See explanation"}
+      </button>
+      <div id={id} className={`score-details${open ? " score-details--open" : ""}`}>
+        <div className="score-details__inner">
+          <DetailBlock title="What it measures" body={presentation.measures} />
+          <DetailBlock title="How it is calculated" body={score.formula || presentation.calculation} />
+          <DetailBlock title="What your result means" body={score.interpretation?.plain_english || presentation.resultMeaning} />
+          <DetailBlock title="Limitations" body={presentation.limitations} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="score-details__block">
+      <h4>{title}</h4>
+      <p>{body}</p>
+    </div>
   );
 }
 
@@ -58,7 +125,7 @@ export function getScoreKind(score: ScoreMetric): ScoreKind {
   if (identity.includes("loyal")) return "artistLoyalty";
   if (identity.includes("broad") && identity.includes("cluster")) return "broadCluster";
   if (identity.includes("within") && identity.includes("cluster")) return "withinCluster";
-  if (identity.includes("nostalgia") || identity.includes("release") || identity.includes("era")) return "nostalgia";
+  if (identity.includes("nostalgia") || identity.includes("release" ) || identity.includes("era")) return "nostalgia";
   if (identity.includes("mainstream") || identity.includes("niche")) return "mainstreamNiche";
   if (score.key === "taste_confidence" || identity.includes("taste confidence")) return "tasteConfidence";
   return "other";
@@ -67,95 +134,129 @@ export function getScoreKind(score: ScoreMetric): ScoreKind {
 export function getScorePresentation(score: ScoreMetric): ScorePresentation {
   const kind = getScoreKind(score);
   const hasWeakEraMetadata = kind === "nostalgia" && /low|limited|partial/i.test(score.interpretation?.confidence ?? "");
+  const evidence = score.interpretation?.evidence?.[0] ?? "Uses the available local listening profile for the selected period.";
 
   if (kind === "repeat") {
     return {
       kind,
       displayName: "Repeat score",
-      tag: "Replay-heavy listener",
+      tag: "Replay gravity",
       headline: "Replay-heavy listener",
-      body: "You come back to songs strongly once they land. Your listening is less about constantly chasing new tracks and more about finding songs that fit your mood, then keeping them in rotation.",
-      evidenceLine: "Based on repeated tracks across the selected period.",
+      measures: "How strongly your period is shaped by returning to the same songs.",
+      calculation: "Compares total track plays with unique tracks, then scales that repeat density to a 0-100 score.",
+      resultMeaning: "Higher means a smaller set of songs keeps pulling you back.",
+      limitations: evidence,
     };
   }
   if (kind === "artistLoyalty") {
     return {
       kind,
       displayName: "Artist loyalty",
-      tag: "Broadly roaming",
-      headline: "Broadly roaming, not artist-locked",
-      body: "You are not built around only one or two artists. The sound world is consistent, but the artists rotate enough that your profile feels sound-led rather than fandom-led.",
-      evidenceLine: "Based on how plays are distributed across your top artists.",
+      tag: "Artist pull",
+      headline: "Sound-led, not artist-locked",
+      measures: "How concentrated your listening is around the top artists.",
+      calculation: "Looks at play distribution across artists and converts that concentration into a 0-100 loyalty score.",
+      resultMeaning: "Higher means a few artists dominate the period; lower means the artists rotate more.",
+      limitations: evidence,
     };
   }
   if (kind === "discovery") {
     return {
       kind,
       displayName: "Discovery score",
-      tag: "Selective explorer",
+      tag: "Newness",
       headline: "Selective explorer",
-      body: "New music appears in your listening, but trusted favourites still lead. You explore, just not at the expense of the songs and artists that already work for you.",
-      evidenceLine: "Based on newer listening signals compared with established repeats.",
+      measures: "How much newer or less-repeated listening appears beside your familiar favourites.",
+      calculation: "Balances first-time or lower-repeat signals against established repeats for the selected period.",
+      resultMeaning: "Higher means more exploration; lower means comfort listening is leading.",
+      limitations: evidence,
     };
   }
   if (kind === "nostalgia") {
     return {
       kind,
       displayName: "Nostalgia score",
-      tag: hasWeakEraMetadata ? "Era preference unclear" : "Mostly current-facing",
+      tag: hasWeakEraMetadata ? "Era unclear" : "Era pull",
       headline: hasWeakEraMetadata ? "Era preference unclear" : "Mostly current-facing",
-      body: hasWeakEraMetadata
-        ? "Release-year evidence is too partial to read this strongly, so this score stays cautious instead of pretending to know your era preference."
-        : "Newer music shapes more of your detected listening, while older songs can still matter as part of the profile without becoming the main centre.",
-      evidenceLine: "Based on release-year metadata where it is available.",
+      measures: "How much older release-year metadata appears in the songs with usable era data.",
+      calculation: "Uses known release years where available and scales the older-era share to 0-100.",
+      resultMeaning: hasWeakEraMetadata ? "The result should be read lightly because release-year coverage is thin." : "Higher means older eras shape more of the profile.",
+      limitations: evidence,
     };
   }
   if (kind === "broadCluster") {
     return {
       kind,
       displayName: "Broad-cluster diversity",
-      tag: "Rock-centred, internally varied",
+      tag: "Genre range",
       headline: "Rock-centred, internally varied",
-      body: "Your taste has a clear home base, but it is not one-dimensional. The variation happens inside connected alternative, rock, emo, heavy and atmospheric worlds.",
-      evidenceLine: "Based on the spread across mapped broad sound families.",
+      measures: "How widely your listening spreads across broad mapped sound families.",
+      calculation: "Measures the spread of plays across the detected broad genre clusters and scales it to 0-100.",
+      resultMeaning: "Higher means several sound families matter; lower means one family dominates.",
+      limitations: evidence,
     };
   }
   if (kind === "withinCluster") {
     return {
       kind,
       displayName: "Within-cluster diversity",
-      tag: "Deep within your lane",
+      tag: "Lane depth",
       headline: "Deep within your lane",
-      body: "Your listening stays inside recognisable lanes, but those lanes still contain multiple textures and substyles. It reads as focus with depth, not a flat one-note pattern.",
-      evidenceLine: "Based on variety inside the strongest mapped sound families.",
+      measures: "How much variety exists inside your strongest mapped sound families.",
+      calculation: "Looks at substyle variation within dominant clusters, then scores that internal variety.",
+      resultMeaning: "Higher means your main lanes contain more texture and substyle shifts.",
+      limitations: evidence,
     };
   }
   if (kind === "mainstreamNiche") {
     return {
       kind,
       displayName: "Mainstream-Niche Estimate",
-      tag: "Niche-leaning",
+      tag: "Niche lean",
       headline: "Niche-leaning listener",
-      body: "Your detected artists lean away from the most obvious mainstream centre. This does not mean obscure for the sake of obscure - just that chart gravity is not the default force in your listening.",
-      evidenceLine: "Based on available popularity and artist metadata, treated as a cautious estimate.",
+      measures: "How your artists sit relative to available mainstream popularity signals.",
+      calculation: "Uses available popularity and artist metadata as a cautious proxy, then scales the niche tendency to 0-100.",
+      resultMeaning: "Higher means your listening leans further from obvious chart gravity.",
+      limitations: evidence,
     };
   }
   if (kind === "tasteConfidence") {
     return {
       kind,
       displayName: "Profile signal",
-      tag: "Strong profile signal",
+      tag: "Data confidence",
       headline: "Strong profile signal",
-      body: "The app has enough listening and metadata signal to make a coherent profile, while still keeping uncertainty visible where the source data is thin.",
-      evidenceLine: "Based on how much listening history and music metadata is available.",
+      measures: "How much usable listening and metadata exists for a coherent profile.",
+      calculation: "Combines listening volume, coverage, and metadata availability into a confidence-style score.",
+      resultMeaning: "Higher means the app has enough signal to describe your taste more confidently.",
+      limitations: evidence,
     };
   }
   return {
     kind,
     displayName: score.name,
-    tag: score.name,
+    tag: score.label,
     headline: score.interpretation?.status_title ?? score.label,
-    body: score.interpretation?.plain_english ?? score.explanation,
-    evidenceLine: score.interpretation?.evidence?.[0] ?? "Based on the available listening profile evidence.",
+    measures: score.explanation || "A deterministic score calculated from the selected listening period.",
+    calculation: score.formula || "Calculated from the available local listening and metadata inputs.",
+    resultMeaning: score.interpretation?.plain_english ?? score.label,
+    limitations: evidence,
   };
+}
+
+function clampScore(value: number) {
+  return Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+}
+
+function useReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return reducedMotion;
 }

@@ -11,8 +11,19 @@ from typing import Any, Callable
 import unicodedata
 
 from app.analysis.duration import extract_duration_seconds
-from app.analysis.media import artist_cache_lookup, artist_cache_set, ensure_artist_image_cache_schema
-from app.analysis.normalizer import UNKNOWN_ARTIST, extract_artist_ids, extract_artist_names, extract_tracks
+from app.analysis.media import (
+    album_cache_failure,
+    album_cache_lookup,
+    album_cache_set,
+    album_cache_success_entry,
+    album_image_url as resolve_album_image_url,
+    ensure_album_image_cache_schema,
+    artist_cache_lookup,
+    artist_cache_set,
+    ensure_artist_image_cache_schema,
+    normalise_album_name,
+)
+from app.analysis.normalizer import UNKNOWN_ARTIST, extract_album, extract_artist_ids, extract_artist_names, extract_tracks
 from app.analysis.thumbnails import best_thumbnail
 from app.config import Settings
 
@@ -233,6 +244,75 @@ class YTMusicService:
         raw["artist_image_cache_v2"] = artist_cache
         return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
 
+    def enrich_album_image_cache(self, raw: dict[str, Any], album_cache: dict[str, Any], limit: int = 48, preferred_albums: list[dict[str, Any]] | None = None) -> dict[str, int]:
+        if limit <= 0:
+            return {"seeded": 0, "attempted": 0, "added": 0, "failed": 0}
+        album_cache = ensure_album_image_cache_schema(album_cache)
+        seeded = seed_album_cache_from_library(raw, album_cache)
+        album_targets = top_album_targets(raw, preferred_albums=preferred_albums)
+        if not album_targets:
+            raw["album_image_cache_v1"] = album_cache
+            return {"seeded": seeded, "attempted": 0, "added": 0, "failed": 0}
+
+        try:
+            yt = self.client()
+        except Exception:
+            yt = self.public_client()
+        attempted = 0
+        added = 0
+        failed = 0
+        for target in album_targets:
+            album = target["album"]
+            artist = target["artist"]
+            album_id = target.get("album_id")
+            cached = album_cache_lookup(album_cache, album_id=album_id, album=album, artist=artist)
+            if album_cache_has_result(cached):
+                continue
+            if attempted >= limit:
+                break
+            attempted += 1
+            try:
+                payload = None
+                search_match = None
+                matched_browse_id = album_id
+                source = "ytmusicapi.get_album"
+                if matched_browse_id:
+                    try:
+                        payload = yt.get_album(str(matched_browse_id))
+                    except Exception:
+                        payload = None
+                if not album_payload_has_thumbnail(payload):
+                    search_match = first_album_search_result(yt, str(album), str(artist))
+                    matched_browse_id = browse_id_from_payload(search_match) or matched_browse_id
+                    if matched_browse_id:
+                        try:
+                            payload = yt.get_album(str(matched_browse_id))
+                            source = "ytmusicapi.get_album"
+                        except Exception:
+                            payload = search_match if album_payload_has_thumbnail(search_match) else None
+                            source = "ytmusicapi.album_search"
+                    else:
+                        payload = None
+                if not album_payload_has_thumbnail(payload) and album_payload_has_thumbnail(search_match):
+                    payload = search_match
+                    source = "ytmusicapi.album_search"
+                    matched_browse_id = browse_id_from_payload(search_match) or matched_browse_id
+                entry = album_cache_entry(str(album), str(artist), payload, album_id=matched_browse_id, source=source)
+                if entry.get("album_image_url"):
+                    added += 1
+                    logger.info('[album-image] Resolved "%s" by "%s" using browseId %s', album, artist, entry.get("browse_id") or "unknown")
+                else:
+                    failed += 1
+                    logger.info('[album-image] No album thumbnail found for "%s" by "%s"', album, artist)
+                album_cache_set(album_cache, entry, album_id=entry.get("album_id") or matched_browse_id, album=album, artist=artist)
+            except Exception:
+                failure = album_cache_failure(str(album), str(artist), album_id, "upstream_exception")
+                album_cache_set(album_cache, failure, album_id=album_id, album=album, artist=artist)
+                failed += 1
+                logger.info('[album-image] Album lookup failed for "%s" by "%s"', album, artist)
+        raw["album_image_cache_v1"] = album_cache
+        return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
+
     def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 150) -> dict[str, Any]:
         if limit <= 0:
             return {"attempted": 0, "added": 0, "failed": 0}
@@ -379,6 +459,26 @@ def seed_artist_cache_from_library(raw: dict[str, Any], artist_cache: dict[str, 
     return seeded
 
 
+def seed_album_cache_from_library(raw: dict[str, Any], album_cache: dict[str, Any]) -> int:
+    album_cache = ensure_album_image_cache_schema(album_cache)
+    seeded = 0
+    for item in raw.get("library_albums") or []:
+        if not isinstance(item, dict):
+            continue
+        album = item.get("title") or item.get("album") or item.get("name")
+        artist = primary_album_artist(item)
+        browse_id = browse_id_from_payload(item)
+        if not album or not browse_id or not album_payload_has_thumbnail(item):
+            continue
+        cached = album_cache_lookup(album_cache, album_id=browse_id, album=album, artist=artist)
+        if album_cache_has_thumbnail(cached):
+            continue
+        entry = album_cache_entry(str(album), artist, item, album_id=browse_id, source="ytmusicapi.library_albums")
+        album_cache_set(album_cache, entry, album_id=browse_id, album=album, artist=artist)
+        seeded += 1
+    return seeded
+
+
 def top_artist_targets(raw: dict[str, Any], limit: int = 40, preferred_artists: list[str] | None = None) -> list[tuple[str, str | None]]:
     history = extract_tracks(raw.get("takeout_history")) or extract_tracks(raw.get("history"))
     counts: Counter[str] = Counter()
@@ -406,6 +506,47 @@ def top_artist_targets(raw: dict[str, Any], limit: int = 40, preferred_artists: 
     return [(artist, ids.get(artist)) for artist in ordered[:limit]]
 
 
+def top_album_targets(raw: dict[str, Any], limit: int = 50, preferred_albums: list[dict[str, Any]] | None = None) -> list[dict[str, str | None]]:
+    history = extract_tracks(raw.get("takeout_history")) or extract_tracks(raw.get("history"))
+    counts: Counter[tuple[str, str]] = Counter()
+    ids: dict[tuple[str, str], str] = {}
+    originals: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def remember(album: Any, artist: Any, album_id: Any = None, count: int = 1) -> None:
+        album_text = str(album or "").strip()
+        artist_text = str(artist or "").strip()
+        if not album_text or not artist_text or artist_text == UNKNOWN_ARTIST:
+            return
+        key = (normalise_album_name(album_text), normalise_artist_name(artist_text))
+        if not key[0] or not key[1]:
+            return
+        counts[key] += count
+        originals.setdefault(key, (album_text, artist_text))
+        if album_id and key not in ids:
+            ids[key] = str(album_id)
+
+    for item in preferred_albums or []:
+        if isinstance(item, dict):
+            remember(item.get("album") or item.get("title") or item.get("name"), item.get("artist"), item.get("album_id") or item.get("browseId"), count=10_000)
+
+    for item in history:
+        album, album_id = extract_album(item)
+        if not album:
+            continue
+        artists = [name for name in extract_artist_names(item) if name and name != UNKNOWN_ARTIST]
+        remember(album, artists[0] if artists else None, album_id)
+
+    ordered = sorted(counts, key=lambda key: (-counts[key], originals[key][0].lower(), originals[key][1].lower()))
+    return [
+        {
+            "album": originals[key][0],
+            "artist": originals[key][1],
+            "album_id": ids.get(key),
+        }
+        for key in ordered[:limit]
+    ]
+
+
 def artist_cache_has_thumbnail(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
@@ -427,8 +568,33 @@ def artist_cache_has_result(value: Any) -> bool:
     return retry_at > datetime.now(timezone.utc)
 
 
+def album_cache_has_thumbnail(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return bool(resolve_album_image_url(value))
+
+
+def album_cache_has_result(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    if album_cache_has_thumbnail(value):
+        return True
+    retry_after = value.get("retry_after")
+    if not retry_after:
+        return False
+    try:
+        retry_at = datetime.fromisoformat(str(retry_after).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return retry_at > datetime.now(timezone.utc)
+
+
 def artist_payload_has_thumbnail(payload: Any) -> bool:
     return isinstance(payload, dict) and bool(best_thumbnail(payload))
+
+
+def album_payload_has_thumbnail(payload: Any) -> bool:
+    return isinstance(payload, dict) and bool(best_thumbnail(payload.get("thumbnails") or payload.get("thumbnail") or payload.get("images") or payload.get("image")))
 
 
 def first_artist_search_result(yt: Any, artist: str) -> dict[str, Any] | None:
@@ -443,6 +609,26 @@ def first_artist_search_result(yt: Any, artist: str) -> dict[str, Any] | None:
         if any(normalise_artist_name(candidate) == normalised for candidate in candidate_names):
             return item
     return None
+
+
+def first_album_search_result(yt: Any, album: str, artist: str) -> dict[str, Any] | None:
+    query = " ".join(part for part in (album, artist) if part).strip()
+    results = yt.search(query, filter="albums", limit=5)
+    if not isinstance(results, list):
+        return None
+    normalised_album = normalise_album_name(album)
+    normalised_artist = normalise_artist_name(artist)
+    title_matches: list[dict[str, Any]] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        if not any(normalise_album_name(candidate) == normalised_album for candidate in album_candidate_names(item)):
+            continue
+        candidate_artists = [normalise_artist_name(candidate) for candidate in album_candidate_artists(item)]
+        if normalised_artist and normalised_artist in candidate_artists:
+            return item
+        title_matches.append(item)
+    return title_matches[0] if title_matches else None
 
 
 def artist_cache_entry(artist: str, payload: Any, artist_id: Any = None, source: str = "ytmusicapi.artist_lookup") -> dict[str, Any]:
@@ -488,6 +674,20 @@ def artist_cache_entry(artist: str, payload: Any, artist_id: Any = None, source:
     return entry
 
 
+def album_cache_entry(album: str, artist: str, payload: Any, album_id: Any = None, source: str = "ytmusicapi.album_lookup") -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return album_cache_failure(album, artist, album_id, "no_exact_album_match")
+    selected = best_thumbnail(payload.get("thumbnails") or payload.get("thumbnail") or payload.get("images") or payload.get("image"))
+    selected_url = selected.get("url") if selected else None
+    browse_id = browse_id_from_payload(payload) or album_id
+    entry = album_cache_success_entry(album, artist, payload, selected_url, album_id=browse_id, source=source)
+    if selected:
+        entry["thumbnails"] = [selected]
+        entry["thumbnail_width"] = selected.get("width")
+        entry["thumbnail_height"] = selected.get("height")
+    return entry
+
+
 def normalise_artist_name(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(char for char in text if not unicodedata.combining(char))
@@ -520,6 +720,53 @@ def artist_candidate_names(payload: dict[str, Any]) -> list[str]:
             seen.add(normalised)
             result.append(name)
     return result
+
+
+def album_candidate_names(payload: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for key in ("title", "album", "name"):
+        if payload.get(key):
+            names.append(str(payload[key]).strip())
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in names:
+        normalised = normalise_album_name(name)
+        if normalised and normalised not in seen:
+            seen.add(normalised)
+            result.append(name)
+    return result
+
+
+def album_candidate_artists(payload: dict[str, Any]) -> list[str]:
+    artists: list[str] = []
+    raw_artists = payload.get("artists") or payload.get("artist")
+    if isinstance(raw_artists, list):
+        for item in raw_artists:
+            if isinstance(item, dict):
+                name = item.get("name") or item.get("artist")
+            else:
+                name = item
+            if name:
+                artists.append(str(name).strip())
+    elif isinstance(raw_artists, dict):
+        name = raw_artists.get("name") or raw_artists.get("artist")
+        if name:
+            artists.append(str(name).strip())
+    elif isinstance(raw_artists, str):
+        artists.append(raw_artists.strip())
+    result: list[str] = []
+    seen: set[str] = set()
+    for artist in artists:
+        normalised = normalise_artist_name(artist)
+        if normalised and normalised not in seen:
+            seen.add(normalised)
+            result.append(artist)
+    return result
+
+
+def primary_album_artist(payload: dict[str, Any]) -> str:
+    artists = album_candidate_artists(payload)
+    return artists[0] if artists else UNKNOWN_ARTIST
 
 
 def browse_id_from_payload(payload: Any) -> str | None:

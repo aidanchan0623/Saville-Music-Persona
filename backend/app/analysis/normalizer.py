@@ -9,11 +9,13 @@ from typing import Any
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.media import (
+    album_cache_lookup,
     album_thumbnail_candidates,
     album_image_source,
     album_image_url,
     artist_image_source,
     artist_image_url,
+    ensure_album_image_cache_schema,
     ensure_artist_image_cache_schema,
     track_image_source,
     track_image_url,
@@ -218,7 +220,13 @@ def infer_keywords(item: dict[str, Any], extra_text: str = "") -> tuple[list[str
     return genres, moods
 
 
-def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: str | None = None, playlist_title: str = "") -> dict[str, Any]:
+def normalise_track_item(
+    item: dict[str, Any],
+    source_type: str,
+    playlist_id: str | None = None,
+    playlist_title: str = "",
+    album_image_cache: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     title = str(item.get("title") or item.get("name") or "Unavailable track").strip()
     artists = extract_artist_names(item)
     primary_artist = artists[0]
@@ -250,6 +258,12 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
     album_thumbnail_items = album_thumbnail_candidates(item) or []
     resolved_track_image = track_image_url(item)
     resolved_album_art = album_image_url(item) or (resolved_track_image if source == "spotify" else None)
+    resolved_album_source = album_image_source(item) or ("spotify_album_image" if source == "spotify" and resolved_album_art else None)
+    if not resolved_album_art and album_image_cache and (album_id or album):
+        cached_album = album_cache_lookup(album_image_cache, album_id=album_id, album=album, artist=primary_artist)
+        if cached_album:
+            resolved_album_art = album_image_url(cached_album)
+            resolved_album_source = album_image_source(cached_album)
     return {
         "track_id": track_id,
         "video_id": str(video_id) if video_id else None,
@@ -269,7 +283,7 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
         "track_image_url": resolved_track_image,
         "track_image_source": track_image_source(item),
         "album_art_url": resolved_album_art,
-        "album_art_source": album_image_source(item) or ("spotify_album_image" if source == "spotify" and resolved_album_art else None),
+        "album_art_source": resolved_album_source,
         "source_types": source_types,
         "playlist_ids": [playlist_id] if playlist_id else [],
         "playlist_titles": [playlist_title] if playlist_title else [],
@@ -454,9 +468,10 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     cutoff = latest - timedelta(days=365) if latest else None
     use_dated_window = latest is not None
     undated_history_count = sum(1 for item in parsed_history_dates if item is None)
+    album_image_cache = ensure_album_image_cache_schema(raw.get("album_image_cache_v1") or {})
 
     def upsert(item: dict[str, Any], source_type: str, playlist_id: str | None = None, playlist_title: str = "") -> dict[str, Any]:
-        normalised = normalise_track_item(item, source_type, playlist_id, playlist_title)
+        normalised = normalise_track_item(item, source_type, playlist_id, playlist_title, album_image_cache)
         if normalised["track_id"] in tracks:
             return merge_track(tracks[normalised["track_id"]], normalised)
         tracks[normalised["track_id"]] = normalised

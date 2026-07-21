@@ -36,10 +36,6 @@ const FALLOFF_CURVES: Record<Falloff, (p: number) => number> = {
 
 const DEFAULT_ITEMS = ["Overview", "Top 10", "Scores", "Patterns", "Persona Report", "Recommendations", "Settings"];
 
-function prefersReducedMotion() {
-  return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 export default function LineSidebar({
   items = DEFAULT_ITEMS,
   accentColor = "#ef2b2d",
@@ -143,7 +139,17 @@ export default function LineSidebar({
   );
 
   useEffect(() => {
-    reducedMotionRef.current = prefersReducedMotion();
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      reducedMotionRef.current = false;
+      return;
+    }
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => {
+      reducedMotionRef.current = media.matches;
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {

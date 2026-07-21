@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { PageTitlePanel } from "../components/PageTitlePanel";
-import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
+import { getScoreKind, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
 import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
-import { asPercent } from "../utils/format";
 
 type ScorePeriod = "this_month" | "month" | "rolling_year";
 
@@ -13,6 +12,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
   const [scores, setScores] = useState<ScoreMetric[]>(initialScores);
   const [minutes, setMinutes] = useState<ListeningMinutes | null>(null);
   const [loading, setLoading] = useState(false);
+  const [openScoreKey, setOpenScoreKey] = useState<string | null>(null);
 
   useEffect(() => setScores(initialScores), [initialScores]);
 
@@ -53,8 +53,9 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
       </div>
     );
   }
-  const groups = buildScoreGroups(scores);
-  const glanceScores = getAtAGlanceScores(scores);
+  const primaryScore = pickPrimaryScore(scores);
+  const secondaryScores = scores.filter((score) => score.key !== primaryScore.key);
+  const groups = buildScoreGroups(secondaryScores);
   const months = minutes?.period.available_months ?? [];
   const periodLabel = displayPeriodLabel(minutes?.period.label, period);
   const playCount = minutes?.duration_quality.total_detected_plays ?? 0;
@@ -68,16 +69,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         titleAnimationKey={titleAnimationKey}
         titleClassName="text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl"
         subtitle={
-          <>
-            <p className="max-w-3xl text-2xl font-semibold leading-snug text-red-100">
-              {periodLabel} read on how you listen - not just what you play.
-            </p>
-            <p className="mt-4 max-w-3xl text-base leading-8 text-mist md:text-lg">
-            {source === "spotify"
-              ? "Spotify scores translate top-item, saved-library, playlist, and recent-sync signals into the same music-profile framework."
-              : "These scores translate the selected period into a music profile: replay, discovery, artist pull, and the shape of your sound world."}
-            </p>
-          </>
+          <p className="max-w-3xl text-xl font-semibold leading-snug text-red-100">{periodLabel} read on replay, discovery, artist pull, and taste shape.</p>
         }
         subtitleClassName="mt-5"
         actions={
@@ -98,32 +90,29 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/10 pt-4">
           <span className="font-semibold text-white">Analysing {periodLabel}</span>
           {loading ? <span>Updating...</span> : null}
-          {minutes ? <span>{playCount.toLocaleString()} detected plays</span> : null}
           {source === "spotify" ? <span>Spotify top-item based</span> : null}
           {limitedSample ? <span className="text-amber-100">Limited sample for this month</span> : null}
         </div>
       </section>
 
-      <section className="flex flex-col gap-4 border-t border-white/10 pt-5 lg:flex-row lg:items-center">
-        <div className="lg:w-44">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">At a glance</p>
-        </div>
-        <div className="flex flex-1 flex-wrap gap-3">
-          {glanceScores.map((score) => {
-            const presentation = getScorePresentation(score);
-            return (
-              <div key={score.key} className="text-sm">
-                <span className="text-sm font-semibold text-white">{presentation.tag}</span>
-                <span className="ml-2 text-sm text-red-100">{asPercent(score.value)}</span>
-              </div>
-            );
-          })}
-        </div>
+      <section>
+        <ScoreGauge
+          score={primaryScore}
+          featured
+          open={openScoreKey === primaryScore.key}
+          onToggle={() => setOpenScoreKey((current) => (current === primaryScore.key ? null : primaryScore.key))}
+        />
       </section>
 
       <div className="space-y-14">
         {groups.map((group) => (
-          <ScoreSection key={group.title} title={group.title} description={group.description} scores={group.scores} />
+          <ScoreSection
+            key={group.title}
+            title={group.title}
+            scores={group.scores}
+            openScoreKey={openScoreKey}
+            onToggleScore={(key) => setOpenScoreKey((current) => (current === key ? null : key))}
+          />
         ))}
       </div>
     </div>
@@ -132,7 +121,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
 
 function PeriodButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (
-    <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-violet text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
+    <button className={`rounded-md px-3 py-2 text-sm font-semibold transition ${active ? "bg-redPrimary text-white" : "text-mist hover:bg-white/10 hover:text-white"}`} onClick={onClick}>
       {label}
     </button>
   );
@@ -143,21 +132,46 @@ function displayPeriodLabel(label: string | undefined, period: ScorePeriod) {
   return label ?? "Selected Period";
 }
 
-function ScoreSection({ title, description, scores }: { title: string; description: string; scores: ScoreMetric[] }) {
+function ScoreSection({
+  title,
+  scores,
+  openScoreKey,
+  onToggleScore,
+}: {
+  title: string;
+  scores: ScoreMetric[];
+  openScoreKey: string | null;
+  onToggleScore: (key: string) => void;
+}) {
   if (!scores.length) return null;
   return (
     <section>
-      <div className="mb-6 max-w-3xl">
+      <div className="mb-5 max-w-3xl">
         <h2 className="text-3xl font-black text-white">{title}</h2>
-        <p className="mt-2 text-base leading-7 text-mist">{description}</p>
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
         {scores.map((score) => {
           const kind = getScoreKind(score);
-          return <ScoreGauge key={score.key} score={score} featured={kind === "repeat" || kind === "broadCluster"} />;
+          return (
+            <ScoreGauge
+              key={score.key}
+              score={score}
+              featured={kind === "repeat" || kind === "broadCluster"}
+              open={openScoreKey === score.key}
+              onToggle={() => onToggleScore(score.key)}
+            />
+          );
         })}
       </div>
     </section>
+  );
+}
+
+function pickPrimaryScore(scores: ScoreMetric[]) {
+  return (
+    scores.find((score) => getScoreKind(score) === "tasteConfidence") ??
+    scores.find((score) => getScoreKind(score) === "repeat") ??
+    scores[0]
   );
 }
 
@@ -183,39 +197,15 @@ function buildScoreGroups(scores: ScoreMetric[]) {
   return [
     {
       title: "Listening Habits",
-      description: "How you move through music: replay, discovery, and artist attachment.",
       scores: listeningHabits,
     },
     {
       title: "Taste Shape",
-      description: "How broad, focused, current-facing, or internally varied your musical world is.",
       scores: tasteShape,
     },
     {
       title: "Positioning",
-      description: "How your listening sits relative to mainstream popularity and available metadata.",
       scores: [...positioning, ...remaining],
     },
   ].filter((group) => group.scores.length);
-}
-
-function getAtAGlanceScores(scores: ScoreMetric[]) {
-  const priority: ScoreKind[] = ["repeat", "discovery", "artistLoyalty", "broadCluster", "mainstreamNiche"];
-  const picked: ScoreMetric[] = [];
-  const seen = new Set<string>();
-  for (const kind of priority) {
-    const score = scores.find((item) => getScoreKind(item) === kind && !seen.has(item.key));
-    if (score) {
-      picked.push(score);
-      seen.add(score.key);
-    }
-  }
-  for (const score of scores) {
-    if (picked.length >= 5) break;
-    if (!seen.has(score.key)) {
-      picked.push(score);
-      seen.add(score.key);
-    }
-  }
-  return picked.slice(0, 5);
 }

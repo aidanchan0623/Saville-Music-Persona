@@ -4,7 +4,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.analysis.thumbnails import best_thumbnail_url
-from app.analysis.media import artist_id_key, artist_name_key
+from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import dedupe_candidates
 from app.services.ytmusic_service import YTMusicService, friendly_auth_error, normalise_artist_name
@@ -87,6 +87,52 @@ def test_artist_image_enrichment_uses_existing_artist_id() -> None:
     assert fake.search_calls == []
     assert cache_record(cache, "Artist A", "UC-a")["url"] == "https://img.example/a-600.jpg"
     assert cache_record(cache, "Artist A", "UC-a")["mediaType"] == "artist"
+
+
+def test_album_image_enrichment_uses_existing_album_id() -> None:
+    fake = FakeYTMusic(
+        album_pages={
+            "MPRE-a": {
+                "title": "The Black Parade",
+                "browseId": "MPRE-a",
+                "thumbnails": [
+                    {"url": "https://img.example/black-parade-120.jpg", "width": 120, "height": 120},
+                    {"url": "https://img.example/black-parade-544.jpg", "width": 544, "height": 544},
+                ],
+            }
+        }
+    )
+    cache: dict[str, object] = {}
+    stats = fake_service(fake).enrich_album_image_cache({"history": [_history_album("The Black Parade", "My Chemical Romance", "MPRE-a")]}, cache)
+    assert stats["added"] == 1
+    assert fake.get_album_calls == ["MPRE-a"]
+    assert fake.search_calls == []
+    record = album_cache_record(cache, "The Black Parade", "My Chemical Romance", "MPRE-a")
+    assert record["album_image_url"] == "https://img.example/black-parade-544.jpg"
+    assert record["mediaType"] == "album"
+
+
+def test_album_image_enrichment_searches_takeout_album_names() -> None:
+    fake = FakeYTMusic(
+        search_results={
+            "Sempiternal Bring Me The Horizon": [
+                {"title": "Sempiternal", "browseId": "MPRE-bmth", "artists": [{"name": "Bring Me The Horizon"}]},
+            ]
+        },
+        album_pages={
+            "MPRE-bmth": {
+                "title": "Sempiternal",
+                "browseId": "MPRE-bmth",
+                "thumbnails": [{"url": "https://img.example/sempiternal.jpg", "width": 512, "height": 512}],
+            }
+        },
+    )
+    cache: dict[str, object] = {}
+    stats = fake_service(fake).enrich_album_image_cache({"takeout_history": [_history_album("Sempiternal", "Bring Me The Horizon")]}, cache)
+    assert stats["added"] == 1
+    assert fake.search_calls == [("Sempiternal Bring Me The Horizon", "albums", 5)]
+    assert fake.get_album_calls == ["MPRE-bmth"]
+    assert album_cache_record(cache, "Sempiternal", "Bring Me The Horizon")["album_image_url"] == "https://img.example/sempiternal.jpg"
 
 
 def test_artist_image_enrichment_prioritises_preferred_artists() -> None:
@@ -217,13 +263,16 @@ class FakeYTMusic:
         self,
         search_results: dict[str, list[dict[str, object]]] | None = None,
         artist_pages: dict[str, dict[str, object]] | None = None,
+        album_pages: dict[str, dict[str, object]] | None = None,
         raise_search: bool = False,
     ) -> None:
         self.search_results = search_results or {}
         self.artist_pages = artist_pages or {}
+        self.album_pages = album_pages or {}
         self.raise_search = raise_search
         self.search_calls: list[tuple[str, str | None, int | None]] = []
         self.get_artist_calls: list[str] = []
+        self.get_album_calls: list[str] = []
 
     def search(self, query: str, filter: str | None = None, limit: int | None = None) -> list[dict[str, object]]:
         self.search_calls.append((query, filter, limit))
@@ -236,6 +285,13 @@ class FakeYTMusic:
         payload = self.artist_pages.get(browse_id)
         if payload is None:
             raise RuntimeError("artist page failed")
+        return payload
+
+    def get_album(self, browse_id: str) -> dict[str, object]:
+        self.get_album_calls.append(browse_id)
+        payload = self.album_pages.get(browse_id)
+        if payload is None:
+            raise RuntimeError("album page failed")
         return payload
 
 
@@ -252,6 +308,18 @@ def _history_artist(name: str, artist_id: str | None = None) -> dict[str, object
     return {"videoId": f"v-{normalise_artist_name(name)}", "title": "Song", "artists": [artist]}
 
 
+def _history_album(album: str, artist: str, album_id: str | None = None) -> dict[str, object]:
+    item: dict[str, object] = {
+        "videoId": f"v-{normalise_artist_name(artist)}-{normalise_artist_name(album)}",
+        "title": "Song",
+        "artists": [{"name": artist}],
+        "album": {"name": album},
+    }
+    if album_id:
+        item["album"] = {"name": album, "id": album_id}
+    return item
+
+
 def cache_record(cache: dict[str, object], artist: str, artist_id: str | None = None) -> dict[str, object]:
     items = cache["items"]  # type: ignore[index]
     assert isinstance(items, dict)
@@ -261,3 +329,22 @@ def cache_record(cache: dict[str, object], artist: str, artist_id: str | None = 
             assert isinstance(value, dict)
             return value
     raise AssertionError(f"Missing cache record for {artist}")
+
+
+def album_cache_record(cache: dict[str, object], album: str, artist: str, album_id: str | None = None) -> dict[str, object]:
+    items = cache["items"]  # type: ignore[index]
+    assert isinstance(items, dict)
+    direct_key = album_id_key(album_id)
+    if direct_key and direct_key in items:
+        value = items[direct_key]
+        assert isinstance(value, dict)
+        return value
+    index = cache.get("index")  # type: ignore[attr-defined]
+    assert isinstance(index, dict)
+    alias_key = album_name_artist_key(album, artist)
+    mapped = index.get(alias_key) if alias_key else None
+    if mapped and mapped in items:
+        value = items[mapped]
+        assert isinstance(value, dict)
+        return value
+    raise AssertionError(f"Missing album cache record for {album} by {artist}")

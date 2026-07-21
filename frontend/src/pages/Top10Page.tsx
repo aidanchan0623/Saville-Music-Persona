@@ -532,7 +532,6 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl font-black text-red-200">{rank}</span>
-            <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{album.label}</span>
           </div>
           <h3 className="mt-2 text-xl font-black leading-tight text-white md:text-2xl">{album.album}</h3>
           <p className="mt-2 text-base font-semibold leading-6 text-mist">{album.artist}</p>
@@ -540,8 +539,6 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
             <span className="text-lg font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
             <span className="text-xs text-mist/75">{album.unique_songs} songs</span>
           </div>
-          <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
-          {album.most_played_song ? <p className="mt-2 text-xs text-mist/75">Most played: {album.most_played_song}</p> : null}
         </div>
         <div className="flex items-start justify-end">
           <button
@@ -550,7 +547,7 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
             type="button"
             onClick={() => onViewSongs(album)}
           >
-            View songs
+            View Songs
           </button>
         </div>
       </div>

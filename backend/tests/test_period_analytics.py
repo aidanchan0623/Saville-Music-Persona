@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.analysis.duration import annotate_normalised_durations, duration_quality
+from app.analysis.media import album_id_key, album_name_artist_key
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
     album_songs_payload,
@@ -268,6 +269,21 @@ def test_album_cover_uses_album_metadata_not_artist_or_video_art() -> None:
     assert albums[0]["thumbnail"] != "https://yt.example/mcr-artist.jpg"
 
 
+def test_album_cover_uses_typed_album_cache() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [_history_item("bmth-song", "Can You Feel My Heart", "Bring Me The Horizon", "2026-07-01", 180, "Sempiternal")],
+            "album_image_cache_v1": album_cache_v1("Sempiternal", "Bring Me The Horizon", "alb-sempiternal", "https://yt.example/sempiternal-cover.jpg"),
+            "artist_image_cache_v2": artist_cache_v2("Bring Me The Horizon", "UC-bmth", "https://yt.example/bmth-artist.jpg"),
+        },
+        today=date(2026, 7, 7),
+    )
+    albums = albums_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))["albums"]
+    assert albums[0]["album_image_url"] == "https://yt.example/sempiternal-cover.jpg"
+    assert albums[0]["album_image_source"] == "youtube_album_cover"
+    assert albums[0]["thumbnail"] != "https://yt.example/bmth-artist.jpg"
+
+
 def test_tracks_never_inherit_artist_profile_art() -> None:
     normalised = normalise_collection(
         {
@@ -327,3 +343,25 @@ def artist_cache_v2(artist: str, artist_id: str, url: str) -> dict[str, object]:
         "resolvedAt": "2026-07-07T00:00:00+00:00",
     }
     return {"schemaVersion": 2, "items": {f"artist:{artist_id}": entry, f"artist-name:{normalised}": entry}}
+
+
+def album_cache_v1(album: str, artist: str, album_id: str, url: str) -> dict[str, object]:
+    entry = {
+        "schemaVersion": 1,
+        "mediaType": "album",
+        "entityId": album_id,
+        "entityName": album,
+        "album": album,
+        "artist": artist,
+        "album_id": album_id,
+        "browse_id": album_id,
+        "album_image_url": url,
+        "album_art_url": url,
+        "thumbnail_url": url,
+        "album_image_source": "youtube_album_cover",
+        "thumbnails": [{"url": url, "width": 512, "height": 512}],
+        "resolvedAt": "2026-07-07T00:00:00+00:00",
+    }
+    alias = album_name_artist_key(album, artist)
+    typed = album_id_key(album_id)
+    return {"schemaVersion": 1, "items": {typed: entry}, "index": {alias: typed}}

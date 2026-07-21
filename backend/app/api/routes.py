@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
-from app.analysis.media import ensure_artist_image_cache_schema
+from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
 from app.analysis.music_character import character_payload
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
@@ -165,14 +165,21 @@ def normalise_with_duration_cache(
     warnings: list[str] | None = None,
     allow_enrichment: bool = False,
     allow_artist_image_enrichment: bool = False,
+    allow_album_image_enrichment: bool = False,
     preferred_artist_images: list[str] | None = None,
 ) -> dict[str, Any]:
     artist_cache = ensure_artist_image_cache_schema(repo.load_json("artist_image_cache_v2") or {})
+    album_cache = ensure_album_image_cache_schema(repo.load_json("album_image_cache_v1") or {})
     raw.pop("artist_image_cache", None)
+    raw.pop("album_image_cache", None)
     raw["artist_image_cache_v2"] = artist_cache
+    raw["album_image_cache_v1"] = album_cache
     repo.delete_json("artist_image_cache")
+    repo.delete_json("album_image_cache")
     if artist_cache:
         raw["artist_image_cache_v2"] = artist_cache
+    if album_cache:
+        raw["album_image_cache_v1"] = album_cache
     if allow_artist_image_enrichment:
         try:
             stats = ytmusic.enrich_artist_image_cache(raw, artist_cache, preferred_artists=preferred_artist_images)
@@ -185,6 +192,18 @@ def normalise_with_duration_cache(
         except Exception as exc:  # noqa: BLE001
             if warnings is not None:
                 warnings.append(f"Artist image enrichment skipped: {exc}")
+    if allow_album_image_enrichment:
+        try:
+            stats = ytmusic.enrich_album_image_cache(raw, album_cache)
+            if stats.get("seeded") or stats.get("attempted"):
+                repo.save_json("album_image_cache_v1", album_cache)
+                if warnings is not None:
+                    warnings.append(
+                        f"Album image cache checked {stats['attempted']} album(s), added {stats['added']} official cover(s), and reused {stats['seeded']} library album cover(s)."
+                    )
+        except Exception as exc:  # noqa: BLE001
+            if warnings is not None:
+                warnings.append(f"Album image enrichment skipped: {exc}")
     normalised = normalise_collection(raw)
     duration_cache = repo.load_json("duration_cache") or {}
     if duration_cache:
@@ -402,6 +421,7 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         warnings,
         allow_enrichment=(not request.use_demo and request.enrich_durations),
         allow_artist_image_enrichment=live_connected,
+        allow_album_image_enrichment=not request.use_demo,
     )
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
@@ -440,6 +460,7 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
         warnings := ["Google Takeout history imported and merged with local metadata."],
         allow_enrichment=False,
         allow_artist_image_enrichment=ytmusic_connected,
+        allow_album_image_enrichment=True,
     )
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at

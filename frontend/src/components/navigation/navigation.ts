@@ -18,5 +18,3 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   { id: "recommendations", label: "Recommendations", icon: Library },
   { id: "settings", label: "Settings", icon: Settings },
 ];
-
-export const USE_REACT_BITS_DESKTOP_SIDEBAR = true;
