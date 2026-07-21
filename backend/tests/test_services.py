@@ -87,6 +87,39 @@ def test_artist_image_enrichment_uses_existing_artist_id() -> None:
     assert cache["Artist A"]["thumbnail_url"] == "https://img.example/a-600.jpg"
 
 
+def test_artist_image_enrichment_prioritises_preferred_artists() -> None:
+    fake = FakeYTMusic(
+        search_results={
+            "Current Artist": [{"artist": "Current Artist", "browseId": "UC-current"}],
+            "History Artist": [{"artist": "History Artist", "browseId": "UC-history"}],
+        },
+        artist_pages={
+            "UC-current": {"artist": "Current Artist", "browseId": "UC-current", "thumbnails": [{"url": "https://img.example/current.jpg", "width": 500, "height": 500}]},
+            "UC-history": {"artist": "History Artist", "browseId": "UC-history", "thumbnails": [{"url": "https://img.example/history.jpg", "width": 500, "height": 500}]},
+        },
+    )
+    cache: dict[str, object] = {}
+    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("History Artist")]}, cache, preferred_artists=["Current Artist"])
+    assert stats["added"] == 2
+    assert fake.search_calls[0][0] == "Current Artist"
+    assert cache["Current Artist"]["thumbnail_url"] == "https://img.example/current.jpg"
+
+
+def test_artist_image_enrichment_falls_back_to_public_client() -> None:
+    fake = FakeYTMusic(
+        search_results={"Artist A": [{"artist": "Artist A", "browseId": "UC-a"}]},
+        artist_pages={"UC-a": {"artist": "Artist A", "browseId": "UC-a", "thumbnails": [{"url": "https://img.example/a.jpg", "width": 500, "height": 500}]}},
+    )
+    service = YTMusicService(Settings())
+    service.client = lambda prefer_browser=True: (_ for _ in ()).throw(RuntimeError("auth unavailable"))  # type: ignore[method-assign]
+    service.public_client = lambda: fake  # type: ignore[method-assign]
+    cache: dict[str, object] = {}
+    stats = service.enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
+    assert stats["added"] == 1
+    assert fake.search_calls == [("Artist A", "artists", 5)]
+    assert cache["Artist A"]["thumbnail_url"] == "https://img.example/a.jpg"
+
+
 def test_artist_image_enrichment_does_not_choose_non_exact_search_result() -> None:
     fake = FakeYTMusic(search_results={"Artist A": [{"artist": "Artist Adjacent", "browseId": "UC-other", "thumbnails": [{"url": "https://img.example/other.jpg"}]}]})
     cache: dict[str, object] = {}

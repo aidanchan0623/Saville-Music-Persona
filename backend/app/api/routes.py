@@ -105,16 +105,15 @@ def require_source_cache(key: str, source: str | None = "youtube") -> Any:
 
 def ensure_youtube_artist_images() -> None:
     analysis = repo.load_json("analysis")
-    if not top_artist_images_missing(analysis):
+    normalised_cache = repo.load_json("normalised")
+    missing_artists = missing_artist_image_names(analysis, normalised_cache)
+    if not missing_artists:
         return
     raw = repo.load_json("raw")
     if not isinstance(raw, dict):
         return
-    status = ytmusic.auth_status()
-    if not status.get("connected"):
-        return
     warnings: list[str] = []
-    normalised = normalise_with_duration_cache(raw, warnings, allow_artist_image_enrichment=True)
+    normalised = normalise_with_duration_cache(raw, warnings, allow_artist_image_enrichment=True, preferred_artist_images=missing_artists)
     refreshed_at = (repo.load_json("last_refresh_meta") or {}).get("refreshed_at") or datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
@@ -135,18 +134,44 @@ def top_artist_images_missing(analysis: Any) -> bool:
     return any(isinstance(artist, dict) and not artist.get("image") for artist in top_artists[:5])
 
 
+def missing_artist_image_names(analysis: Any, normalised: Any) -> list[str]:
+    names: list[str] = []
+    if isinstance(analysis, dict):
+        for key, limit in (("top_3_artists", 3), ("top_artists", 8)):
+            for artist in (analysis.get(key) or [])[:limit]:
+                if isinstance(artist, dict) and artist.get("artist") and not artist.get("image"):
+                    names.append(str(artist["artist"]))
+    if isinstance(normalised, dict):
+        try:
+            current = top_payload(normalised, "artists", "this_month", timezone_name=settings.local_timezone)
+            for artist in (current.get("items") or [])[:10]:
+                if isinstance(artist, dict) and artist.get("artist") and not artist.get("thumbnail"):
+                    names.append(str(artist["artist"]))
+        except Exception:  # noqa: BLE001
+            pass
+    seen: set[str] = set()
+    result: list[str] = []
+    for name in names:
+        key = " ".join(name.lower().split())
+        if key and key not in seen:
+            seen.add(key)
+            result.append(name)
+    return result
+
+
 def normalise_with_duration_cache(
     raw: dict[str, Any],
     warnings: list[str] | None = None,
     allow_enrichment: bool = False,
     allow_artist_image_enrichment: bool = False,
+    preferred_artist_images: list[str] | None = None,
 ) -> dict[str, Any]:
     artist_cache = repo.load_json("artist_image_cache") or {}
     if artist_cache:
         raw["artist_image_cache"] = {**artist_cache, **(raw.get("artist_image_cache") or {})}
     if allow_artist_image_enrichment:
         try:
-            stats = ytmusic.enrich_artist_image_cache(raw, artist_cache)
+            stats = ytmusic.enrich_artist_image_cache(raw, artist_cache, preferred_artists=preferred_artist_images)
             if stats.get("seeded") or stats.get("attempted"):
                 repo.save_json("artist_image_cache", artist_cache)
                 if warnings is not None:

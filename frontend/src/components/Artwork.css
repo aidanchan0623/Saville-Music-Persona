@@ -45,6 +45,11 @@
   max-width: none;
   object-fit: cover;
   object-position: center;
+  transition: opacity 180ms ease;
+}
+
+.artwork-frame img[data-loaded="false"] {
+  opacity: 0;
 }
 
 .artwork-frame__fallback {
@@ -54,6 +59,16 @@
   place-items: center;
   background: linear-gradient(135deg, rgb(127 29 29 / 70%), rgb(17 17 20 / 92%));
   text-align: center;
+}
+
+.artwork-frame__skeleton {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(110deg, transparent 0%, rgb(255 255 255 / 8%) 42%, transparent 72%),
+    linear-gradient(135deg, rgb(127 29 29 / 44%), rgb(17 17 20 / 94%));
+  background-size: 220% 100%, 100% 100%;
+  animation: artwork-skeleton-sheen 1.25s ease-in-out infinite;
 }
 
 .artwork-frame__fallback span {
@@ -70,4 +85,24 @@
 
 .track-card-artwork {
   width: 4.5rem;
+}
+
+@keyframes artwork-skeleton-sheen {
+  from {
+    background-position: 160% 0, 0 0;
+  }
+
+  to {
+    background-position: -60% 0, 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artwork-frame img {
+    transition: none;
+  }
+
+  .artwork-frame__skeleton {
+    animation: none;
+  }
 }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 from collections import Counter
@@ -13,6 +14,9 @@ from app.analysis.duration import extract_duration_seconds
 from app.analysis.normalizer import UNKNOWN_ARTIST, extract_artist_ids, extract_artist_names, extract_tracks
 from app.analysis.thumbnails import best_thumbnail
 from app.config import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class YTMusicService:
@@ -121,6 +125,13 @@ class YTMusicService:
         )
         return YTMusic(str(self.settings.ytmusic_auth_file), oauth_credentials=credentials)
 
+    def public_client(self) -> Any:
+        try:
+            from ytmusicapi import YTMusic
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError("ytmusicapi is not installed. Run scripts/setup_windows.ps1 first.") from exc
+        return YTMusic()
+
     def fetch_library(self) -> dict[str, Any]:
         yt = self.client()
         warnings: list[str] = []
@@ -162,16 +173,19 @@ class YTMusicService:
         path = raw_dir / "latest_raw_collection.json"
         path.write_text(json.dumps(raw, ensure_ascii=True, indent=2, default=str), encoding="utf-8")
 
-    def enrich_artist_image_cache(self, raw: dict[str, Any], artist_cache: dict[str, Any], limit: int = 25) -> dict[str, int]:
+    def enrich_artist_image_cache(self, raw: dict[str, Any], artist_cache: dict[str, Any], limit: int = 25, preferred_artists: list[str] | None = None) -> dict[str, int]:
         if limit <= 0:
             return {"seeded": 0, "attempted": 0, "added": 0, "failed": 0}
         seeded = seed_artist_cache_from_library(raw, artist_cache)
-        artist_targets = top_artist_targets(raw)
+        artist_targets = top_artist_targets(raw, preferred_artists=preferred_artists)
         if not artist_targets:
             raw["artist_image_cache"] = artist_cache
             return {"seeded": seeded, "attempted": 0, "added": 0, "failed": 0}
 
-        yt = self.client()
+        try:
+            yt = self.client()
+        except Exception:
+            yt = self.public_client()
         attempted = 0
         added = 0
         failed = 0
@@ -205,12 +219,15 @@ class YTMusicService:
                 entry = artist_cache_entry(artist, payload, artist_id=matched_browse_id)
                 if entry.get("thumbnails"):
                     added += 1
+                    logger.info('[artist-image] Resolved "%s" using browseId %s', artist, entry.get("browse_id") or "unknown")
                 else:
                     failed += 1
+                    logger.info('[artist-image] No official thumbnail found for "%s"', artist)
                 artist_cache[artist] = entry
             except Exception:
                 artist_cache[artist] = artist_cache_failure_entry(artist, artist_id, "upstream_exception")
                 failed += 1
+                logger.info('[artist-image] No official thumbnail found for "%s"', artist)
         raw["artist_image_cache"] = artist_cache
         return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
 
@@ -357,7 +374,7 @@ def seed_artist_cache_from_library(raw: dict[str, Any], artist_cache: dict[str, 
     return seeded
 
 
-def top_artist_targets(raw: dict[str, Any], limit: int = 40) -> list[tuple[str, str | None]]:
+def top_artist_targets(raw: dict[str, Any], limit: int = 40, preferred_artists: list[str] | None = None) -> list[tuple[str, str | None]]:
     history = extract_tracks(raw.get("takeout_history")) or extract_tracks(raw.get("history"))
     counts: Counter[str] = Counter()
     ids: dict[str, str] = {}
@@ -368,7 +385,20 @@ def top_artist_targets(raw: dict[str, Any], limit: int = 40) -> list[tuple[str, 
             counts[name] += 1
             if name in artist_ids and name not in ids:
                 ids[name] = artist_ids[name]
-    return [(artist, ids.get(artist)) for artist, _ in counts.most_common(limit)]
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for artist in preferred_artists or []:
+        name = str(artist or "").strip()
+        key = normalise_artist_name(name)
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(name)
+    for artist, _ in counts.most_common(limit):
+        key = normalise_artist_name(artist)
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(artist)
+    return [(artist, ids.get(artist)) for artist in ordered[:limit]]
 
 
 def artist_cache_has_thumbnail(value: Any) -> bool:
