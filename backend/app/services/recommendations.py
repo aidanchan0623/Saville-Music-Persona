@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from typing import Any
 
 from app.analysis.demo_data import demo_raw_collection
+from app.analysis.media import album_image_source, album_image_url, track_image_source, track_image_url
 from app.analysis.normalizer import extract_artist_names, normalise_collection, normalise_track_item, slug
 from app.analysis.scoring import build_analysis
 from app.analysis.taste_model import profile_for_artist
@@ -166,6 +167,8 @@ def generate_recommendations(
         track = normalise_track_item(candidate, "recommendation")
         key = f"{track['title']}::{track['primary_artist']}"
         why = explanations.get(key) or f"{group}: {connection} It avoids tracks already heavily represented in your history."
+        track_art = track_image_url(track)
+        album_art = album_image_url(track)
         output.append(
             {
                 "rank": index + 1,
@@ -173,7 +176,11 @@ def generate_recommendations(
                 "artist": track["primary_artist"],
                 "artists": track["artists"],
                 "album": track.get("album"),
-                "album_art": (track.get("thumbnails") or [{}])[-1].get("url") if track.get("thumbnails") else None,
+                "track_image_url": track_art,
+                "track_image_source": track_image_source(track),
+                "album_art_url": album_art,
+                "album_art_source": album_image_source(track),
+                "album_art": album_art or track_art,
                 "release_year": track.get("release_year"),
                 "video_id": track.get("video_id"),
                 "recommendation_type": group,

@@ -34,7 +34,8 @@ function useReducedMotion() {
 
 export function AnimatedPageTitle({ text, tag = "h1", className = "", animationKey, textAlign = "left" }: AnimatedPageTitleProps) {
   const reducedMotion = useReducedMotion();
-  const [animate] = useState(() => !animatedKeys.has(animationKey));
+  const animationIdentity = `${animationKey}:${text}`;
+  const animate = !animatedKeys.has(animationIdentity);
 
   if (reducedMotion || !animate) {
     const Tag = tag as ElementType;
@@ -43,7 +44,7 @@ export function AnimatedPageTitle({ text, tag = "h1", className = "", animationK
 
   return (
     <SplitText
-      key={animationKey}
+      key={animationIdentity}
       tag={tag}
       text={text}
       className={className}
@@ -64,7 +65,7 @@ export function AnimatedPageTitle({ text, tag = "h1", className = "", animationK
       threshold={0.05}
       rootMargin="0px"
       textAlign={textAlign}
-      onAnimationComplete={() => animatedKeys.add(animationKey)}
+      onAnimationComplete={() => animatedKeys.add(animationIdentity)}
     />
   );
 }

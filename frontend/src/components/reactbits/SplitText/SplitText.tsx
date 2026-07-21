@@ -167,6 +167,7 @@ export default function SplitText({
         ref.current = element;
       }}
       className={classes}
+      aria-label={text}
       style={{ textAlign }}
     >
       {text}

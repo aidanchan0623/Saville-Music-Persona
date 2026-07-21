@@ -8,6 +8,16 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.analysis.duration import annotate_normalised_durations
+from app.analysis.media import (
+    album_thumbnail_candidates,
+    album_image_source,
+    album_image_url,
+    artist_image_source,
+    artist_image_url,
+    ensure_artist_image_cache_schema,
+    track_image_source,
+    track_image_url,
+)
 
 
 UNKNOWN_ARTIST = "Unknown Artist"
@@ -236,6 +246,10 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
     for incoming in incoming_source_types:
         if incoming not in source_types:
             source_types.append(incoming)
+    track_thumbnail_items = item.get("thumbnails") or []
+    album_thumbnail_items = album_thumbnail_candidates(item) or []
+    resolved_track_image = track_image_url(item)
+    resolved_album_art = album_image_url(item) or (resolved_track_image if source == "spotify" else None)
     return {
         "track_id": track_id,
         "video_id": str(video_id) if video_id else None,
@@ -249,7 +263,13 @@ def normalise_track_item(item: dict[str, Any], source_type: str, playlist_id: st
         "album_id": album_id,
         "release_year": year,
         "duration_seconds": duration,
-        "thumbnails": item.get("thumbnails") or [],
+        "thumbnails": track_thumbnail_items,
+        "track_thumbnails": track_thumbnail_items,
+        "album_thumbnails": album_thumbnail_items,
+        "track_image_url": resolved_track_image,
+        "track_image_source": track_image_source(item),
+        "album_art_url": resolved_album_art,
+        "album_art_source": album_image_source(item) or ("spotify_album_image" if source == "spotify" and resolved_album_art else None),
         "source_types": source_types,
         "playlist_ids": [playlist_id] if playlist_id else [],
         "playlist_titles": [playlist_title] if playlist_title else [],
@@ -281,11 +301,30 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
             existing["playlist_titles"].append(playlist_title)
     existing["liked"] = existing["liked"] or incoming["liked"]
     existing["library_saved"] = existing["library_saved"] or incoming["library_saved"]
-    for field in ("album", "album_id", "release_year", "duration_seconds", "video_id", "source_track_id", "popularity", "spotify_time_range", "spotify_rank", "spotify_signal_label"):
+    for field in (
+        "album",
+        "album_id",
+        "release_year",
+        "duration_seconds",
+        "video_id",
+        "source_track_id",
+        "track_image_url",
+        "track_image_source",
+        "album_art_url",
+        "album_art_source",
+        "popularity",
+        "spotify_time_range",
+        "spotify_rank",
+        "spotify_signal_label",
+    ):
         if existing.get(field) in (None, "", []):
             existing[field] = incoming.get(field)
     if not existing.get("thumbnails") and incoming.get("thumbnails"):
         existing["thumbnails"] = incoming["thumbnails"]
+    if not existing.get("track_thumbnails") and incoming.get("track_thumbnails"):
+        existing["track_thumbnails"] = incoming["track_thumbnails"]
+    if not existing.get("album_thumbnails") and incoming.get("album_thumbnails"):
+        existing["album_thumbnails"] = incoming["album_thumbnails"]
     for genre in incoming.get("genre_clusters", []):
         if genre not in existing["genre_clusters"]:
             existing["genre_clusters"].append(genre)
@@ -305,6 +344,8 @@ def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
         artist_id: Any = None,
         subscribers: Any = None,
         thumbnails: Any = None,
+        image_url: Any = None,
+        image_source: Any = None,
         genres: Any = None,
         popularity: Any = None,
         followers: Any = None,
@@ -315,13 +356,36 @@ def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
         key = str(name).strip()
         if not key:
             return
-        existing = metadata.setdefault(key, {"artist_id": None, "subscribers": None, "thumbnails": [], "genres": [], "popularity": None, "followers": None, "source": None})
+        existing = metadata.setdefault(
+            key,
+            {
+                "artist_id": None,
+                "subscribers": None,
+                "thumbnails": [],
+                "artist_thumbnails": [],
+                "artist_image_url": None,
+                "artist_image_source": None,
+                "genres": [],
+                "popularity": None,
+                "followers": None,
+                "source": None,
+            },
+        )
         if not existing.get("artist_id") and artist_id:
             existing["artist_id"] = artist_id
         if not existing.get("subscribers") and subscribers:
             existing["subscribers"] = subscribers
         if not existing.get("thumbnails") and thumbnails:
             existing["thumbnails"] = thumbnails
+        if not existing.get("artist_thumbnails") and thumbnails:
+            existing["artist_thumbnails"] = thumbnails
+        resolved_url = str(image_url or "").strip() or artist_image_url({"artist_image_url": image_url, "thumbnails": thumbnails or []})
+        if not existing.get("artist_image_url") and resolved_url:
+            existing["artist_image_url"] = resolved_url
+        if not existing.get("artist_image_source"):
+            resolved_source = image_source or artist_image_source({"source": source, "artist_image_url": resolved_url, "thumbnails": thumbnails or []})
+            if resolved_source:
+                existing["artist_image_source"] = resolved_source
         if not existing.get("genres") and genres:
             existing["genres"] = genres
         if existing.get("popularity") is None and popularity is not None:
@@ -336,30 +400,42 @@ def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
             continue
         name = artist.get("artist") or artist.get("name")
         store_artist(
-            name,
-            artist.get("browseId") or artist.get("id"),
-            artist.get("subscribers") or artist.get("followers"),
-            artist.get("thumbnails") or [],
-            artist.get("genres") or [],
-            artist.get("popularity"),
-            artist.get("followers"),
-            artist.get("source"),
+            name=name,
+            artist_id=artist.get("browseId") or artist.get("id"),
+            subscribers=artist.get("subscribers") or artist.get("followers"),
+            thumbnails=artist.get("thumbnails") or [],
+            image_url=artist_image_url({"thumbnails": artist.get("thumbnails") or []}),
+            image_source=artist_image_source({"source": artist.get("source"), "thumbnails": artist.get("thumbnails") or []}),
+            genres=artist.get("genres") or [],
+            popularity=artist.get("popularity"),
+            followers=artist.get("followers"),
+            source=artist.get("source"),
         )
 
-    image_cache = raw.get("artist_image_cache")
+    image_cache = raw.get("artist_image_cache_v2")
     if isinstance(image_cache, dict):
-        for name, artist in image_cache.items():
+        cache = ensure_artist_image_cache_schema(image_cache)
+        seen_cache_records: set[str] = set()
+        for key, artist in (cache.get("items") or {}).items():
             if not isinstance(artist, dict):
                 continue
+            if artist.get("mediaType") != "artist":
+                continue
+            unique_key = str(artist.get("entityId") or artist.get("entityName") or key)
+            if unique_key in seen_cache_records:
+                continue
+            seen_cache_records.add(unique_key)
             store_artist(
-                artist.get("artist") or artist.get("name") or name,
-                artist.get("browseId") or artist.get("artist_id") or artist.get("id"),
-                artist.get("subscribers"),
-                artist.get("thumbnails") or [],
-                artist.get("genres") or [],
-                artist.get("popularity"),
-                artist.get("followers"),
-                artist.get("source"),
+                name=artist.get("artist") or artist.get("name") or artist.get("entityName") or key,
+                artist_id=artist.get("browseId") or artist.get("artist_id") or artist.get("entityId") or artist.get("id"),
+                subscribers=artist.get("subscribers"),
+                thumbnails=artist.get("artist_thumbnails") or artist.get("thumbnails") or [],
+                image_url=artist.get("artist_image_url") or artist.get("url") or artist.get("thumbnail_url"),
+                image_source=artist.get("artist_image_source") or artist.get("source"),
+                genres=artist.get("genres") or [],
+                popularity=artist.get("popularity"),
+                followers=artist.get("followers"),
+                source=artist.get("source"),
             )
     return metadata
 
@@ -464,8 +540,6 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     by_artist: dict[str, list[str]] = defaultdict(list)
     for track in tracks.values():
         by_artist[track["primary_artist"]].append(track["track_id"])
-        if track["primary_artist"] in artist_metadata and not track["thumbnails"]:
-            track["thumbnails"] = artist_metadata[track["primary_artist"]].get("thumbnails", [])
 
     for track in tracks.values():
         if not track["genre_clusters"]:

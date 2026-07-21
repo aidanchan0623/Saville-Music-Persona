@@ -106,6 +106,10 @@ export interface TopTrack {
   album: string | null;
   release_year: number | null;
   thumbnail: string | null;
+  track_image_url?: string | null;
+  track_image_source?: string | null;
+  album_art_url?: string | null;
+  album_art_source?: string | null;
   play_count: number;
   last_played: string | null;
   why_it_ranked: string;
@@ -123,6 +127,8 @@ export interface TopArtist {
   source?: MusicSource | string;
   source_artist_id?: string | null;
   image: string | null;
+  artist_image_url?: string | null;
+  artist_image_source?: string | null;
   play_count: number;
   share_of_listens: number;
   unique_songs_played: number;
@@ -233,6 +239,12 @@ export interface PeriodTopItem {
   artist: string;
   album: string | null;
   thumbnail: string | null;
+  artist_image_url?: string | null;
+  artist_image_source?: string | null;
+  track_image_url?: string | null;
+  track_image_source?: string | null;
+  album_art_url?: string | null;
+  album_art_source?: string | null;
   play_count: number;
   detected_minutes: number;
   detected_minutes_formatted: string;
@@ -267,6 +279,8 @@ export interface TopAlbumItem {
   artist: string;
   album_id: string | null;
   thumbnail: string | null;
+  album_image_url?: string | null;
+  album_image_source?: string | null;
   plays: number;
   detected_minutes: number;
   detected_minutes_formatted: string;
@@ -297,6 +311,10 @@ export interface TopDrilldownSong {
   artist: string | null;
   album: string | null;
   thumbnail: string | null;
+  track_image_url?: string | null;
+  track_image_source?: string | null;
+  album_art_url?: string | null;
+  album_art_source?: string | null;
   plays: number;
   detected_minutes: number;
   detected_minutes_formatted: string;
@@ -310,6 +328,8 @@ export interface TopDrilldownSong {
 export interface TopArtistSongsResponse {
   artist: string;
   artist_thumbnail: string | null;
+  artist_image_url?: string | null;
+  artist_image_source?: string | null;
   period_label: string;
   period: PeriodSpec;
   total_plays: number;
@@ -511,6 +531,10 @@ export interface Recommendation {
   artists: string[];
   album: string | null;
   album_art: string | null;
+  track_image_url?: string | null;
+  track_image_source?: string | null;
+  album_art_url?: string | null;
+  album_art_source?: string | null;
   release_year: number | null;
   video_id: string | null;
   recommendation_type: "Safe" | "Adjacent" | "Discovery" | string;

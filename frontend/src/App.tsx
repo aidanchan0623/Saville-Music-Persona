@@ -1,5 +1,5 @@
 import { Menu, Music2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import { GlowPanel } from "./components/GlowPanel";
 import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
@@ -44,6 +44,7 @@ export default function App() {
   const [prerequisites, setPrerequisites] = useState<Prerequisites | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const loadAnalysisTokenRef = useRef(0);
 
   const loadStatus = async () => {
     const [nextPrerequisites, nextAuth, nextSpotifyStatus] = await Promise.all([api.prerequisites(), api.authStatus(), api.spotifyStatus()]);
@@ -53,6 +54,7 @@ export default function App() {
   };
 
   const clearAnalysis = () => {
+    loadAnalysisTokenRef.current += 1;
     setOverview(null);
     setTracks([]);
     setArtists([]);
@@ -74,35 +76,38 @@ export default function App() {
   };
 
   const loadAnalysis = async (activeSource: MusicSource = source) => {
+    const requestToken = loadAnalysisTokenRef.current + 1;
+    loadAnalysisTokenRef.current = requestToken;
+    const isCurrentRequest = () => loadAnalysisTokenRef.current === requestToken;
+    const setIfCurrent = <T,>(setter: (value: T) => void) => (value: T) => {
+      if (isCurrentRequest()) setter(value);
+    };
     const nextOverview = await api.overview(activeSource);
+    if (!isCurrentRequest()) return;
     setOverview(nextOverview);
-    const [nextTracks, nextArtists, nextScores, nextCharts, nextThisMonthMinutes, nextRollingYearMinutes] = await Promise.allSettled([
-      api.topTracks(activeSource),
-      api.topArtists(activeSource),
-      api.scores("rolling_year", null, activeSource),
-      api.charts("rolling_year", null, activeSource),
-      api.listeningMinutes("this_month", null, activeSource),
-      api.listeningMinutes("rolling_year", null, activeSource),
-    ] as const);
-    if (nextTracks.status === "fulfilled") setTracks(nextTracks.value);
-    if (nextArtists.status === "fulfilled") setArtists(nextArtists.value);
-    if (nextScores.status === "fulfilled") setScores(nextScores.value);
-    if (nextCharts.status === "fulfilled") setCharts(nextCharts.value);
-    if (nextThisMonthMinutes.status === "fulfilled") setThisMonthMinutes(nextThisMonthMinutes.value);
-    if (nextRollingYearMinutes.status === "fulfilled") setRollingYearMinutes(nextRollingYearMinutes.value);
-    try {
-      setReport(await api.latestReport(activeSource));
-    } catch {
-      setReport(null);
-    }
+    setTracks([]);
+    setArtists([]);
+    setScores([]);
+    setCharts(null);
+    setThisMonthMinutes(null);
+    setRollingYearMinutes(null);
+    setReport(null);
+    void api.topTracks(activeSource).then(setIfCurrent(setTracks)).catch(() => { if (isCurrentRequest()) setTracks([]); });
+    void api.topArtists(activeSource).then(setIfCurrent(setArtists)).catch(() => { if (isCurrentRequest()) setArtists([]); });
+    void api.scores("rolling_year", null, activeSource).then(setIfCurrent(setScores)).catch(() => { if (isCurrentRequest()) setScores([]); });
+    void api.charts("rolling_year", null, activeSource).then(setIfCurrent(setCharts)).catch(() => { if (isCurrentRequest()) setCharts(null); });
+    void api.listeningMinutes("this_month", null, activeSource).then(setIfCurrent(setThisMonthMinutes)).catch(() => { if (isCurrentRequest()) setThisMonthMinutes(null); });
+    void api.listeningMinutes("rolling_year", null, activeSource).then(setIfCurrent(setRollingYearMinutes)).catch(() => { if (isCurrentRequest()) setRollingYearMinutes(null); });
+    void api.latestReport(activeSource).then(setIfCurrent(setReport)).catch(() => { if (isCurrentRequest()) setReport(null); });
     if (activeSource === "youtube") {
       try {
-        setRecommendations(await api.recommendations());
+        const nextRecommendations = await api.recommendations();
+        if (isCurrentRequest()) setRecommendations(nextRecommendations);
       } catch {
-        setRecommendations([]);
+        if (isCurrentRequest()) setRecommendations([]);
       }
     } else {
-      setRecommendations([]);
+      if (isCurrentRequest()) setRecommendations([]);
     }
   };
 

@@ -16,11 +16,21 @@
 }
 
 .smp-page-title-panel__lines,
-.smp-page-title-panel__overlay {
+.smp-page-title-panel__overlay,
+.smp-page-title-panel__photo {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 0;
+}
+
+.smp-page-title-panel__photo {
+  background-image: var(--smp-page-title-image);
+  background-position: var(--smp-page-title-position, center);
+  background-size: cover;
+  filter: saturate(0.88) contrast(1.04);
+  opacity: 0.72;
+  transform: scale(1.01);
 }
 
 .smp-page-title-panel--static .smp-page-title-panel__lines {
@@ -40,6 +50,17 @@
   background:
     linear-gradient(90deg, rgb(5 5 5 / 94%), rgb(5 5 5 / 66%), rgb(5 5 5 / 34%)),
     linear-gradient(180deg, rgb(5 5 5 / 18%), rgb(5 5 5 / 62%));
+}
+
+.smp-page-title-panel--with-image .smp-page-title-panel__lines {
+  opacity: 0.16;
+}
+
+.smp-page-title-panel--with-image .smp-page-title-panel__overlay {
+  background:
+    linear-gradient(90deg, rgba(5, 5, 5, var(--smp-page-title-overlay, 0.72)), rgb(5 5 5 / 67%), rgb(5 5 5 / 34%)),
+    linear-gradient(180deg, rgb(5 5 5 / 22%), rgb(5 5 5 / 78%)),
+    radial-gradient(circle at 16% 24%, rgb(127 29 29 / 30%), transparent 34rem);
 }
 
 .smp-page-title-panel__content {
@@ -70,6 +91,11 @@
   gap: 0.75rem;
   margin-top: 1.75rem;
   font-size: 0.875rem;
+  color: rgb(212 212 216 / 76%);
+}
+
+.smp-page-title-panel__metadata > * {
+  min-width: 0;
 }
 
 @media (max-width: 767px) {
@@ -85,6 +111,12 @@
 
   .smp-page-title-panel__overlay {
     background: linear-gradient(180deg, rgb(5 5 5 / 94%), rgb(5 5 5 / 70%));
+  }
+
+  .smp-page-title-panel--with-image .smp-page-title-panel__overlay {
+    background:
+      linear-gradient(180deg, rgb(5 5 5 / 91%), rgb(5 5 5 / 82%)),
+      radial-gradient(circle at 18% 18%, rgb(127 29 29 / 24%), transparent 22rem);
   }
 
   .smp-page-title-panel__row {

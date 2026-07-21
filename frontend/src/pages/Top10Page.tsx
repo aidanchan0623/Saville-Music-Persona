@@ -2,7 +2,7 @@ import { ArrowDown, ArrowUp, Minus, Sparkles, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
-import { Artwork } from "../components/Artwork";
+import { AlbumCover, ArtistAvatar, TrackArtwork } from "../components/Artwork";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import GradualBlur from "../components/reactbits/GradualBlur/GradualBlur";
@@ -156,13 +156,11 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
           </div>
         }
         metadata={
-          <>
-          <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{activeLabel}</span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{tracks?.period.start_date} to {tracks?.period.end_date}</span>
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">{(tracks?.total_play_count ?? 0).toLocaleString()} detected plays</span>
-          {source === "spotify" ? <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Top-item based, not exact Spotify history</span> : null}
-          {loading ? <span className="rounded-full border border-red-400/20 bg-red-500/10 px-4 py-2 text-red-100">Updating...</span> : null}
-          </>
+          <span>
+            {activeLabel} / {tracks?.period.start_date} to {tracks?.period.end_date} / {(tracks?.total_play_count ?? 0).toLocaleString()} detected plays
+            {source === "spotify" ? " / Top-item based, not exact Spotify history" : ""}
+            {loading ? " / Updating" : ""}
+          </span>
         }
       />
 
@@ -305,23 +303,25 @@ function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: {
       <div className="ranking-story__visual-content" key={activeId}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">{label}</p>
-          <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-xs font-semibold text-mist">
+          <span className="text-xs font-semibold text-mist/75">
             {activeItem ? `${String(activeItem.rank).padStart(2, "0")} / ${String(itemCount).padStart(2, "0")}` : `00 / ${String(itemCount).padStart(2, "0")}`}
           </span>
         </div>
         <div className="ranking-story__hero-art">
-          <Artwork src={activeItem?.thumbnail} alt={activeTitle} kind={kind === "artists" ? "artist" : "song"} size="hero" priority fallbackLabel={fallback} shape="rounded" className="ranking-story__hero-artwork" />
+          {kind === "artists" ? (
+            <ArtistAvatar artistImageUrl={activeItem?.artist_image_url} artistName={activeItem?.artist ?? "Artist"} size="hero" priority fallbackLabel={fallback} shape="rounded" className="ranking-story__hero-artwork" />
+          ) : (
+            <TrackArtwork trackImageUrl={activeItem?.track_image_url} albumArtUrl={activeItem?.album_art_url} title={activeTitle} size="hero" priority fallbackLabel={fallback} className="ranking-story__hero-artwork" />
+          )}
         </div>
         <div className="ranking-story__hero-copy">
           <span className="text-6xl font-black leading-none text-white/10">#{activeItem?.rank ?? "--"}</span>
           <h3 className="mt-3 text-3xl font-black leading-tight text-white">{activeTitle}</h3>
-          <p className="mt-2 line-clamp-2 text-base font-semibold text-red-100">{activeSubtitle}</p>
+          <p className="mt-2 text-base font-semibold leading-6 text-red-100">{activeSubtitle}</p>
           {activeItem ? (
-            <div className="mt-5 flex flex-wrap gap-2 text-xs text-mist">
-              <span className="rounded-full bg-white/10 px-3 py-1">{displayListLabel(activeItem.interpretation_label, kind === "artists")}</span>
-              <span className="rounded-full bg-white/10 px-3 py-1">{spotifyEvidenceLabel(activeItem, source, kind === "artists")}</span>
-              {detectedMinutesLabel(activeItem) ? <span className="rounded-full bg-white/10 px-3 py-1">{detectedMinutesLabel(activeItem)}</span> : null}
-              <span className="rounded-full bg-white/10 px-3 py-1">{activeItem.share_of_period}% share</span>
+            <div className="mt-5 text-xs font-medium leading-6 text-mist/75">
+              {displayListLabel(activeItem.interpretation_label, kind === "artists")} / {spotifyEvidenceLabel(activeItem, source, kind === "artists")}
+              {detectedMinutesLabel(activeItem) ? ` / ${detectedMinutesLabel(activeItem)}` : ""} / {activeItem.share_of_period}% share
             </div>
           ) : null}
         </div>
@@ -370,27 +370,31 @@ function RankingStoryCard({
     <div ref={register} className="ranking-story__item" data-active={active ? "true" : "false"} data-ranking-id={itemId}>
       <GlowPanel as="article" variant="row" selected={active || selected} className="ranking-story__card" data-testid={isArtist ? "top-artist-card" : "top-song-card"}>
         <div className="ranking-story__card-grid">
-          <Artwork src={item.thumbnail} alt={title} kind={isArtist ? "artist" : "song"} size="md" fallbackLabel={isArtist ? initials(item.artist) : rank} shape={isArtist ? "circle" : "rounded"} className="ranking-story__row-artwork" />
+          {isArtist ? (
+            <ArtistAvatar artistImageUrl={item.artist_image_url} artistName={item.artist} size="md" fallbackLabel={initials(item.artist)} className="ranking-story__row-artwork" />
+          ) : (
+            <TrackArtwork trackImageUrl={item.track_image_url} albumArtUrl={item.album_art_url} title={title} size="md" fallbackLabel={rank} className="ranking-story__row-artwork" />
+          )}
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-xl font-black text-red-200">{rank}</span>
               <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, isArtist)}</span>
             </div>
-            <h3 className="mt-2 line-clamp-2 break-words text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
+            <h3 className="mt-2 break-words text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
             {isArtist ? (
               <p className="mt-2 text-sm leading-6 text-mist">
                 {item.unique_songs ?? 0} unique songs{item.most_played_song ? ` - top song: ${item.most_played_song}` : ""}
               </p>
             ) : (
               <>
-                <p className="mt-2 truncate text-base font-semibold text-mist">{item.artist}</p>
-                {item.album ? <p className="mt-1 truncate text-sm text-mist/75">{item.album}</p> : null}
+                <p className="mt-2 text-base font-semibold leading-6 text-mist">{item.artist}</p>
+                {item.album ? <p className="mt-1 text-sm leading-5 text-mist/75">{item.album}</p> : null}
               </>
             )}
-            <div className="mt-4 flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, isArtist)}</span>
-              {detectedMinutesLabel(item) ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{detectedMinutesLabel(item)}</span> : null}
-              {isArtist ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{item.share_of_period}% share</span> : null}
+              {detectedMinutesLabel(item) ? <span className="text-xs text-mist/75">{detectedMinutesLabel(item)}</span> : null}
+              {isArtist ? <span className="text-xs text-mist/75">{item.share_of_period}% share</span> : null}
               <Movement movement={item.movement} />
             </div>
             {isArtist && onViewSongs ? (
@@ -524,17 +528,17 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
   return (
     <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-album-card">
       <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto]">
-        <Artwork src={album.thumbnail} alt={album.album} kind="song" size="md" fallbackLabel={rank} />
+        <AlbumCover albumImageUrl={album.album_image_url} albumTitle={album.album} size="md" fallbackLabel={rank} />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl font-black text-red-200">{rank}</span>
             <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{album.label}</span>
           </div>
-          <h3 className="mt-2 truncate text-xl font-black leading-tight text-white md:text-2xl">{album.album}</h3>
-          <p className="mt-2 truncate text-base font-semibold text-mist">{album.artist}</p>
+          <h3 className="mt-2 text-xl font-black leading-tight text-white md:text-2xl">{album.album}</h3>
+          <p className="mt-2 text-base font-semibold leading-6 text-mist">{album.artist}</p>
           <div className="mt-5 flex flex-wrap items-center gap-3">
             <span className="text-lg font-black text-white">{source === "spotify" ? `${album.plays.toLocaleString()} signals` : `${album.plays.toLocaleString()} plays`}</span>
-            <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-mist">{album.unique_songs} songs</span>
+            <span className="text-xs text-mist/75">{album.unique_songs} songs</span>
           </div>
           <p className="mt-3 text-sm leading-6 text-mist/90">{album.album_signal_note}</p>
           {album.most_played_song ? <p className="mt-2 text-xs text-mist/75">Most played: {album.most_played_song}</p> : null}
@@ -559,7 +563,7 @@ function ArtistDrilldownPanel({ artist, response, loading, onClose }: { artist: 
     <DrilldownShell
       title={`Songs by ${artist} - ${response?.period_label ?? "Selected Period"}`}
       subtitle="Song-level data for this artist in the selected period."
-      visual={<Artwork src={response?.artist_thumbnail} alt={artist} kind="artist" size="lg" fallbackLabel={initials(artist)} />}
+      visual={<ArtistAvatar artistImageUrl={response?.artist_image_url} artistName={artist} size="lg" fallbackLabel={initials(artist)} />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Song-level data for this artist is not available in the selected period."
@@ -578,7 +582,7 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
     <DrilldownShell
       title={`Songs from ${album.album} - ${response?.period_label ?? "Selected Period"}`}
       subtitle={album.artist}
-      visual={<Artwork src={album.thumbnail} alt={album.album} kind="song" size="lg" fallbackLabel={initials(album.album)} />}
+      visual={<AlbumCover albumImageUrl={album.album_image_url} albumTitle={album.album} size="lg" fallbackLabel={initials(album.album)} />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Album data is unavailable for this period."
@@ -641,13 +645,13 @@ function DrilldownShell({
 function DrilldownSongRow({ song }: { song: TopDrilldownSong }) {
   return (
     <GlowPanel as="article" variant="row" className="grid gap-4 p-3 sm:grid-cols-[4.5rem_1fr]">
-      <Artwork src={song.thumbnail} alt={song.title ?? "Song"} kind="song" size="sm" fallbackLabel={`#${song.rank}`} />
+      <TrackArtwork trackImageUrl={song.track_image_url} albumArtUrl={song.album_art_url} title={song.title ?? "Song"} size="sm" fallbackLabel={`#${song.rank}`} />
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-black text-white/70">#{song.rank}</span>
-          <h3 className="truncate text-base font-semibold text-white">{song.title ?? "Unknown track"}</h3>
+          <span className="text-xs font-black text-white/45">#{song.rank}</span>
+          <h3 className="text-base font-semibold leading-6 text-white">{song.title ?? "Unknown track"}</h3>
         </div>
-        <p className="mt-1 truncate text-sm text-mist">{song.artist ?? "Unknown Artist"}{song.album ? ` - ${song.album}` : ""}</p>
+        <p className="mt-1 text-sm leading-5 text-mist">{song.artist ?? "Unknown Artist"}{song.album ? ` - ${song.album}` : ""}</p>
         <MetricPills
           items={[
             `${song.plays} plays`,
@@ -664,10 +668,8 @@ function MetricPills({ items }: { items: (string | null | undefined)[] }) {
   const visible = items.filter(Boolean);
   if (!visible.length) return null;
   return (
-    <div className="mt-3 flex flex-wrap gap-2 text-xs text-mist">
-      {visible.map((item) => (
-        <span key={item} className="rounded-full bg-white/10 px-3 py-1">{item}</span>
-      ))}
+    <div className="mt-3 text-xs leading-5 text-mist/75">
+      {visible.join(" / ")}
     </div>
   );
 }
@@ -676,7 +678,7 @@ function Movement({ movement }: { movement: PeriodTopItem["movement"] }) {
   if (!movement) return null;
   const Icon = movement.direction === "up" ? ArrowUp : movement.direction === "down" ? ArrowDown : movement.direction === "new" ? Sparkles : Minus;
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-3 py-1 text-xs text-mist">
+    <span className="inline-flex items-center gap-1 text-xs text-mist/75">
       <Icon size={13} /> {movement.label}
     </span>
   );

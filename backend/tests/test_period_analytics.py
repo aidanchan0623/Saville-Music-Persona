@@ -25,6 +25,7 @@ def _history_item(
     played: str,
     duration: int | str | None = 180,
     album: str | None = None,
+    album_thumbnail: str | None = None,
 ) -> dict:
     artist_names = artist if isinstance(artist, list) else [artist]
     item = {
@@ -36,6 +37,8 @@ def _history_item(
     }
     if album:
         item["album"] = {"name": album, "id": f"alb-{album.lower().replace(' ', '-')}"}
+        if album_thumbnail:
+            item["album"]["thumbnails"] = [{"url": album_thumbnail, "width": 600, "height": 600}]
     if duration is not None:
         if isinstance(duration, int):
             item["duration_seconds"] = duration
@@ -200,18 +203,13 @@ def test_top_artists_use_official_metadata_not_track_art() -> None:
             _history_item("official-song", "Official Song", "Official Artist", "2026-07-03", 180),
             _history_item("plain-song", "Plain Song", "Plain Artist", "2026-07-02", 180),
         ],
-        "artist_image_cache": {
-            "Official Artist": {
-                "artist": "Official Artist",
-                "artist_id": "UC-official",
-                "thumbnails": [{"url": "https://yt.example/official.jpg", "width": 512, "height": 512}],
-            }
-        },
+        "artist_image_cache_v2": artist_cache_v2("Official Artist", "UC-official", "https://yt.example/official.jpg"),
     }
     normalised = normalise_collection(raw, today=date(2026, 7, 7))
     artists = top_payload(normalised, "artists", "month", "2026-07", today=date(2026, 7, 7))["items"]
     by_artist = {item["artist"]: item for item in artists}
     assert by_artist["Official Artist"]["thumbnail"] == "https://yt.example/official.jpg"
+    assert by_artist["Official Artist"]["artist_image_url"] == "https://yt.example/official.jpg"
     assert by_artist["Plain Artist"]["thumbnail"] is None
 
 
@@ -233,7 +231,8 @@ def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
     )
     albums = albums_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))["albums"]
     assert albums[0]["album"] == "Real Album"
-    assert albums[0]["thumbnail"] == "https://i.ytimg.com/vi/a1/hqdefault.jpg"
+    assert albums[0]["thumbnail"] is None
+    assert albums[0]["album_image_url"] is None
     assert albums[0]["unique_songs"] == 2
     assert albums[0]["album_signal_note"] == "Real album-level signal."
     assert albums[1]["label"] == "Single-led album signal"
@@ -243,6 +242,43 @@ def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
     assert drilldown["total_plays"] == 4
     assert [song["title"] for song in drilldown["songs"]] == ["Album Song One", "Album Song Two"]
     assert drilldown["songs"][0]["share_of_album_plays"] == 50.0
+
+
+def test_album_cover_uses_album_metadata_not_artist_or_video_art() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item(
+                    "mcr-song",
+                    "MCR Song",
+                    "My Chemical Romance",
+                    "2026-07-01",
+                    180,
+                    "The Black Parade",
+                    album_thumbnail="https://yt.example/black-parade-cover.jpg",
+                )
+            ],
+            "artist_image_cache_v2": artist_cache_v2("My Chemical Romance", "UC-mcr", "https://yt.example/mcr-artist.jpg"),
+        },
+        today=date(2026, 7, 7),
+    )
+    albums = albums_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))["albums"]
+    assert albums[0]["album_image_url"] == "https://yt.example/black-parade-cover.jpg"
+    assert albums[0]["thumbnail"] == "https://yt.example/black-parade-cover.jpg"
+    assert albums[0]["thumbnail"] != "https://yt.example/mcr-artist.jpg"
+
+
+def test_tracks_never_inherit_artist_profile_art() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [_history_item("mcr-video", "Famous Last Words", "My Chemical Romance", "2026-07-01", 180)],
+            "artist_image_cache_v2": artist_cache_v2("My Chemical Romance", "UC-mcr", "https://yt.example/mcr-artist.jpg"),
+        },
+        today=date(2026, 7, 7),
+    )
+    tracks = top_payload(normalised, "tracks", "month", "2026-07", today=date(2026, 7, 7))["items"]
+    assert tracks[0]["track_image_url"] == "https://i.ytimg.com/vi/mcr-video/hqdefault.jpg"
+    assert tracks[0]["thumbnail"] != "https://yt.example/mcr-artist.jpg"
 
 
 def test_score_interpretation_thresholds_are_plain_english() -> None:
@@ -273,3 +309,21 @@ def test_taste_dna_comparison_detects_growing_cluster_with_enough_data() -> None
     comparison = taste_dna_comparison_payload(normalised, today=date(2026, 7, 7))
     assert comparison["sample_warning"] is None
     assert comparison["claims"]["growing_cluster"] is not None
+
+
+def artist_cache_v2(artist: str, artist_id: str, url: str) -> dict[str, object]:
+    normalised = " ".join(artist.lower().split())
+    entry = {
+        "schemaVersion": 2,
+        "mediaType": "artist",
+        "entityId": artist_id,
+        "entityName": artist,
+        "artist": artist,
+        "artist_id": artist_id,
+        "url": url,
+        "thumbnail_url": url,
+        "artist_image_source": "youtube_artist_profile",
+        "thumbnails": [{"url": url, "width": 512, "height": 512}],
+        "resolvedAt": "2026-07-07T00:00:00+00:00",
+    }
+    return {"schemaVersion": 2, "items": {f"artist:{artist_id}": entry, f"artist-name:{normalised}": entry}}

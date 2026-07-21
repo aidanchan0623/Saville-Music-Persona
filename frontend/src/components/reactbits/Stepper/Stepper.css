@@ -5,22 +5,20 @@
 .smp-stepper__shell {
   width: 100%;
   overflow: hidden;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid rgb(255 255 255 / 7%);
   border-radius: 0.5rem;
-  background:
-    radial-gradient(circle at 8% 0%, rgb(239 43 45 / 14%), transparent 34%),
-    linear-gradient(145deg, rgb(13 13 15 / 96%), rgb(5 5 5 / 98%));
-  box-shadow: 0 24px 80px rgb(0 0 0 / 30%);
+  background: rgb(8 8 10 / 88%);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 22%);
 }
 
 .smp-stepper__indicator-row {
   display: flex;
   width: 100%;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.25rem;
   overflow-x: auto;
   border-bottom: 1px solid rgb(255 255 255 / 9%);
-  padding: clamp(0.85rem, 2vw, 1.25rem);
+  padding: clamp(0.7rem, 1.5vw, 1rem);
   scrollbar-width: thin;
   scrollbar-color: rgb(239 43 45 / 42%) transparent;
 }
@@ -71,29 +69,29 @@
 
 .smp-stepper__indicator-dot {
   display: grid;
-  height: 2rem;
-  width: 2rem;
+  height: 1.55rem;
+  width: 1.55rem;
   flex: 0 0 auto;
   place-items: center;
   border: 1px solid rgb(255 255 255 / 12%);
   border-radius: 999px;
   background: rgb(255 255 255 / 7%);
   color: rgb(212 212 216 / 76%);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   font-weight: 900;
   transition: border-color 180ms ease, background 180ms ease, color 180ms ease, box-shadow 180ms ease;
 }
 
 .smp-stepper__indicator[data-status="active"] .smp-stepper__indicator-dot {
   border-color: rgb(248 113 113 / 76%);
-  background: rgb(220 38 38);
+  background: rgb(127 29 29 / 92%);
   color: white;
-  box-shadow: 0 0 24px rgb(239 43 45 / 36%);
+  box-shadow: 0 0 0 3px rgb(239 43 45 / 12%);
 }
 
 .smp-stepper__indicator[data-status="complete"] .smp-stepper__indicator-dot {
   border-color: rgb(248 113 113 / 44%);
-  background: rgb(127 29 29 / 84%);
+  background: rgb(127 29 29 / 42%);
   color: white;
 }
 
@@ -124,7 +122,7 @@
 }
 
 .smp-stepper__content {
-  min-height: 16rem;
+  min-height: 14rem;
 }
 
 .smp-stepper__step {
@@ -132,7 +130,7 @@
 }
 
 .smp-stepper__footer {
-  border-top: 1px solid rgb(255 255 255 / 9%);
+  border-top: 1px solid rgb(255 255 255 / 7%);
   padding: clamp(0.9rem, 2vw, 1.25rem);
 }
 
@@ -175,10 +173,10 @@
 }
 
 .smp-stepper__next-button {
-  border: 1px solid rgb(248 113 113 / 55%);
-  background: linear-gradient(135deg, rgb(220 38 38), rgb(127 29 29));
+  border: 1px solid rgb(248 113 113 / 42%);
+  background: rgb(127 29 29 / 82%);
   color: white;
-  box-shadow: 0 16px 34px rgb(127 29 29 / 24%);
+  box-shadow: none;
 }
 
 .smp-stepper__next-button:hover {

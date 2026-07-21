@@ -45,7 +45,7 @@ export function KeySignalsStrip({ repeatScore, discoveryScore, nicheScore, thisM
             <span className="text-xs text-violet-200">0{index + 1}</span>
           </div>
           <p className="mt-4 text-3xl font-black text-white">{signal.value}</p>
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-mist">{signal.text}</p>
+          <p className="mt-3 text-sm leading-6 text-mist">{signal.text}</p>
           <div className="mt-5 h-px w-12 bg-gradient-to-r from-violet to-transparent transition group-hover:w-24" />
         </article>
       ))}

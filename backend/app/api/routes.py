@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
+from app.analysis.media import ensure_artist_image_cache_schema
 from app.analysis.music_character import character_payload
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
@@ -166,14 +167,17 @@ def normalise_with_duration_cache(
     allow_artist_image_enrichment: bool = False,
     preferred_artist_images: list[str] | None = None,
 ) -> dict[str, Any]:
-    artist_cache = repo.load_json("artist_image_cache") or {}
+    artist_cache = ensure_artist_image_cache_schema(repo.load_json("artist_image_cache_v2") or {})
+    raw.pop("artist_image_cache", None)
+    raw["artist_image_cache_v2"] = artist_cache
+    repo.delete_json("artist_image_cache")
     if artist_cache:
-        raw["artist_image_cache"] = {**artist_cache, **(raw.get("artist_image_cache") or {})}
+        raw["artist_image_cache_v2"] = artist_cache
     if allow_artist_image_enrichment:
         try:
             stats = ytmusic.enrich_artist_image_cache(raw, artist_cache, preferred_artists=preferred_artist_images)
             if stats.get("seeded") or stats.get("attempted"):
-                repo.save_json("artist_image_cache", artist_cache)
+                repo.save_json("artist_image_cache_v2", artist_cache)
                 if warnings is not None:
                     warnings.append(
                         f"Artist image cache checked {stats['attempted']} artist(s), added {stats['added']} official image(s), and reused {stats['seeded']} library artist image(s)."

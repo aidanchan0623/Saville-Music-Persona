@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { AnimatedPageTitle } from "./AnimatedPageTitle";
 import { GlowPanel } from "./GlowPanel";
@@ -17,6 +17,9 @@ interface PageTitlePanelProps {
   metadata?: ReactNode;
   className?: string;
   contentClassName?: string;
+  backgroundImage?: string;
+  backgroundPosition?: string;
+  overlayStrength?: number;
 }
 
 export function PageTitlePanel({
@@ -31,16 +34,26 @@ export function PageTitlePanel({
   metadata,
   className = "",
   contentClassName = "",
+  backgroundImage,
+  backgroundPosition = "center",
+  overlayStrength = 0.72,
 }: PageTitlePanelProps) {
   const compactLines = useCompactTitleMotion();
+  const panelStyle = {
+    "--smp-page-title-image": backgroundImage ? `url("${backgroundImage}")` : "none",
+    "--smp-page-title-position": backgroundPosition,
+    "--smp-page-title-overlay": overlayStrength,
+  } as CSSProperties;
 
   return (
     <GlowPanel
       as="header"
       variant="major"
-      wrapperClassName={`smp-page-title-panel smp-page-title-panel--${lineMode}${className ? ` ${className}` : ""}`}
+      wrapperClassName={`smp-page-title-panel smp-page-title-panel--${lineMode}${backgroundImage ? " smp-page-title-panel--with-image" : ""}${className ? ` ${className}` : ""}`}
       className="smp-page-title-panel__inner"
+      style={panelStyle}
     >
+      {backgroundImage ? <div className="smp-page-title-panel__photo" aria-hidden="true" /> : null}
       <div className="smp-page-title-panel__lines" aria-hidden="true">
         {lineMode === "animated" ? (
           <LineWaves

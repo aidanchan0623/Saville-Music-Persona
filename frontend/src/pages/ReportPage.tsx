@@ -1,8 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import { Artwork } from "../components/Artwork";
-import { GlowPanel } from "../components/GlowPanel";
+import { ArtistAvatar } from "../components/Artwork";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { MusicCharacter, MusicCharacterResponse, MusicSource, PersonaReport, PersonaReportCard, Prerequisites, TopArtist } from "../types/api";
 
@@ -102,7 +101,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
         }
         subtitleClassName="mt-5"
         actions={
-          <div className="flex flex-wrap gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
+          <div className="flex flex-wrap gap-2">
               <button className="btn-secondary" disabled={disabled} onClick={() => onGenerate("serious")}>
                 <Sparkles size={16} /> Editorial Rewrite
               </button>
@@ -111,26 +110,22 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
             </div>
         }
         metadata={
-          <>
-            <span className="rounded-full border border-white/10 bg-white/[0.07] px-4 py-2 font-semibold text-white">{profile.sourceLabel}</span>
-            <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-mist">Character rules stay deterministic</span>
-            {!modelReady ? <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-4 py-2 text-amber-100">Expanded Gemma rewrite unavailable - Ollama is offline</span> : null}
-          </>
+          <span>{profile.sourceLabel} / Character rules stay deterministic{!modelReady ? " / Expanded Gemma rewrite unavailable because Ollama is offline" : ""}</span>
         }
       />
 
       <section className="grid gap-4 lg:grid-cols-3">
         {profile.cards.map((card) => (
-          <GlowPanel key={card.title} as="article" variant="card" className="p-5">
+          <article key={card.title} className="border-t border-white/10 py-5">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">{card.title.split(":", 1)[0]}</p>
             <h2 className="mt-3 text-2xl font-black leading-tight text-white">{card.title.includes(":") ? card.title.split(":").slice(1).join(":").trim() : card.title}</h2>
             <p className="mt-3 text-sm leading-7 text-mist">{card.body}</p>
-          </GlowPanel>
+          </article>
         ))}
       </section>
 
       {topArtists.length ? (
-        <GlowPanel as="section" variant="major" className="p-5 lg:p-6">
+        <section className="border-t border-white/10 pt-6">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Anchor artists</p>
@@ -145,7 +140,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
               <ArtistAvatarCard key={artist.artist} artist={artist} />
             ))}
           </div>
-        </GlowPanel>
+        </section>
       ) : null}
 
       <section className="grid gap-5 xl:grid-cols-[1.08fr_0.92fr]">
@@ -163,22 +158,22 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
 
 function InterpretationBlock({ title, body, featured = false }: { title: string; body: string; featured?: boolean }) {
   return (
-    <GlowPanel as="article" variant="card" selected={featured} className={`${featured ? "bg-red-950/[0.14]" : ""} p-6`}>
+    <article className={`${featured ? "bg-red-950/[0.10] px-5 py-6" : "py-6"} border-t border-white/10`}>
       <h2 className="text-3xl font-black leading-tight text-white">{title}</h2>
       <p className="mt-4 text-base leading-8 text-mist">{body}</p>
-    </GlowPanel>
+    </article>
   );
 }
 
 function ArtistAvatarCard({ artist }: { artist: TopArtist }) {
   return (
-    <GlowPanel as="article" variant="row" className="flex items-center gap-4 p-4">
-      <Artwork src={artist.image} alt={artist.artist} kind="artist" size="md" fallbackLabel={initials(artist.artist)} />
+    <article className="flex items-center gap-4 border-t border-white/10 py-4">
+      <ArtistAvatar artistImageUrl={artist.artist_image_url} artistName={artist.artist} size="md" fallbackLabel={initials(artist.artist)} />
       <div className="min-w-0">
-        <h3 className="truncate text-lg font-black text-white">{artist.artist}</h3>
-        <p className="mt-1 line-clamp-2 text-sm leading-6 text-mist">{artist.why_it_matters || artist.artist_loyalty_label}</p>
+        <h3 className="text-lg font-black leading-tight text-white">{artist.artist}</h3>
+        <p className="mt-1 text-sm leading-6 text-mist">{artist.why_it_matters || artist.artist_loyalty_label}</p>
       </div>
-    </GlowPanel>
+    </article>
   );
 }
 

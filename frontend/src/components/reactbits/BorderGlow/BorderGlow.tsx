@@ -15,6 +15,7 @@ interface BorderGlowProps {
   animated?: boolean;
   colors?: string[];
   fillOpacity?: number;
+  style?: CSSProperties;
 }
 
 function parseHSL(hslStr: string): { h: number; s: number; l: number } {
@@ -119,6 +120,7 @@ export default function BorderGlow({
   animated = false,
   colors = ["#ef2b2d", "#6f0b11", "#202024"],
   fillOpacity = 0.08,
+  style,
 }: BorderGlowProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const canTrackPointerRef = useRef(false);
@@ -263,6 +265,7 @@ export default function BorderGlow({
           "--fill-opacity": fillOpacity,
           ...glowVars,
           ...buildGradientVars(colors),
+          ...style,
         } as CSSProperties
       }
     >

@@ -1,0 +1,92 @@
+[
+  {
+    "id": "alternative-guitar-01",
+    "filename": "alternative-guitar-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Guitar_electric_close_up.jpg",
+    "photographer": "Jacob Windham",
+    "license": "Creative Commons Attribution 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "objectPosition": "center",
+    "themes": ["alternative", "indie-rock", "guitar-driven", "cathartic"]
+  },
+  {
+    "id": "rehearsal-stage-01",
+    "filename": "rehearsal-stage-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:12_bar_club_stage.jpg",
+    "photographer": "tup wanders",
+    "license": "Creative Commons Attribution 2.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/2.0/",
+    "objectPosition": "center",
+    "themes": ["alternative", "indie-rock", "rehearsal-room", "small-stage"]
+  },
+  {
+    "id": "rain-night-01",
+    "filename": "rain-night-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Late_night_Rain_City.jpg",
+    "photographer": "MunixShadow",
+    "license": "Creative Commons Attribution 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "objectPosition": "center",
+    "themes": ["lo-fi", "chill", "late-night", "urban-rain"]
+  },
+  {
+    "id": "headphones-chill-01",
+    "filename": "headphones-chill-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Black_brown_headphones_wired.jpg",
+    "photographer": "Marcus-richardson",
+    "license": "Creative Commons Attribution 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "objectPosition": "center",
+    "themes": ["private-listening", "lo-fi", "chill", "headphones"]
+  },
+  {
+    "id": "electronic-synth-01",
+    "filename": "electronic-synth-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Dave_Smith_OB-6_Synthesizer_Closeup.jpg",
+    "photographer": "Nir Yaniv",
+    "license": "Creative Commons Attribution-Share Alike 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "objectPosition": "center",
+    "themes": ["electronic", "ambient", "synth", "edm"]
+  },
+  {
+    "id": "classical-piano-01",
+    "filename": "classical-piano-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Playing_Piano_Keys.jpg",
+    "photographer": "Able Lakert",
+    "license": "Creative Commons Attribution-Share Alike 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "objectPosition": "center",
+    "themes": ["classical", "piano", "soundtrack", "elegant"]
+  },
+  {
+    "id": "jazz-club-01",
+    "filename": "jazz-club-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Ulikhanyan_Jazz_Club_%E2%80%93_interior_and_stage.jpg",
+    "photographer": "FingerWiki",
+    "license": "Creative Commons Attribution-Share Alike 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "objectPosition": "center",
+    "themes": ["jazz", "club", "late-night", "stage"]
+  },
+  {
+    "id": "studio-mic-01",
+    "filename": "studio-mic-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:Studio_microphone_with_pop_shield.jpg",
+    "photographer": "Galak76",
+    "license": "Creative Commons Attribution-Share Alike 3.0 / GFDL",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "objectPosition": "center",
+    "themes": ["hip-hop", "rap", "rnb", "soul", "studio"]
+  },
+  {
+    "id": "vinyl-soul-01",
+    "filename": "vinyl-soul-01.webp",
+    "sourcePage": "https://commons.wikimedia.org/wiki/File:12in-Vinyl-LP-Record-Angle.jpg",
+    "photographer": "Evan-Amos",
+    "license": "Public domain",
+    "licenseUrl": "https://commons.wikimedia.org/wiki/File:12in-Vinyl-LP-Record-Angle.jpg",
+    "objectPosition": "center",
+    "themes": ["rnb", "soul", "hip-hop", "vinyl", "archive"]
+  }
+]

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from app.config import Settings
 from app.analysis.thumbnails import best_thumbnail_url
+from app.analysis.media import artist_id_key, artist_name_key
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import dedupe_candidates
 from app.services.ytmusic_service import YTMusicService, friendly_auth_error, normalise_artist_name
@@ -84,7 +85,8 @@ def test_artist_image_enrichment_uses_existing_artist_id() -> None:
     assert stats["added"] == 1
     assert fake.get_artist_calls == ["UC-a"]
     assert fake.search_calls == []
-    assert cache["Artist A"]["thumbnail_url"] == "https://img.example/a-600.jpg"
+    assert cache_record(cache, "Artist A", "UC-a")["url"] == "https://img.example/a-600.jpg"
+    assert cache_record(cache, "Artist A", "UC-a")["mediaType"] == "artist"
 
 
 def test_artist_image_enrichment_prioritises_preferred_artists() -> None:
@@ -102,7 +104,7 @@ def test_artist_image_enrichment_prioritises_preferred_artists() -> None:
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("History Artist")]}, cache, preferred_artists=["Current Artist"])
     assert stats["added"] == 2
     assert fake.search_calls[0][0] == "Current Artist"
-    assert cache["Current Artist"]["thumbnail_url"] == "https://img.example/current.jpg"
+    assert cache_record(cache, "Current Artist", "UC-current")["url"] == "https://img.example/current.jpg"
 
 
 def test_artist_image_enrichment_falls_back_to_public_client() -> None:
@@ -117,7 +119,7 @@ def test_artist_image_enrichment_falls_back_to_public_client() -> None:
     stats = service.enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["added"] == 1
     assert fake.search_calls == [("Artist A", "artists", 5)]
-    assert cache["Artist A"]["thumbnail_url"] == "https://img.example/a.jpg"
+    assert cache_record(cache, "Artist A", "UC-a")["url"] == "https://img.example/a.jpg"
 
 
 def test_artist_image_enrichment_does_not_choose_non_exact_search_result() -> None:
@@ -125,8 +127,8 @@ def test_artist_image_enrichment_does_not_choose_non_exact_search_result() -> No
     cache: dict[str, object] = {}
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["failed"] == 1
-    assert cache["Artist A"]["thumbnail_url"] is None
-    assert cache["Artist A"]["failure_reason"] == "no_exact_artist_match"
+    assert cache_record(cache, "Artist A")["url"] is None
+    assert cache_record(cache, "Artist A")["failureReason"] == "no_exact_artist_match"
     assert fake.get_artist_calls == []
 
 
@@ -144,7 +146,7 @@ def test_artist_image_enrichment_selects_exact_match_among_multiple_results() ->
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["added"] == 1
     assert fake.get_artist_calls == ["UC-a"]
-    assert cache["Artist A"]["browse_id"] == "UC-a"
+    assert cache_record(cache, "Artist A", "UC-a")["browse_id"] == "UC-a"
 
 
 def test_artist_image_enrichment_records_missing_thumbnails() -> None:
@@ -155,7 +157,7 @@ def test_artist_image_enrichment_records_missing_thumbnails() -> None:
     cache: dict[str, object] = {}
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["failed"] == 1
-    assert cache["Artist A"]["failure_reason"] == "missing_thumbnails"
+    assert cache_record(cache, "Artist A", "UC-a")["failureReason"] == "missing_thumbnails"
 
 
 def test_best_thumbnail_prefers_highest_resolution_https() -> None:
@@ -171,7 +173,19 @@ def test_best_thumbnail_prefers_highest_resolution_https() -> None:
 
 def test_artist_image_enrichment_cache_hit_skips_upstream_calls() -> None:
     fake = FakeYTMusic()
-    cache = {"Artist A": {"thumbnail_url": "https://img.example/cached.jpg", "thumbnails": [{"url": "https://img.example/cached.jpg"}]}}
+    cache = {
+        "schemaVersion": 2,
+        "items": {
+            "artist-name:artist a": {
+                "schemaVersion": 2,
+                "mediaType": "artist",
+                "entityName": "Artist A",
+                "url": "https://img.example/cached.jpg",
+                "thumbnail_url": "https://img.example/cached.jpg",
+                "thumbnails": [{"url": "https://img.example/cached.jpg"}],
+            }
+        },
+    }
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["attempted"] == 0
     assert fake.search_calls == []
@@ -183,7 +197,7 @@ def test_artist_image_enrichment_keeps_list_on_upstream_exception() -> None:
     cache: dict[str, object] = {}
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Artist A")]}, cache)
     assert stats["failed"] == 1
-    assert cache["Artist A"]["failure_reason"] == "upstream_exception"
+    assert cache_record(cache, "Artist A")["failureReason"] == "upstream_exception"
 
 
 def test_artist_name_matching_handles_unicode_and_topic_suffix() -> None:
@@ -195,7 +209,7 @@ def test_artist_name_matching_handles_unicode_and_topic_suffix() -> None:
     cache: dict[str, object] = {}
     stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Beyoncé - Topic")]}, cache)
     assert stats["added"] == 1
-    assert cache["Beyoncé - Topic"]["thumbnail_url"] == "https://img.example/beyonce.jpg"
+    assert cache_record(cache, "Beyoncé - Topic", "UC-b")["url"] == "https://img.example/beyonce.jpg"
 
 
 class FakeYTMusic:
@@ -236,3 +250,14 @@ def _history_artist(name: str, artist_id: str | None = None) -> dict[str, object
     if artist_id:
         artist["id"] = artist_id
     return {"videoId": f"v-{normalise_artist_name(name)}", "title": "Song", "artists": [artist]}
+
+
+def cache_record(cache: dict[str, object], artist: str, artist_id: str | None = None) -> dict[str, object]:
+    items = cache["items"]  # type: ignore[index]
+    assert isinstance(items, dict)
+    for key in (artist_id_key(artist_id), artist_name_key(artist)):
+        if key and key in items:
+            value = items[key]
+            assert isinstance(value, dict)
+            return value
+    raise AssertionError(f"Missing cache record for {artist}")

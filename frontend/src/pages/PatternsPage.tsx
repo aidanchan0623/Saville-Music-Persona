@@ -1,7 +1,6 @@
 import { ChartPanel } from "../components/ChartPanel";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import type { Charts, ListeningMinutes, MusicSource } from "../types/api";
 import { formatMinutes } from "../utils/format";
@@ -44,7 +43,7 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
           titleClassName="text-4xl font-black leading-tight text-white md:text-5xl"
           subtitle="Refresh data to build charts from local cached analysis."
         />
-        <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No listening patterns yet.</GlowPanel>
+        <p className="border-t border-white/10 pt-5 text-sm text-mist">No listening patterns yet.</p>
       </div>
     );
   }
@@ -61,7 +60,7 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
         subtitle={source === "spotify" ? "Charts follow Spotify top-item, saved-library, playlist, and recent-sync signals available locally." : "Charts follow the dates and music details available in your local history."}
       />
 
-      <GlowPanel as="section" variant="major" lined className="p-4 md:p-5">
+      <section className="border-t border-white/10 pt-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.16em] text-red-200">Daily Listening Minutes</p>
@@ -95,7 +94,7 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
               <MinuteStat label="Longest day" value={minutes.metrics.longest_detected_listening_day?.formatted ?? "Unavailable"} caption={minutes.metrics.longest_detected_listening_day?.date ?? "No listening time yet"} />
               <MinuteStat label="Current streak" value={`${minutes.metrics.current_listening_streak_days} days`} caption="Active day = at least one detected music play" />
             </div>
-            <GlowPanel as="p" variant="row" wrapperClassName="mt-4" className="p-3 text-sm text-mist">{minutes.summary_sentence}</GlowPanel>
+            <p className="mt-4 max-w-3xl text-sm leading-6 text-mist">{minutes.summary_sentence}</p>
             <div className="mt-5 grid min-w-0 gap-4 xl:grid-cols-3">
               <ChartPanel title="Daily detected minutes" data={minutes.daily} type="line" />
               <ChartPanel title="Weekly aggregate minutes" data={minutes.weekly} />
@@ -104,9 +103,9 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
             <Heatmap values={minutes.heatmap.slice(-140)} />
           </>
         ) : (
-          <GlowPanel as="div" variant="row" wrapperClassName="mt-5" className="p-5 text-sm text-mist">No minute analytics available yet.</GlowPanel>
+          <p className="mt-5 text-sm text-mist">No minute analytics available yet.</p>
         )}
-      </GlowPanel>
+      </section>
 
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
         <ChartPanel title={`Listening by release decade - ${activeLabel}`} data={activeCharts.release_decades} />
@@ -125,11 +124,11 @@ export function PatternsPage({ charts, source, titleAnimationKey }: { charts: Ch
 
 function MinuteStat({ label, value, caption }: { label: string; value: string; caption: string }) {
   return (
-    <GlowPanel as="div" variant="row" className="p-4">
+    <div className="border-t border-white/10 py-4">
       <p className="text-xs uppercase tracking-[0.16em] text-mist/60">{label}</p>
       <p className="mt-2 text-xl font-black text-white">{value}</p>
       <p className="mt-1 text-xs text-mist">{caption}</p>
-    </GlowPanel>
+    </div>
   );
 }
 
@@ -137,7 +136,7 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
   if (!values.length) return null;
   const max = Math.max(...values.map((item) => item.value), 1);
   return (
-    <GlowPanel as="div" variant="card" wrapperClassName="mt-5" className="p-4">
+    <div className="mt-5 border-t border-white/10 pt-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-white">Recent daily intensity</h3>
         <p className="text-xs text-mist">Brighter red cells mean more detected listening time.</p>
@@ -155,6 +154,6 @@ function Heatmap({ values }: { values: ListeningMinutes["heatmap"] }) {
           );
         })}
       </div>
-    </GlowPanel>
+    </div>
   );
 }

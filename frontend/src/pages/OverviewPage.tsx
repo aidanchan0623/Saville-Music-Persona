@@ -1,7 +1,6 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { OverviewStepper } from "../components/home/OverviewStepper";
 import type {
@@ -15,6 +14,7 @@ import type {
   TasteDnaComparison,
   TasteDnaExplorer,
 } from "../types/api";
+import { resolvePersonaVisualTheme } from "../utils/personaVisualTheme";
 
 interface Props {
   overview: Overview | null;
@@ -65,18 +65,38 @@ export function OverviewPage({
       return;
     }
     let cancelled = false;
-    Promise.allSettled([
-      api.tasteDna("this_month", null, source),
-      api.tasteDnaCompare("rolling_year", "this_month", null, source),
-      api.periodTop("this_month", "artists", null, source),
-      api.periodTop("this_month", "tracks", null, source),
-    ] as const).then(([tasteResult, comparisonResult, artistsResult, tracksResult]) => {
-      if (cancelled) return;
-      if (tasteResult.status === "fulfilled") setCurrentTaste(tasteResult.value);
-      if (comparisonResult.status === "fulfilled") setComparison(comparisonResult.value);
-      if (artistsResult.status === "fulfilled") setCurrentTopArtists(artistsResult.value);
-      if (tracksResult.status === "fulfilled") setCurrentTopTracks(tracksResult.value);
-    });
+    setCurrentTaste(null);
+    setComparison(null);
+    setCurrentTopArtists(null);
+    setCurrentTopTracks(null);
+    api.tasteDna("this_month", null, source)
+      .then((value) => {
+        if (!cancelled) setCurrentTaste(value);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentTaste(null);
+      });
+    api.tasteDnaCompare("rolling_year", "this_month", null, source)
+      .then((value) => {
+        if (!cancelled) setComparison(value);
+      })
+      .catch(() => {
+        if (!cancelled) setComparison(null);
+      });
+    api.periodTop("this_month", "artists", null, source)
+      .then((value) => {
+        if (!cancelled) setCurrentTopArtists(value);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentTopArtists(null);
+      });
+    api.periodTop("this_month", "tracks", null, source)
+      .then((value) => {
+        if (!cancelled) setCurrentTopTracks(value);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentTopTracks(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -107,6 +127,8 @@ export function OverviewPage({
   const sourceLabel = source === "spotify" ? "Spotify" : "YouTube Music";
   const coreTitle = overview.headline_persona || taste.core_genre_families.map((cluster) => cluster.name).slice(0, 2).join(" / ") || "Music identity";
   const summary = taste.summary || "A compact read of your current listening profile from local music data.";
+  const visualTheme = resolvePersonaVisualTheme(overview, currentTaste);
+  const updatedLabel = overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "not refreshed yet";
 
   return (
     <div className="space-y-7">
@@ -116,23 +138,24 @@ export function OverviewPage({
         titleAnimationKey={titleAnimationKey}
         titleClassName="max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl"
         subtitle={summary}
-        subtitleClassName="mt-4 line-clamp-3 max-w-3xl text-base leading-7 text-mist"
+        subtitleClassName="mt-4 max-w-3xl text-base leading-7 text-mist"
         lineMode="animated"
+        className="overview-hero-panel"
+        backgroundImage={visualTheme.primaryImage.src}
+        backgroundPosition={visualTheme.primaryImage.position ?? visualTheme.position}
+        overlayStrength={visualTheme.overlayStrength}
         actions={
-          <GlowPanel as="div" variant="row" className="p-4">
-            <p className="text-sm font-semibold text-red-100">Most active sound</p>
-            <p className="mt-2 text-2xl font-black leading-tight text-white">{overview.top_genre_cluster || "Still mapping"}</p>
-            <button className="btn-primary mt-5 w-full" type="button" onClick={onOpenReport}>
+          <div className="overview-hero-sound">
+            <p className="overview-hero-sound__label">Most active sound</p>
+            <p className="overview-hero-sound__value">{overview.top_genre_cluster || "Still mapping"}</p>
+            <p className="overview-hero-sound__context">{visualTheme.accentLabel}</p>
+            <button className="btn-primary mt-5" type="button" onClick={onOpenReport}>
               Open Persona Report
             </button>
-          </GlowPanel>
+          </div>
         }
         metadata={
-          <>
-            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Source: {sourceLabel}</span>
-            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">{overview.coverage.days_represented.toLocaleString()} days represented</span>
-            <span className="rounded-md border border-line bg-white/[0.04] px-3 py-1.5">Updated: {overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "Not refreshed yet"}</span>
-          </>
+          <span>{sourceLabel} &middot; {overview.coverage.days_represented.toLocaleString()} days analysed &middot; Updated {updatedLabel}</span>
         }
       />
 
@@ -145,6 +168,7 @@ export function OverviewPage({
         comparison={comparison}
         currentTopArtists={currentTopArtists}
         currentTopTracks={currentTopTracks}
+        visualTheme={visualTheme}
         onOpenTop10={onOpenTop10}
         onOpenScores={onOpenScores}
         onOpenPatterns={onOpenPatterns}

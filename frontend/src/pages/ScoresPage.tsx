@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
-import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { getScoreKind, getScorePresentation, ScoreGauge, type ScoreKind } from "../components/ScoreGauge";
 import type { ListeningMinutes, MusicSource, ScoreMetric } from "../types/api";
@@ -50,7 +49,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
           titleClassName="text-5xl font-black leading-[0.95] tracking-tight text-white md:text-7xl"
           subtitle="Refresh data to calculate deterministic scores with transparent formulas."
         />
-        <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No scorecard yet.</GlowPanel>
+        <p className="border-t border-white/10 pt-5 text-sm text-mist">No scorecard yet.</p>
       </div>
     );
   }
@@ -82,7 +81,7 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         }
         subtitleClassName="mt-5"
         actions={
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel/80 p-2">
+          <div className="flex flex-wrap items-center gap-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
           <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
           <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
@@ -95,32 +94,32 @@ export function ScoresPage({ scores: initialScores, source, titleAnimationKey }:
         }
       />
 
-      <GlowPanel as="section" variant="card" className="p-4 text-sm text-mist">
-        <div className="flex flex-wrap items-center gap-2">
+      <section className="text-sm text-mist">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/10 pt-4">
           <span className="font-semibold text-white">Analysing {periodLabel}</span>
-          {loading ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Updating...</span> : null}
-          {minutes ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">{playCount.toLocaleString()} detected plays</span> : null}
-          {source === "spotify" ? <span className="rounded-full bg-white/10 px-3 py-1 text-xs">Spotify top-item based</span> : null}
-          {limitedSample ? <span className="rounded-full bg-amber-200/10 px-3 py-1 text-xs text-amber-100">Limited sample for this month</span> : null}
+          {loading ? <span>Updating...</span> : null}
+          {minutes ? <span>{playCount.toLocaleString()} detected plays</span> : null}
+          {source === "spotify" ? <span>Spotify top-item based</span> : null}
+          {limitedSample ? <span className="text-amber-100">Limited sample for this month</span> : null}
         </div>
-      </GlowPanel>
+      </section>
 
-      <GlowPanel as="section" variant="card" lined className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center">
+      <section className="flex flex-col gap-4 border-t border-white/10 pt-5 lg:flex-row lg:items-center">
         <div className="lg:w-44">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-violet-200">At a glance</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">At a glance</p>
         </div>
         <div className="flex flex-1 flex-wrap gap-3">
           {glanceScores.map((score) => {
             const presentation = getScorePresentation(score);
             return (
-              <div key={score.key} className="rounded-full border border-white/10 bg-white/[0.055] px-4 py-2.5 shadow-[0_10px_40px_rgba(0,0,0,0.16)]">
+              <div key={score.key} className="text-sm">
                 <span className="text-sm font-semibold text-white">{presentation.tag}</span>
-                <span className="ml-2 text-sm text-violet-200">{asPercent(score.value)}</span>
+                <span className="ml-2 text-sm text-red-100">{asPercent(score.value)}</span>
               </div>
             );
           })}
         </div>
-      </GlowPanel>
+      </section>
 
       <div className="space-y-14">
         {groups.map((group) => (

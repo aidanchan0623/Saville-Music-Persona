@@ -8,6 +8,14 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.analysis.duration import duration_quality, usable_duration_seconds
+from app.analysis.media import (
+    album_image_source as resolve_album_image_source,
+    album_image_url as resolve_album_image_url,
+    artist_image_source as resolve_artist_image_source,
+    artist_image_url as resolve_artist_image_url,
+    track_image_source as resolve_track_image_source,
+    track_image_url as resolve_track_image_url,
+)
 from app.analysis.normalizer import UNKNOWN_ARTIST
 from app.analysis.taste_model import build_taste_model, profile_for_artist
 from app.analysis.thumbnails import best_thumbnail_url
@@ -524,7 +532,6 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     usable_counts: Counter[str] = Counter()
     unique_tracks: dict[str, set[str]] = defaultdict(set)
     top_song: dict[str, Counter[str]] = defaultdict(Counter)
-    image_candidates: dict[str, str] = {}
     last_played: dict[str, str] = {}
     total = len(events)
     for event in events:
@@ -533,10 +540,6 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             key = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         else:
             key = str(event.get("track_id"))
-        if kind != "artists":
-            image = thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
-            if image and key not in image_candidates:
-                image_candidates[key] = image
         counts[key] += 1
         sec = usable_duration_seconds(event) or 0
         seconds[key] += sec
@@ -562,12 +565,18 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             meta_track = None
             title = None
             artist_meta = artist_metadata_for(artist, metadata, normalised_metadata_lookup)
-            image = thumbnail_url(artist_meta.get("thumbnails"))
+            artist_art = resolve_artist_image_url(artist_meta)
+            image = artist_art
             most_played_song = top_song[key].most_common(1)[0][0].rsplit(" - ", 1)[0] if top_song[key] else None
             album = None
             source = artist_meta.get("source")
             source_track_id = None
             source_artist_id = artist_meta.get("artist_id")
+            artist_image_source = resolve_artist_image_source(artist_meta)
+            track_art = None
+            track_art_source = None
+            album_art = None
+            album_art_source = None
             spotify_time_range = artist_meta.get("spotify_time_range")
             spotify_rank = artist_meta.get("spotify_rank")
             spotify_signal_label = None
@@ -575,12 +584,18 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             meta_track = track_lookup.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
             title = str(meta_track.get("title") or "Unknown track")
-            image = thumbnail_url(meta_track.get("thumbnails"), meta_track.get("video_id"))
+            track_art = resolve_track_image_url(meta_track)
+            album_art = resolve_album_image_url(meta_track)
+            image = track_art or album_art
             most_played_song = None
             album = meta_track.get("album")
             source = meta_track.get("source")
             source_track_id = meta_track.get("source_track_id")
             source_artist_id = None
+            artist_art = None
+            artist_image_source = None
+            track_art_source = resolve_track_image_source(meta_track)
+            album_art_source = resolve_album_image_source(meta_track)
             spotify_time_range = meta_track.get("spotify_time_range")
             spotify_rank = meta_track.get("spotify_rank")
             spotify_signal_label = meta_track.get("spotify_signal_label")
@@ -597,6 +612,12 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "artist": artist,
                 "album": album,
                 "thumbnail": image,
+                "artist_image_url": artist_art,
+                "artist_image_source": artist_image_source,
+                "track_image_url": track_art,
+                "track_image_source": track_art_source,
+                "album_art_url": album_art,
+                "album_art_source": album_art_source,
                 "play_count": play_count,
                 "detected_minutes": round_minutes(seconds[key]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds[key])),
@@ -634,10 +655,13 @@ def artist_songs_payload(
     first_played = first_played_by_track(matched)
     songs = [drilldown_song_payload(item, index, "artist", first_played) for index, item in enumerate(ranked, 1)]
     top_song = songs[0]["title"] if songs else None
-    artist_thumbnail = thumbnail_url(artist_metadata_for(artist, normalised.get("artist_metadata") or {}).get("thumbnails"))
+    artist_meta = artist_metadata_for(artist, normalised.get("artist_metadata") or {})
+    artist_thumbnail = resolve_artist_image_url(artist_meta)
     return {
         "artist": artist,
         "artist_thumbnail": artist_thumbnail,
+        "artist_image_url": artist_thumbnail,
+        "artist_image_source": resolve_artist_image_source(artist_meta),
         "period_label": spec["label"],
         "period": serialise_spec(spec),
         "total_plays": len(matched),
@@ -679,6 +703,8 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
             "artist": UNKNOWN_ARTIST,
             "album_id": None,
             "thumbnail": None,
+            "album_image_url": None,
+            "album_image_source": None,
             "plays": 0,
             "seconds": 0,
             "usable": 0,
@@ -699,7 +725,10 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
         stat["album"] = stat["album"] or group["album"]
         stat["artist"] = stat["artist"] if stat["artist"] != UNKNOWN_ARTIST else group["artist"]
         stat["album_id"] = stat["album_id"] or group["album_id"] or None
-        stat["thumbnail"] = stat["thumbnail"] or thumbnail_url(track.get("thumbnails"), track.get("video_id") or event.get("video_id"))
+        album_art = resolve_album_image_url(track)
+        stat["album_image_url"] = stat["album_image_url"] or album_art
+        stat["album_image_source"] = stat["album_image_source"] or resolve_album_image_source(track)
+        stat["thumbnail"] = stat["thumbnail"] or album_art
         stat["plays"] += 1
         sec = usable_duration_seconds(event) or 0
         stat["seconds"] += sec
@@ -731,6 +760,8 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
                 "artist": item["artist"],
                 "album_id": item.get("album_id"),
                 "thumbnail": item.get("thumbnail"),
+                "album_image_url": item.get("album_image_url"),
+                "album_image_source": item.get("album_image_source"),
                 "plays": play_count,
                 "detected_minutes": round_minutes(item["seconds"]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(item["seconds"])),
@@ -830,6 +861,10 @@ def drilldown_song_payload(item: dict[str, Any], rank: int, scope: str, first_pl
         "artist": item.get("artist"),
         "album": item.get("album"),
         "thumbnail": item.get("thumbnail"),
+        "track_image_url": item.get("track_image_url"),
+        "track_image_source": item.get("track_image_source"),
+        "album_art_url": item.get("album_art_url"),
+        "album_art_source": item.get("album_art_source"),
         "plays": item.get("play_count", 0),
         "detected_minutes": item.get("detected_minutes", 0),
         "detected_minutes_formatted": item.get("detected_minutes_formatted"),

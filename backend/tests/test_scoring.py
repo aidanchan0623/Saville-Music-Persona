@@ -51,17 +51,30 @@ def test_top_artists_prefer_official_artist_images_only() -> None:
                 {"videoId": "a", "title": "A", "artists": [{"name": "Artist A"}], "played": "Yesterday"},
                 {"videoId": "b", "title": "B", "artists": [{"name": "Artist B"}], "played": "2 days ago"},
             ],
-            "artist_image_cache": {
-                "Artist A": {
-                    "artist": "Artist A",
-                    "artist_id": "UC-a",
-                    "thumbnails": [{"url": "https://yt.example/artist-a.jpg", "width": 512, "height": 512}],
-                }
-            },
+            "artist_image_cache_v2": artist_cache_v2("Artist A", "UC-a", "https://yt.example/artist-a.jpg"),
         },
         today=date(2026, 7, 7),
     )
     analysis = build_analysis(normalised)
     by_artist = {artist["artist"]: artist for artist in analysis["top_artists"]}
     assert by_artist["Artist A"]["image"] == "https://yt.example/artist-a.jpg"
+    assert by_artist["Artist A"]["artist_image_url"] == "https://yt.example/artist-a.jpg"
     assert by_artist["Artist B"]["image"] is None
+
+
+def artist_cache_v2(artist: str, artist_id: str, url: str) -> dict[str, object]:
+    normalised = " ".join(artist.lower().split())
+    entry = {
+        "schemaVersion": 2,
+        "mediaType": "artist",
+        "entityId": artist_id,
+        "entityName": artist,
+        "artist": artist,
+        "artist_id": artist_id,
+        "url": url,
+        "thumbnail_url": url,
+        "artist_image_source": "youtube_artist_profile",
+        "thumbnails": [{"url": url, "width": 512, "height": 512}],
+        "resolvedAt": "2026-07-07T00:00:00+00:00",
+    }
+    return {"schemaVersion": 2, "items": {f"artist:{artist_id}": entry, f"artist-name:{normalised}": entry}}

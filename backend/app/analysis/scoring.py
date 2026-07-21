@@ -6,6 +6,14 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from app.analysis.normalizer import UNKNOWN_ARTIST, clamp, parse_release_year
+from app.analysis.media import (
+    album_image_source as resolve_album_image_source,
+    album_image_url as resolve_album_image_url,
+    artist_image_source as resolve_artist_image_source,
+    artist_image_url as resolve_artist_image_url,
+    track_image_source as resolve_track_image_source,
+    track_image_url as resolve_track_image_url,
+)
 from app.analysis.score_interpretations import attach_score_interpretations
 from app.analysis.taste_model import build_taste_model, enrich_artist
 from app.analysis.thumbnails import best_thumbnail_url
@@ -328,6 +336,8 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
             if track.get("source") == "spotify":
                 reason = "Spotify does not expose full historical play counts here; this row is based on top-item or recent-sync evidence."
+        track_art = resolve_track_image_url(track)
+        album_art = resolve_album_image_url(track)
         result.append(
             {
                 "rank": index,
@@ -340,7 +350,11 @@ def build_top_tracks(tracks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "artists": track["artists"],
                 "album": track.get("album"),
                 "release_year": track.get("release_year"),
-                "thumbnail": thumbnail_url(track.get("thumbnails"), track.get("video_id")),
+                "thumbnail": track_art or album_art,
+                "track_image_url": track_art,
+                "track_image_source": resolve_track_image_source(track),
+                "album_art_url": album_art,
+                "album_art_source": resolve_album_image_source(track),
                 "play_count": track.get("play_count_in_period", 0),
                 "last_played": track.get("last_played"),
                 "why_it_ranked": reason,
@@ -387,6 +401,7 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
         observation = f"{artist} accounts for {round(share, 1)}% of detected plays across {unique_songs} song(s)."
         if meta.get("source") == "spotify":
             observation = f"{artist} is supported by Spotify top-item and recent-sync signals across {unique_songs} song(s)."
+        image = resolve_artist_image_url(meta)
         result.append(
             {
                 "rank": index,
@@ -394,7 +409,9 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
                 "artist_id": meta.get("artist_id"),
                 "source": meta.get("source"),
                 "source_artist_id": meta.get("artist_id"),
-                "image": thumbnail_url(meta.get("thumbnails")),
+                "image": image,
+                "artist_image_url": image,
+                "artist_image_source": resolve_artist_image_source(meta),
                 "play_count": count,
                 "share_of_listens": round(share, 1),
                 "unique_songs_played": unique_songs,

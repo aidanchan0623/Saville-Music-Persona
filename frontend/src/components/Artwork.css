@@ -6,12 +6,12 @@
   aspect-ratio: 1 / 1;
   overflow: hidden;
   flex-shrink: 0;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid rgb(255 255 255 / 8%);
   background:
     radial-gradient(circle at 30% 20%, rgb(239 43 45 / 34%), transparent 38%),
     linear-gradient(135deg, rgb(127 29 29 / 88%), rgb(5 5 5 / 96%));
   color: white;
-  box-shadow: 0 18px 50px rgb(0 0 0 / 32%);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 26%);
 }
 
 .artwork-frame--sm {
@@ -36,6 +36,12 @@
 
 .artwork-frame--circle {
   border-radius: 999px;
+}
+
+.artwork-frame--album .artwork-frame__fallback {
+  background:
+    radial-gradient(circle at 50% 50%, rgb(255 255 255 / 9%) 0 9%, transparent 10% 100%),
+    linear-gradient(135deg, rgb(51 12 16 / 88%), rgb(17 17 20 / 96%));
 }
 
 .artwork-frame img {
@@ -85,6 +91,18 @@
 
 .track-card-artwork {
   width: 4.5rem;
+}
+
+.persona-background {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
 }
 
 @keyframes artwork-skeleton-sheen {

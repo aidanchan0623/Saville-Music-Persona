@@ -101,7 +101,7 @@ function LocalStatusPanel({
   modelInstalled?: boolean;
 }) {
   return (
-    <div className="mt-6 space-y-2 rounded-lg border border-line bg-white/[0.035] p-3">
+    <div className="mt-6 space-y-2 border-t border-line pt-4">
       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-mist/70">Local status</p>
       <StatusPill ok={youtubeReady} label={youtubeLabel} />
       <StatusPill ok={spotifyConnected} label={spotifyConnected ? "Spotify connected" : "Spotify optional"} />
