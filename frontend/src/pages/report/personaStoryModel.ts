@@ -7,7 +7,6 @@ import type {
   TopAlbumItem,
   TopArtist,
 } from "../../types/api";
-import type { OrbitImageItem } from "../../components/reactbits/OrbitImages/OrbitImages";
 
 export type PersonaStory = {
   personaName: string;
@@ -25,6 +24,13 @@ export type GenreSegment = {
   label: string;
   value: number;
   color: string;
+};
+
+export type PersonaAlbumDomeItem = {
+  src: string;
+  title: string;
+  artist: string;
+  rank: number;
 };
 
 export function buildPersonaStory(
@@ -71,19 +77,22 @@ export function buildPersonaStory(
   };
 }
 
-export function buildOrbitAlbums(albums: TopAlbumItem[]): OrbitImageItem[] {
+export function buildAlbumDomeItems(albums: TopAlbumItem[]): PersonaAlbumDomeItem[] {
   const seen = new Set<string>();
-  const result: OrbitImageItem[] = [];
+  const result: PersonaAlbumDomeItem[] = [];
   for (const album of albums) {
-    if (!album.album_image_url) continue;
+    const albumImageUrl = cleanText(album.album_image_url);
+    if (!albumImageUrl) continue;
     const key = normaliseName(album.album_id || album.key || `${album.album} ${album.artist}`);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     result.push({
-      src: album.album_image_url,
-      alt: `${album.album} by ${album.artist}`,
+      src: albumImageUrl,
+      title: album.album,
+      artist: album.artist,
+      rank: album.rank,
     });
-    if (result.length >= 8) break;
+    if (result.length >= 12) break;
   }
   return result;
 }

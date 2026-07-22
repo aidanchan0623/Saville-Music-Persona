@@ -1,16 +1,14 @@
-import { ArrowDown, ChevronLeft, ChevronRight, RotateCcw, Sparkles } from "lucide-react";
-import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
+import { Sparkles } from "lucide-react";
+import { useMemo, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { ArtistAvatar } from "../../components/Artwork";
-import { OrbitImages } from "../../components/reactbits/OrbitImages/OrbitImages";
-import type { OrbitImageItem } from "../../components/reactbits/OrbitImages/OrbitImages";
-import { ScrollReveal } from "../../components/reactbits/ScrollReveal/ScrollReveal";
-import { ScrollStack, ScrollStackItem } from "../../components/reactbits/ScrollStack/ScrollStack";
+import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
 import type { MusicCharacterResponse, MusicSource, PersonaMainCharacter, TopAlbumItem, TopArtist } from "../../types/api";
+import { PersonaAlbumDome } from "./PersonaAlbumDome";
 import {
   artistMetric,
+  buildAlbumDomeItems,
   buildGenreSegments,
-  buildOrbitAlbums,
   findArtist,
   formatShare,
   initials,
@@ -18,14 +16,7 @@ import {
 } from "./personaStoryModel";
 import type { GenreSegment, PersonaStory } from "./personaStoryModel";
 
-const CHAPTERS = [
-  { id: "opening", label: "Opening", title: "Your Musical Character" },
-  { id: "core", label: "Core Sound", title: "Where Your Taste Lives" },
-  { id: "comfort", label: "Comfort Loop", title: "What You Return To" },
-  { id: "characters", label: "Main Characters", title: "Your Anchor Artists" },
-  { id: "twist", label: "Plot Twist", title: "Discovery and Unexpected Signals" },
-  { id: "closing", label: "Closing Credits", title: "Final Persona Summary" },
-] as const;
+type GenerateMode = "serious" | "playful" | "roast";
 
 type PersonaStoryExperienceProps = {
   story: PersonaStory;
@@ -35,10 +26,17 @@ type PersonaStoryExperienceProps = {
   topArtists: TopArtist[];
   prerequisitesModelReady: boolean;
   busy: boolean;
-  onGenerate: (mode: "serious" | "playful" | "roast") => void;
+  onGenerate: (mode: GenerateMode) => void;
   source: MusicSource;
   titleAnimationKey: string;
 };
+
+const STORY_SPRING = { stiffness: 82, damping: 28, mass: 0.45 };
+const REPORT_ACTIONS: { mode: GenerateMode; label: string }[] = [
+  { mode: "serious", label: "Regenerate" },
+  { mode: "playful", label: "Playful" },
+  { mode: "roast", label: "Light Roast" },
+];
 
 export function PersonaStoryExperience({
   story,
@@ -52,249 +50,263 @@ export function PersonaStoryExperience({
   source,
   titleAnimationKey,
 }: PersonaStoryExperienceProps) {
-  const [activeChapter, setActiveChapter] = useState(0);
-  const chapterRefs = useRef<(HTMLElement | null)[]>([]);
-  const orbitAlbums = useMemo(() => buildOrbitAlbums(favouriteAlbums), [favouriteAlbums]);
+  const storyRef = useRef<HTMLDivElement | null>(null);
+  const reducedMotion = useReducedMotion();
+  const { scrollYProgress } = useScroll({ target: storyRef, offset: ["start start", "end end"] });
+  const smoothProgress = useSpring(scrollYProgress, STORY_SPRING);
+  const domeAlbums = useMemo(() => buildAlbumDomeItems(favouriteAlbums), [favouriteAlbums]);
   const genreSegments = useMemo(() => buildGenreSegments(rollingCharacter), [rollingCharacter]);
   const topAlbum = favouriteAlbums.find((album) => album.album_image_url) ?? favouriteAlbums[0] ?? null;
-
-  useEffect(() => {
-    const nodes = chapterRefs.current.filter(Boolean) as HTMLElement[];
-    if (!nodes.length) return;
-    const updateActiveChapter = () => {
-      const probeY = window.scrollY + window.innerHeight * 0.38;
-      let nextActive = 0;
-      nodes.forEach((node, index) => {
-        if (node.offsetTop <= probeY) nextActive = index;
-      });
-      setActiveChapter(nextActive);
-    };
-    const observer = new IntersectionObserver(
-      () => updateActiveChapter(),
-      { threshold: [0.34, 0.5, 0.66], rootMargin: "-18% 0px -45% 0px" },
-    );
-    nodes.forEach((node) => observer.observe(node));
-    window.addEventListener("scroll", updateActiveChapter, { passive: true });
-    updateActiveChapter();
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("scroll", updateActiveChapter);
-    };
-  }, [story]);
-
-  const scrollToChapter = (index: number) => {
-    const next = Math.max(0, Math.min(CHAPTERS.length - 1, index));
-    const node = chapterRefs.current[next];
-    if (!node) return;
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    node.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
-  };
-
   const repeatScore = scoreValue(rollingCharacter, "repeat");
   const discoveryScore = scoreValue(rollingCharacter, "discovery");
   const dominantSound = rollingCharacter?.top_clusters[0]?.name ?? genreSegments[0]?.label ?? "Your strongest sound-world";
   const traits = rollingCharacter?.sonic_traits.slice(0, 5) ?? [];
 
+  const progressScale = reducedMotion ? scrollYProgress : smoothProgress;
+  const domeY = useTransform(smoothProgress, [0, 0.3, 0.52, 0.78, 1], ["0vh", "-8vh", "-17vh", "-8vh", "2vh"]);
+  const domeScale = useTransform(smoothProgress, [0, 0.3, 0.54, 0.76, 1], [1, 0.94, 0.82, 0.75, 0.9]);
+  const domeOpacity = useTransform(smoothProgress, [0, 0.22, 0.42, 0.65, 0.88, 1], [0.72, 0.58, 0.25, 0.16, 0.28, 0.44]);
+  const storyTone = useTransform(smoothProgress, [0, 0.28, 0.52, 0.74, 1], ["#090607", "#120608", "#070607", "#100608", "#080607"]);
+
   return (
     <div className="persona-report">
-      <header className="persona-report__masthead">
+      <header className="persona-report__masthead" aria-label="Persona report controls">
         <div>
           <p className="persona-report__eyebrow">Persona Report</p>
-          <h1 key={titleAnimationKey}>{story.personaName}</h1>
-          <p className="persona-report__hook">{story.openingHook}</p>
           <p className="persona-report__meta">
             {story.sourceLabel}
             {!prerequisitesModelReady ? " / Gemma offline fallback available" : ""}
           </p>
         </div>
         <div className="persona-report__actions" aria-label="Generate persona report">
-          <button className="btn-secondary" disabled={busy} onClick={() => onGenerate("serious")}>
-            <Sparkles size={16} /> Generate Story
-          </button>
-          <button className="btn-secondary" disabled={busy} onClick={() => onGenerate("playful")}>Playful</button>
-          <button className="btn-secondary" disabled={busy} onClick={() => onGenerate("roast")}>Light Roast</button>
+          {REPORT_ACTIONS.map((action, index) => (
+            <button
+              key={action.mode}
+              className={index === 0 ? "btn-secondary persona-report__action-primary" : "btn-secondary"}
+              disabled={busy}
+              type="button"
+              onClick={() => onGenerate(action.mode)}
+            >
+              {index === 0 ? <Sparkles size={16} /> : null}
+              {action.label}
+            </button>
+          ))}
         </div>
       </header>
 
-      <PersonaStoryNavigation activeChapter={activeChapter} busy={busy} onNavigate={scrollToChapter} />
+      <article ref={storyRef} className="persona-story" aria-label="Persona story report">
+        <motion.div className="persona-story__tone" aria-hidden="true" style={reducedMotion ? undefined : { backgroundColor: storyTone }} />
+        {domeAlbums.length ? (
+          <div className="persona-story__album-field" aria-hidden="true">
+            <div className="persona-story__album-sticky">
+              <PersonaAlbumDome
+                items={domeAlbums}
+                priority
+                style={reducedMotion ? { opacity: 0.34 } : { y: domeY, scale: domeScale, opacity: domeOpacity }}
+              />
+            </div>
+          </div>
+        ) : null}
+        <motion.div className="persona-story-progress" aria-hidden="true" style={{ scaleY: progressScale }} />
 
-      <ScrollStack className="persona-story" aria-label="Persona story chapters">
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[0] = node;
-          }}
-          chapterIndex={0}
-          label="Your Music Persona"
-          headline={story.personaName}
-          body={story.openingHook}
-          pullQuote={dominantSound}
-          orbitAlbums={orbitAlbums}
-          orbitActive={activeChapter === 0}
-          orbitPriority
-          visual={<OpeningVisual dominantSound={dominantSound} traits={traits} onNext={() => scrollToChapter(1)} />}
+        <OpeningSection
+          story={story}
+          dominantSound={dominantSound}
+          traits={traits}
+          titleAnimationKey={titleAnimationKey}
         />
 
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[1] = node;
-          }}
-          chapterIndex={1}
+        <EditorialSection
+          id="core"
           label="Core Sound"
           headline={story.coreSound.headline}
           body={story.coreSound.body}
           pullQuote={story.coreSound.pullQuote}
-          visual={<CoreSoundVisual segments={genreSegments} traits={traits} />}
-        />
+          variant="core"
+        >
+          <CoreSoundVisual segments={genreSegments} traits={traits} />
+        </EditorialSection>
 
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[2] = node;
-          }}
-          chapterIndex={2}
-          label="The Comfort Loop"
+        <EditorialSection
+          id="comfort"
+          label="Comfort Loop"
           headline={story.comfortLoop.headline}
           body={story.comfortLoop.body}
           pullQuote={story.comfortLoop.pullQuote}
-          orbitAlbums={orbitAlbums}
-          orbitActive={activeChapter === 2}
-          visual={<ComfortVisual repeatScore={repeatScore} discoveryScore={discoveryScore} topAlbum={topAlbum} />}
-        />
+          variant="comfort"
+          reversed
+        >
+          <ComfortVisual repeatScore={repeatScore} discoveryScore={discoveryScore} topAlbum={topAlbum} />
+        </EditorialSection>
 
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[3] = node;
-          }}
-          chapterIndex={3}
+        <EditorialSection
+          id="characters"
           label="Main Characters"
           headline="The Names That Hold The Frame"
           body="These are not just top-list names. They are the recurring faces that give the story continuity, tension, and recognizable gravity."
-          visual={<MainCharactersVisual characters={story.mainCharacters} topArtists={topArtists} source={source} />}
-        />
+          variant="characters"
+        >
+          <MainCharactersVisual characters={story.mainCharacters} topArtists={topArtists} source={source} />
+        </EditorialSection>
 
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[4] = node;
-          }}
-          chapterIndex={4}
-          label="The Plot Twist"
+        <EditorialSection
+          id="twist"
+          label="Plot Twist"
           headline={story.plotTwist.headline}
           body={story.plotTwist.body}
-          visual={<PlotTwistVisual rollingCharacter={rollingCharacter} currentCharacter={currentCharacter} />}
-        />
+          variant="twist"
+          reversed
+        >
+          <PlotTwistVisual rollingCharacter={rollingCharacter} currentCharacter={currentCharacter} />
+        </EditorialSection>
 
-        <PersonaChapter
-          ref={(node) => {
-            chapterRefs.current[5] = node;
-          }}
-          chapterIndex={5}
+        <EditorialSection
+          id="closing"
           label="Closing Credits"
           headline={story.closing.headline}
           body={story.closing.body}
           pullQuote={story.closing.finalLine}
-          orbitAlbums={orbitAlbums}
-          orbitActive={activeChapter === 5}
-          visual={<ClosingVisual finalLine={story.closing.finalLine} onRestart={() => scrollToChapter(0)} />}
-        />
-      </ScrollStack>
+          variant="closing"
+        >
+          <ClosingVisual finalLine={story.closing.finalLine} />
+        </EditorialSection>
+      </article>
     </div>
   );
 }
 
-type PersonaChapterProps = {
-  chapterIndex: number;
+function OpeningSection({
+  story,
+  dominantSound,
+  traits,
+  titleAnimationKey,
+}: {
+  story: PersonaStory;
+  dominantSound: string;
+  traits: string[];
+  titleAnimationKey: string;
+}) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const reducedMotion = useReducedMotion();
+  const isInView = useInView(sectionRef, { amount: 0.36, margin: "-8% 0px -18% 0px" });
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start start", "end start"] });
+  const copyY = useSpring(useTransform(scrollYProgress, [0, 1], [0, -34]), STORY_SPRING);
+  const visualY = useSpring(useTransform(scrollYProgress, [0, 1], [24, -28]), STORY_SPRING);
+  const copyOpacity = useTransform(scrollYProgress, [0, 0.72, 1], [1, 0.9, 0.48]);
+
+  return (
+    <section
+      ref={sectionRef}
+      id="persona-opening"
+      className="persona-section persona-section--opening"
+      aria-labelledby="persona-opening-title"
+      data-in-view={isInView ? "true" : "false"}
+    >
+      <motion.div className="persona-section__copy persona-section__copy--opening" style={reducedMotion ? undefined : { y: copyY, opacity: copyOpacity }}>
+        <p className="persona-section__label">Your Music Persona</p>
+        <h1 id="persona-opening-title" key={titleAnimationKey}>
+          {story.personaName}
+        </h1>
+        <MotionReveal className="persona-opening-hook">
+          <p>{story.openingHook}</p>
+        </MotionReveal>
+        <div className="persona-opening-signal">
+          <span>Dominant sound</span>
+          <strong>{dominantSound}</strong>
+        </div>
+        <p className="persona-scroll-cue">Scroll to enter your listening story</p>
+      </motion.div>
+      <motion.aside className="persona-opening-atmosphere" aria-label="Opening sound details" style={reducedMotion ? undefined : { y: visualY }}>
+        <span>Sound weather</span>
+        <strong>{dominantSound}</strong>
+        {traits.length ? <p>{traits.join(" / ")}</p> : null}
+      </motion.aside>
+    </section>
+  );
+}
+
+type EditorialSectionProps = {
+  id: string;
   label: string;
   headline: string;
   body: string;
   pullQuote?: string;
-  visual: ReactNode;
-  orbitAlbums?: OrbitImageItem[];
-  orbitActive?: boolean;
-  orbitPriority?: boolean;
+  children: ReactNode;
+  variant: string;
+  reversed?: boolean;
 };
 
-const PersonaChapter = forwardRef<HTMLElement, PersonaChapterProps>(function PersonaChapter(
-  { chapterIndex, label, headline, body, pullQuote, visual, orbitAlbums, orbitActive, orbitPriority },
-  ref,
-) {
-  return (
-    <ScrollStackItem ref={ref} id={`persona-${CHAPTERS[chapterIndex].id}`} data-chapter-index={chapterIndex}>
-      <article className="persona-chapter">
-        {orbitAlbums?.length ? <AlbumOrbitBackground albums={orbitAlbums} active={orbitActive} priority={orbitPriority} /> : null}
-        <div className="persona-chapter__shade" aria-hidden="true" />
-        <div className="persona-chapter__copy">
-          <p className="persona-chapter__label">{label}</p>
-          <ScrollReveal>
-            <h2>{headline}</h2>
-          </ScrollReveal>
-          <p className="persona-chapter__body">{body}</p>
-          {pullQuote ? (
-            <ScrollReveal className="persona-chapter__quote">
-              <blockquote>{pullQuote}</blockquote>
-            </ScrollReveal>
-          ) : null}
-        </div>
-        <div className="persona-chapter__visual">{visual}</div>
-      </article>
-    </ScrollStackItem>
-  );
-});
+function EditorialSection({ id, label, headline, body, pullQuote, children, variant, reversed = false }: EditorialSectionProps) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const reducedMotion = useReducedMotion();
+  const isInView = useInView(sectionRef, { amount: 0.32, margin: "-12% 0px -18% 0px" });
+  const { scrollYProgress } = useScroll({ target: sectionRef, offset: ["start end", "end start"] });
+  const copyY = useSpring(useTransform(scrollYProgress, [0, 0.34, 0.78, 1], [36, 0, -8, -24]), STORY_SPRING);
+  const copyOpacity = useTransform(scrollYProgress, [0, 0.2, 0.72, 1], [0.34, 1, 1, 0.55]);
+  const visualScale = useSpring(useTransform(scrollYProgress, [0, 0.38, 0.82, 1], [0.95, 1, 1, 0.98]), STORY_SPRING);
 
-function PersonaStoryNavigation({ activeChapter, busy, onNavigate }: { activeChapter: number; busy: boolean; onNavigate: (index: number) => void }) {
   return (
-    <nav className="persona-story-nav" aria-label="Persona story navigation">
-      <button className="persona-story-nav__button" type="button" disabled={activeChapter === 0 || busy} onClick={() => onNavigate(activeChapter - 1)} aria-label="Go to previous persona chapter">
-        <ChevronLeft size={16} /> Previous
-      </button>
-      <div className="persona-story-nav__chapters" role="list" aria-label="Persona chapters">
-        {CHAPTERS.map((chapter, index) => (
-          <button
-            key={chapter.id}
-            type="button"
-            className={`persona-story-nav__dot${activeChapter === index ? " persona-story-nav__dot--active" : ""}`}
-            aria-label={`Go to ${chapter.label}: ${chapter.title}`}
-            aria-current={activeChapter === index ? "step" : undefined}
-            onClick={() => onNavigate(index)}
-          >
-            <span>{index + 1}</span>
-          </button>
-        ))}
-      </div>
-      <button className="persona-story-nav__button" type="button" disabled={activeChapter === CHAPTERS.length - 1 || busy} onClick={() => onNavigate(activeChapter + 1)} aria-label="Go to next persona chapter">
-        Next <ChevronRight size={16} />
-      </button>
-      <button className="persona-story-nav__restart" type="button" disabled={busy} onClick={() => onNavigate(0)} aria-label="Restart persona story">
-        <RotateCcw size={16} /> Restart Story
-      </button>
-    </nav>
+    <section
+      ref={sectionRef}
+      id={`persona-${id}`}
+      className={`persona-section persona-section--${variant}${reversed ? " persona-section--reversed" : ""}`}
+      aria-labelledby={`persona-${id}-title`}
+      data-in-view={isInView ? "true" : "false"}
+    >
+      <motion.div className="persona-section__copy" style={reducedMotion ? undefined : { y: copyY, opacity: copyOpacity }}>
+        <p className="persona-section__label">{label}</p>
+        <MotionReveal>
+          <h2 id={`persona-${id}-title`}>{headline}</h2>
+        </MotionReveal>
+        <p className="persona-section__body">{body}</p>
+        {pullQuote ? (
+          <MotionReveal className="persona-section__quote">
+            <blockquote>{pullQuote}</blockquote>
+          </MotionReveal>
+        ) : null}
+      </motion.div>
+      <motion.div className="persona-section__visual" style={reducedMotion ? undefined : { scale: visualScale }}>
+        {children}
+      </motion.div>
+    </section>
   );
 }
 
-function OpeningVisual({ dominantSound, traits, onNext }: { dominantSound: string; traits: string[]; onNext: () => void }) {
+function MotionReveal({ children, className = "" }: { children: ReactNode; className?: string }) {
+  const reducedMotion = useReducedMotion();
+
+  if (reducedMotion) {
+    return <div className={className}>{children}</div>;
+  }
+
   return (
-    <div className="persona-opening-visual">
-      <p>Dominant sound</p>
-      <strong>{dominantSound}</strong>
-      {traits.length ? <span>{traits.slice(0, 5).join(" / ")}</span> : null}
-      <button type="button" className="persona-scroll-cue" onClick={onNext} aria-label="Continue to Core Sound chapter">
-        Continue the story <ArrowDown size={16} />
-      </button>
-    </div>
+    <motion.div
+      className={className}
+      initial={{ opacity: 0, y: 24 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, amount: 0.42 }}
+      transition={{ duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+    >
+      {children}
+    </motion.div>
   );
 }
 
 function CoreSoundVisual({ segments, traits }: { segments: GenreSegment[]; traits: string[] }) {
+  const visibleSegments = segments.length ? segments : [{ label: "Signal forming", value: 100, color: "#343036" }];
+
   return (
     <div className="persona-sound-visual">
-      <div className="persona-genre-stack" aria-label="Top sound clusters">
-        {segments.map((segment, index) => (
+      <div className="persona-genre-ribbon" aria-label="Top sound clusters">
+        {visibleSegments.map((segment, index) => (
           <span
             key={segment.label}
-            className="persona-genre-stack__segment"
+            className="persona-genre-ribbon__segment"
             style={
               {
                 "--segment-share": `${segment.value}%`,
                 "--segment-color": segment.color,
-                "--segment-delay": `${index * 80}ms`,
+                "--segment-delay": `${index * 90}ms`,
               } as CSSProperties
             }
             title={`${segment.label}: ${formatShare(segment.value)}`}
@@ -302,8 +314,8 @@ function CoreSoundVisual({ segments, traits }: { segments: GenreSegment[]; trait
           />
         ))}
       </div>
-      <div className="persona-genre-stack__legend">
-        {segments.map((segment) => (
+      <div className="persona-genre-list">
+        {visibleSegments.slice(0, 5).map((segment) => (
           <span key={segment.label}>
             <i style={{ backgroundColor: segment.color }} aria-hidden="true" />
             {segment.label}
@@ -311,7 +323,7 @@ function CoreSoundVisual({ segments, traits }: { segments: GenreSegment[]; trait
           </span>
         ))}
       </div>
-      {traits.length ? <p className="persona-trait-line">{traits.slice(0, 5).join(" / ")}</p> : null}
+      {traits.length ? <p className="persona-trait-line">{traits.join(" / ")}</p> : null}
     </div>
   );
 }
@@ -329,11 +341,16 @@ function ComfortVisual({ repeatScore, discoveryScore, topAlbum }: { repeatScore:
       </div>
       {topAlbum ? (
         <div className="persona-album-signal">
-          <span>Most revisited album signal</span>
-          <strong>{topAlbum.album}</strong>
-          <p>
-            {topAlbum.plays} plays / {topAlbum.unique_songs} songs
-          </p>
+          {topAlbum.album_image_url ? (
+            <AlbumCover albumImageUrl={topAlbum.album_image_url} albumTitle={topAlbum.album} size="hero" />
+          ) : null}
+          <div>
+            <span>Most revisited album signal</span>
+            <strong>{topAlbum.album}</strong>
+            <p>
+              {topAlbum.plays} plays / {topAlbum.unique_songs} songs
+            </p>
+          </div>
         </div>
       ) : null}
     </div>
@@ -360,15 +377,15 @@ function MainCharactersVisual({ characters, topArtists, source }: { characters: 
     role: index === 0 ? "The emotional anchor" : index === 1 ? "The recurring atmosphere" : "The reliable wildcard",
     line: artist.why_it_matters || artist.artist_loyalty_label,
   }));
-  const visibleCharacters = characters.length ? characters : fallback;
+  const visibleCharacters = (characters.length ? characters : fallback).slice(0, 3);
 
   return (
     <div className="persona-artist-cast">
-      {visibleCharacters.slice(0, 3).map((character) => {
+      {visibleCharacters.map((character, index) => {
         const artist = findArtist(topArtists, character.artistName);
         return (
-          <article key={character.artistName} className="persona-artist-cast__item">
-            <ArtistAvatar artistImageUrl={artist?.artist_image_url} artistName={character.artistName} size="lg" fallbackLabel={initials(character.artistName)} />
+          <article key={character.artistName} className="persona-artist-cast__item" style={{ "--artist-offset": `${index * 2.8}rem` } as CSSProperties}>
+            <ArtistAvatar artistImageUrl={artist?.artist_image_url} artistName={character.artistName} size="hero" shape="rounded" fallbackLabel={initials(character.artistName)} />
             <div>
               <p>{character.role}</p>
               <h3>{character.artistName}</h3>
@@ -394,6 +411,7 @@ function PlotTwistVisual({ rollingCharacter, currentCharacter }: { rollingCharac
         <span>Rolling year</span>
         <strong>{rollingName}</strong>
       </div>
+      <em>{hasContrast ? "meets" : "echoes"}</em>
       <div>
         <span>{hasContrast ? "Current month" : "Side signal"}</span>
         <strong>{hasContrast ? currentName : sideSignals.join(" / ") || "Unusually consistent"}</strong>
@@ -402,23 +420,11 @@ function PlotTwistVisual({ rollingCharacter, currentCharacter }: { rollingCharac
   );
 }
 
-function ClosingVisual({ finalLine, onRestart }: { finalLine: string; onRestart: () => void }) {
+function ClosingVisual({ finalLine }: { finalLine: string }) {
   return (
     <div className="persona-closing-visual">
-      <ScrollReveal>
-        <p>{finalLine}</p>
-      </ScrollReveal>
-      <button type="button" className="btn-primary" onClick={onRestart}>
-        <RotateCcw size={16} /> Restart Story
-      </button>
-    </div>
-  );
-}
-
-function AlbumOrbitBackground({ albums, active, priority }: { albums: OrbitImageItem[]; active?: boolean; priority?: boolean }) {
-  return (
-    <div className="persona-album-orbit">
-      <OrbitImages items={albums} active={active} priority={priority} />
+      <span>End credits</span>
+      <p>{finalLine}</p>
     </div>
   );
 }

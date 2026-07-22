@@ -3,6 +3,12 @@ import { api } from "../api/client";
 import type { MusicCharacterResponse, MusicSource, PersonaReport, Prerequisites, TopAlbumItem, TopArtist } from "../types/api";
 import { PersonaStoryExperience } from "./report/PersonaStoryExperience";
 import { buildPersonaStory } from "./report/personaStoryModel";
+import "@fontsource/instrument-serif/latin-400.css";
+import "@fontsource/instrument-serif/latin-400-italic.css";
+import "@fontsource/manrope/latin-400.css";
+import "@fontsource/manrope/latin-600.css";
+import "@fontsource/manrope/latin-700.css";
+import "@fontsource/manrope/latin-800.css";
 import "./ReportPage.css";
 
 interface Props {

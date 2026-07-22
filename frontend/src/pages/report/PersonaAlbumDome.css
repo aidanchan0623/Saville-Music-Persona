@@ -1,0 +1,119 @@
+.persona-album-dome {
+  position: absolute;
+  top: -12vh;
+  right: -10vw;
+  width: min(78rem, 102vw);
+  height: 128vh;
+  pointer-events: none;
+  transform-origin: 64% 30%;
+  perspective: 1200px;
+  contain: layout paint;
+}
+
+.persona-album-dome__glow {
+  position: absolute;
+  inset: 7% 6% 10% 12%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 60% 38%, rgb(239 43 45 / 20%), transparent 30rem),
+    radial-gradient(circle at 34% 58%, rgb(102 15 28 / 28%), transparent 26rem);
+  filter: blur(1px);
+  opacity: 0.9;
+}
+
+.persona-album-dome__ring {
+  position: absolute;
+  inset: 0;
+  mask-image:
+    linear-gradient(90deg, transparent 0%, black 12%, black 82%, transparent 100%),
+    linear-gradient(180deg, transparent 0%, black 12%, black 86%, transparent 100%);
+  mask-composite: intersect;
+}
+
+.persona-album-dome__tile {
+  position: absolute;
+  left: var(--tile-left);
+  top: var(--tile-top);
+  width: clamp(var(--tile-mobile-size), 11.5vw, var(--tile-size));
+  aspect-ratio: 1;
+  border-radius: clamp(10px, 1.4vw, 18px);
+  opacity: var(--tile-opacity);
+  overflow: hidden;
+  transform:
+    translate(-50%, -50%)
+    translateZ(calc(var(--tile-depth) * 34px))
+    rotateZ(var(--tile-rotate-a))
+    rotateX(var(--tile-tilt-x))
+    rotateY(var(--tile-tilt-y));
+  animation: persona-dome-tile-float var(--tile-duration) ease-in-out infinite alternate;
+  animation-delay: var(--tile-delay);
+  box-shadow:
+    0 20px 46px rgb(0 0 0 / 26%),
+    0 0 0 1px rgb(255 255 255 / 8%);
+  will-change: transform;
+}
+
+.persona-album-dome__tile::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background:
+    linear-gradient(145deg, rgb(255 255 255 / 10%), transparent 34%),
+    linear-gradient(0deg, rgb(24 3 7 / 24%), transparent 46%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.persona-album-dome__tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.persona-album-dome[data-paused="true"] .persona-album-dome__tile {
+  animation-play-state: paused;
+}
+
+@keyframes persona-dome-tile-float {
+  from {
+    transform:
+      translate(-50%, -50%)
+      translateY(calc(var(--tile-float) * -0.42))
+      translateZ(calc(var(--tile-depth) * 34px))
+      rotateZ(var(--tile-rotate-a))
+      rotateX(var(--tile-tilt-x))
+      rotateY(var(--tile-tilt-y));
+  }
+
+  to {
+    transform:
+      translate(-50%, -50%)
+      translateY(calc(var(--tile-float) * 0.58))
+      translateZ(calc(var(--tile-depth) * 42px))
+      rotateZ(var(--tile-rotate-b))
+      rotateX(calc(var(--tile-tilt-x) * -0.7))
+      rotateY(calc(var(--tile-tilt-y) * 0.72));
+  }
+}
+
+@media (max-width: 767px) {
+  .persona-album-dome {
+    top: -8vh;
+    right: -26vw;
+    width: 130vw;
+    height: 92vh;
+  }
+
+  .persona-album-dome__ring {
+    mask-image:
+      linear-gradient(90deg, transparent 0%, black 18%, black 92%, transparent 100%),
+      linear-gradient(180deg, transparent 0%, black 10%, black 84%, transparent 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .persona-album-dome__tile {
+    animation: none;
+  }
+}
