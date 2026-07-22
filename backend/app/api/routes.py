@@ -13,7 +13,16 @@ from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
 from app.analysis.music_character import character_payload
+from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.normalizer import normalise_collection
+from app.analysis.overview import (
+    OVERVIEW_LANGUAGE_CACHE_VERSION,
+    OVERVIEW_SCHEMA_VERSION,
+    apply_overview_language,
+    build_overview_response,
+    overview_language_evidence,
+    overview_language_fingerprint,
+)
 from app.analysis.periods import (
     album_songs_payload,
     albums_payload,
@@ -32,6 +41,7 @@ from app.config import settings
 from app.database.repository import JsonRepository
 from app.schemas.responses import (
     AuthStatusResponse,
+    OverviewAnalysisResponse,
     PlaylistCreateRequest,
     PlaylistCreateResponse,
     PrerequisiteItem,
@@ -54,8 +64,10 @@ ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 
-PERSONA_REPORT_SCHEMA_VERSION = 2
+PERSONA_REPORT_SCHEMA_VERSION = 3
+PERSONA_REPORT_PROMPT_VERSION = 4
 PERSONA_REPORT_PERIOD = "rolling_year"
+OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 
 SPOTIFY_CACHE_KEYS = [
     "spotify_tokens",
@@ -107,6 +119,9 @@ def persona_report_fingerprint(profile: dict[str, Any]) -> str:
         ],
         "music_character": profile.get("music_character"),
         "current_month_character": profile.get("current_month_character"),
+        "identity": profile.get("identity"),
+        "musical_age": profile.get("musical_age"),
+        "top_five": profile.get("top_five"),
         "scores": [
             {
                 "key": item.get("key"),
@@ -122,7 +137,12 @@ def persona_report_fingerprint(profile: dict[str, Any]) -> str:
 
 
 def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str) -> str:
-    return f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:{analytics_fingerprint}:{mode}"
+    model_fingerprint = hashlib.sha256(settings.ollama_model.encode("utf-8")).hexdigest()[:8]
+    return (
+        f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:"
+        f"calc{MUSICAL_AGE_CALCULATION_VERSION}:prompt{PERSONA_REPORT_PROMPT_VERSION}:"
+        f"model{model_fingerprint}:{analytics_fingerprint}:{mode}"
+    )
 
 
 def persona_report_pointer_key(source: str) -> str:
@@ -154,7 +174,7 @@ def annotate_persona_report_payload(
 def log_persona_report_payload(payload: dict[str, Any]) -> None:
     reason = f" reason={payload.get('fallbackReason')}" if payload.get("fallbackReason") else ""
     print(
-        f"[persona-report] source={payload.get('generationSource')} model={payload.get('model') or settings.ollama_model} "
+        f"[persona] source={payload.get('generationSource')} model={payload.get('model') or settings.ollama_model} "
         f"schema={payload.get('schemaVersion') or payload.get('personaReportSchemaVersion')} "
         f"duration_ms={payload.get('durationMs') or 0}{reason}",
         flush=True,
@@ -583,17 +603,71 @@ def coverage(source: str = Query("youtube")) -> dict[str, Any]:
     return require_source_cache("analysis", source)["coverage"]
 
 
-@router.get("/analysis/overview")
-def overview(source: str = Query("youtube")) -> dict[str, Any]:
+@router.get("/analysis/overview", response_model=OverviewAnalysisResponse)
+def overview(
+    period: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> dict[str, Any]:
     resolved_source = normalise_source(source)
-    analysis = require_source_cache("analysis", resolved_source)
+    normalised = require_source_cache("normalised", resolved_source)
     meta = repo.load_json(cache_key("last_refresh_meta", resolved_source)) or {}
-    payload = dict(analysis["overview"])
-    payload["last_refreshed_at"] = meta.get("refreshed_at")
-    payload["use_demo"] = meta.get("use_demo", False)
-    payload["warnings"] = meta.get("warnings", [])
+    payload = build_overview_response(normalised, period, month, timezone_name or settings.local_timezone)
+    evidence = overview_language_evidence(payload)
+    fingerprint = overview_language_fingerprint(evidence, resolved_source, settings.ollama_model)
+    language_key = f"overview_language:v{OVERVIEW_LANGUAGE_CACHE_VERSION}:{resolved_source}:{fingerprint}"
+    cached_language = repo.load_json(language_key)
+    language: dict[str, Any] | None = None
+    generation_source = "fallback"
+    cache_matches = (
+        isinstance(cached_language, dict)
+        and cached_language.get("schemaVersion") == OVERVIEW_SCHEMA_VERSION
+        and cached_language.get("fingerprint") == fingerprint
+        and isinstance(cached_language.get("language"), dict)
+    )
+    cached_generation = str(cached_language.get("generationSource") or "") if cache_matches else ""
+    fallback_cache_fresh = cache_matches and cached_generation == "fallback" and _cache_age_seconds(cached_language) < OVERVIEW_FALLBACK_CACHE_SECONDS
+    if cache_matches and cached_generation != "fallback" and cached_language.get("language"):
+        language = cached_language["language"]
+        generation_source = "cache-gemma"
+    elif fallback_cache_fresh:
+        generation_source = "fallback"
+    elif payload["selectedPeriod"]["key"] != PERSONA_REPORT_PERIOD:
+        generation_source = "fallback"
+    else:
+        language = ollama.generate_overview_language(evidence)
+        if isinstance(language, dict):
+            generation_source = "gemma"
+        repo.save_json(
+            language_key,
+            {
+                "schemaVersion": OVERVIEW_SCHEMA_VERSION,
+                "languageVersion": OVERVIEW_LANGUAGE_CACHE_VERSION,
+                "fingerprint": fingerprint,
+                "source": resolved_source,
+                "model": settings.ollama_model,
+                "generationSource": generation_source,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "language": language or {},
+            },
+        )
+    payload = apply_overview_language(payload, language, generation_source)
     payload["source"] = resolved_source
-    payload["source_label"] = "Spotify" if resolved_source == "spotify" else "YouTube Music"
+    payload["sourceLabel"] = "Spotify" if resolved_source == "spotify" else "YouTube Music"
+    payload["languageFingerprint"] = fingerprint
+    payload["overview"]["last_refreshed_at"] = meta.get("refreshed_at")
+    payload["overview"]["use_demo"] = meta.get("use_demo", False)
+    payload["overview"]["warnings"] = meta.get("warnings", [])
+    payload["overview"]["source"] = resolved_source
+    payload["overview"]["source_label"] = payload["sourceLabel"]
+    age = payload["musicalAge"]
+    print(f"[overview] period={payload['selectedPeriod']['key']} schema={OVERVIEW_SCHEMA_VERSION}", flush=True)
+    print(
+        f"[musical-age] age={age['age']} range={age['likelyMin']}-{age['likelyMax']} "
+        f"confidence={age['confidence']:.2f} version={MUSICAL_AGE_CALCULATION_VERSION}",
+        flush=True,
+    )
     return payload
 
 
@@ -775,6 +849,7 @@ def report_profile_with_characters(source: str | None = "youtube") -> dict[str, 
         normalised = require_source_cache("normalised", resolved_source)
         analysis = require_source_cache("analysis", resolved_source)
     profile = dict(analysis["report_profile"])
+    canonical = build_overview_response(normalised, PERSONA_REPORT_PERIOD, timezone_name=settings.local_timezone)
     rolling_character = character_payload(normalised, "rolling_year", timezone_name=settings.local_timezone)
     current_character = character_payload(normalised, "this_month", timezone_name=settings.local_timezone)
     profile["music_character"] = rolling_character
@@ -783,11 +858,71 @@ def report_profile_with_characters(source: str | None = "youtube") -> dict[str, 
     profile["plain_language_scores"] = plain_language_scores(profile.get("scores", []))
     profile["listener_axis"] = listener_axis(profile, rolling_character)
     profile["album_or_track_behavior"] = album_or_track_behavior(rolling_character)
+    profile["identity"] = canonical["identity"]
+    profile["musical_age"] = canonical["musicalAge"]
+    profile["top_five"] = canonical["topFive"]
+    profile["selected_period"] = canonical["selectedPeriod"]
+    profile["coverage"] = canonical["overview"]["coverage"]
+    profile["taste_interpretation"] = canonical["overview"]["taste_interpretation"]
+    profile["total_detected_plays"] = canonical["overview"]["total_detected_plays"]
+    profile["top_artists"] = report_top_artists(profile.get("top_artists"), canonical["topFive"]["artists"])
+    profile["top_tracks"] = report_top_tracks(profile.get("top_tracks"), canonical["topFive"]["songs"])
+    profile["headline_persona"] = canonical["identity"]["characterTitle"]
+    profile["overview_schema_version"] = OVERVIEW_SCHEMA_VERSION
     try:
         profile["favourite_albums"] = albums_payload(normalised, "rolling_year", None, settings.local_timezone, limit=20).get("albums", [])[:20]
     except Exception:
         profile["favourite_albums"] = []
     return profile
+
+
+def report_top_artists(existing: Any, canonical: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    lookup = {
+        str(item.get("artist") or "").strip().casefold(): item
+        for item in (existing if isinstance(existing, list) else [])
+        if isinstance(item, dict) and item.get("artist")
+    }
+    result: list[dict[str, Any]] = []
+    for item in canonical:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        result.append(
+            {
+                **lookup.get(name.casefold(), {}),
+                "artist": name,
+                "play_count": int(item.get("detectedPlays") or 0),
+                "unique_songs_played": int(item.get("uniqueSongs") or 0),
+                "artist_image_url": item.get("imageUrl") or lookup.get(name.casefold(), {}).get("artist_image_url"),
+            }
+        )
+    return result
+
+
+def report_top_tracks(existing: Any, canonical: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    lookup = {
+        (str(item.get("title") or "").strip().casefold(), str(item.get("artist") or "").strip().casefold()): item
+        for item in (existing if isinstance(existing, list) else [])
+        if isinstance(item, dict) and item.get("title")
+    }
+    result: list[dict[str, Any]] = []
+    for item in canonical:
+        title = str(item.get("title") or "").strip()
+        artist = str(item.get("artist") or "").strip()
+        if not title:
+            continue
+        base = lookup.get((title.casefold(), artist.casefold()), {})
+        result.append(
+            {
+                **base,
+                "title": title,
+                "artist": artist,
+                "album": item.get("album") or base.get("album"),
+                "play_count": int(item.get("detectedPlays") or 0),
+                "track_image_url": item.get("imageUrl") or base.get("track_image_url"),
+            }
+        )
+    return result
 
 
 def character_comparison(rolling: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
@@ -884,6 +1019,9 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
             "mode": request.mode,
             "period": PERSONA_REPORT_PERIOD,
             "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
+            "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
+            "musicalAgeCalculationVersion": MUSICAL_AGE_CALCULATION_VERSION,
+            "model": settings.ollama_model,
             "analyticsFingerprint": analytics_fingerprint,
             "generatedAt": generated_at,
         },
@@ -902,6 +1040,9 @@ def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
         and pointer.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
         and pointer.get("period") == PERSONA_REPORT_PERIOD
         and pointer.get("source") == resolved_source
+        and pointer.get("promptVersion") == PERSONA_REPORT_PROMPT_VERSION
+        and pointer.get("musicalAgeCalculationVersion") == MUSICAL_AGE_CALCULATION_VERSION
+        and pointer.get("model") == settings.ollama_model
         and pointer.get("analyticsFingerprint") == analytics_fingerprint
         and pointer.get("cacheKey")
     ):
@@ -935,6 +1076,16 @@ def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
 @router.get("/recommendations")
 def latest_recommendations() -> list[dict[str, Any]]:
     return require_cache("recommendations")
+
+
+def _cache_age_seconds(payload: dict[str, Any]) -> float:
+    try:
+        created_at = datetime.fromisoformat(str(payload.get("createdAt") or "").replace("Z", "+00:00"))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - created_at).total_seconds())
+    except (TypeError, ValueError):
+        return float("inf")
 
 
 @router.post("/recommendations/generate")

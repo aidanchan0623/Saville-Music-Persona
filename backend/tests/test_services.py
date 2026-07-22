@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
-from app.api.routes import persona_report_cache_key, persona_report_fingerprint
+from app.api.routes import persona_report_cache_key, persona_report_fingerprint, report_top_artists, report_top_tracks
 from app.analysis.thumbnails import best_thumbnail_url
 from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
 from app.services.ollama_service import OllamaService
@@ -64,7 +64,7 @@ def test_v2_persona_report_json_is_sanitized_and_artist_limited() -> None:
             "top_artists": [{"artist": "Bring Me The Horizon"}, {"artist": "My Chemical Romance"}],
         },
     )
-    assert report.personaReportSchemaVersion == 2
+    assert report.personaReportSchemaVersion == 3
     assert len(report.personaName.split()) <= 8
     assert [item.artistName for item in report.mainCharacters[:2]] == ["Bring Me The Horizon", "My Chemical Romance"]
     assert all(item.artistName != "Imaginary Artist" for item in report.mainCharacters)
@@ -98,6 +98,23 @@ def test_report_generation_marks_fresh_gemma_source() -> None:
     assert service.generate_calls == 1
 
 
+def test_compact_story_seed_uses_canonical_headlines_and_gemma_prose() -> None:
+    service = OllamaService(Settings())
+    evidence = {
+        "identity": {"characterTitle": "The Atmospheric Soundtrack Curator"},
+        "headline_persona": "The Atmospheric Soundtrack Curator",
+        "top_artists": [{"artist": "Artist A", "play_count": 7, "unique_songs_played": 3}],
+    }
+    report = service.parse_report(
+        '{"s":["Your soundtrack keeps its favourite weather close.","*Atmosphere* leads while trusted hooks keep the centre intact.","Repeated songs earn their place without closing every door.","The current month adds contrast without replacing the larger pattern.","Your credits roll on continuity, curiosity, and a clear sonic centre.","Keep the next song intentional."]}',
+        evidence,
+    )
+    assert report.fallback is False
+    assert report.personaName == "The Atmospheric Soundtrack Curator"
+    assert report.coreSound.body.startswith("Atmosphere leads")
+    assert report.closing.finalLine == "Keep the next song intentional."
+
+
 def test_report_generation_marks_ollama_unavailable_fallback() -> None:
     service = FakeOllamaReportService(status={"reachable": False, "model_installed": False, "model": "gemma3:4b", "message": "offline"})
     report = service.generate_report({"headline_persona": "Fallback"}, "serious")
@@ -112,7 +129,7 @@ def test_report_generation_marks_malformed_response_fallback() -> None:
     report = service.generate_report({"headline_persona": "Fallback"}, "serious")
     assert report.generationSource == "fallback"
     assert report.fallbackReason == "invalid_or_missing_story_json"
-    assert report.personaReportSchemaVersion == 2
+    assert report.personaReportSchemaVersion == 3
 
 
 def test_report_generation_marks_timeout_fallback() -> None:
@@ -138,8 +155,36 @@ def test_report_cache_key_uses_source_schema_period_and_fingerprint() -> None:
     key = persona_report_cache_key("youtube", "serious", fingerprint)
     assert "youtube" in key
     assert "rolling_year" in key
-    assert "v2" in key
+    assert "v3" in key
+    assert "calc1" in key
+    assert "prompt4" in key
     assert fingerprint in key
+
+
+def test_report_fingerprint_changes_with_canonical_identity_and_musical_age() -> None:
+    profile = {
+        "identity": {"characterTitle": "The Atmospheric Soundtrack Curator"},
+        "musical_age": {"age": 29, "calculationVersion": 1},
+    }
+    changed_identity = {**profile, "identity": {"characterTitle": "The Reflective Album Curator"}}
+    changed_age = {**profile, "musical_age": {"age": 30, "calculationVersion": 1}}
+    assert persona_report_fingerprint(profile) != persona_report_fingerprint(changed_identity)
+    assert persona_report_fingerprint(profile) != persona_report_fingerprint(changed_age)
+
+
+def test_report_rankings_use_canonical_period_counts() -> None:
+    artists = report_top_artists(
+        [{"artist": "Artist A", "play_count": 99, "unique_songs_played": 12, "why_it_matters": "Anchor"}],
+        [{"name": "Artist A", "detectedPlays": 7, "uniqueSongs": 3, "imageUrl": "https://img.example/a.jpg"}],
+    )
+    tracks = report_top_tracks(
+        [{"title": "Song A", "artist": "Artist A", "play_count": 44, "album": "Album A"}],
+        [{"title": "Song A", "artist": "Artist A", "album": "Album A", "detectedPlays": 5, "imageUrl": "https://img.example/song.jpg"}],
+    )
+    assert artists[0]["play_count"] == 7
+    assert artists[0]["unique_songs_played"] == 3
+    assert artists[0]["why_it_matters"] == "Anchor"
+    assert tracks[0]["play_count"] == 5
 
 
 def test_recommendation_duplicate_removal() -> None:

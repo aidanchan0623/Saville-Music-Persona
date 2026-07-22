@@ -7,17 +7,16 @@ import type {
   AuthStatus,
   ListeningMinutes,
   MusicSource,
-  Overview,
-  PeriodTopResponse,
+  OverviewPeriodKey,
+  OverviewResponse,
   Prerequisites,
   ScoreMetric,
-  TasteDnaComparison,
   TasteDnaExplorer,
 } from "../types/api";
 import { resolvePersonaVisualTheme } from "../utils/personaVisualTheme";
 
 interface Props {
-  overview: Overview | null;
+  overview: OverviewResponse | null;
   thisMonthMinutes: ListeningMinutes | null;
   rollingYearMinutes: ListeningMinutes | null;
   scores: ScoreMetric[];
@@ -35,11 +34,16 @@ interface Props {
   titleAnimationKey: string;
 }
 
+const PERIOD_OPTIONS: { key: OverviewPeriodKey; label: string }[] = [
+  { key: "this_month", label: "This Month" },
+  { key: "month", label: "Select Month" },
+  { key: "last_30", label: "Last 30 Days" },
+  { key: "rolling_year", label: "Rolling Year" },
+  { key: "all", label: "All History" },
+];
+
 export function OverviewPage({
   overview,
-  thisMonthMinutes,
-  rollingYearMinutes,
-  scores,
   busy,
   useDemo,
   onRefresh,
@@ -51,93 +55,131 @@ export function OverviewPage({
   source,
   titleAnimationKey,
 }: Props) {
+  const [period, setPeriod] = useState<OverviewPeriodKey>("this_month");
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  const [activeResponse, setActiveResponse] = useState<OverviewResponse | null>(overview);
   const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
-  const [comparison, setComparison] = useState<TasteDnaComparison | null>(null);
-  const [currentTopArtists, setCurrentTopArtists] = useState<PeriodTopResponse | null>(null);
-  const [currentTopTracks, setCurrentTopTracks] = useState<PeriodTopResponse | null>(null);
+  const [periodLoading, setPeriodLoading] = useState(false);
+  const [periodError, setPeriodError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!overview) {
+    setPeriod("this_month");
+    setSelectedMonth(null);
+    setActiveResponse(overview);
+  }, [overview?.languageFingerprint, source]);
+
+  useEffect(() => {
+    if (!overview) return;
+    if (period === "this_month" && !selectedMonth) {
+      setActiveResponse(overview);
+      setPeriodError(null);
+      return;
+    }
+    let cancelled = false;
+    setPeriodLoading(true);
+    setPeriodError(null);
+    api.overview(period, period === "month" ? selectedMonth : null, source)
+      .then((value) => {
+        if (!cancelled) setActiveResponse(value);
+      })
+      .catch((error) => {
+        if (!cancelled) setPeriodError(error instanceof Error ? error.message : "This timeframe could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setPeriodLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [period, selectedMonth, source, overview?.languageFingerprint]);
+
+  useEffect(() => {
+    if (!activeResponse) {
       setCurrentTaste(null);
-      setComparison(null);
-      setCurrentTopArtists(null);
-      setCurrentTopTracks(null);
       return;
     }
     let cancelled = false;
     setCurrentTaste(null);
-    setComparison(null);
-    setCurrentTopArtists(null);
-    setCurrentTopTracks(null);
-    api.tasteDna("this_month", null, source)
+    api.tasteDna(period, period === "month" ? selectedMonth : null, source)
       .then((value) => {
         if (!cancelled) setCurrentTaste(value);
       })
       .catch(() => {
         if (!cancelled) setCurrentTaste(null);
       });
-    api.tasteDnaCompare("rolling_year", "this_month", null, source)
-      .then((value) => {
-        if (!cancelled) setComparison(value);
-      })
-      .catch(() => {
-        if (!cancelled) setComparison(null);
-      });
-    api.periodTop("this_month", "artists", null, source)
-      .then((value) => {
-        if (!cancelled) setCurrentTopArtists(value);
-      })
-      .catch(() => {
-        if (!cancelled) setCurrentTopArtists(null);
-      });
-    api.periodTop("this_month", "tracks", null, source)
-      .then((value) => {
-        if (!cancelled) setCurrentTopTracks(value);
-      })
-      .catch(() => {
-        if (!cancelled) setCurrentTopTracks(null);
-      });
     return () => {
       cancelled = true;
     };
-  }, [overview?.last_refreshed_at, source]);
+  }, [activeResponse?.languageFingerprint, period, selectedMonth, source]);
 
-  if (!overview) {
+  if (!activeResponse) {
     return (
       <div className="space-y-6">
-      <PageTitlePanel
-        eyebrow="Private local music identity"
-        title="No listening analysis loaded yet"
-        titleAnimationKey={titleAnimationKey}
-        subtitle={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
-        actions={
-          <div className="flex flex-wrap justify-center gap-3">
-            <button className="btn-primary" onClick={onRefresh} disabled={busy}>
-              <RefreshCw size={17} /> {busy ? "Refreshing..." : useDemo ? "Load Demo Data" : "Refresh My Music Data"}
-            </button>
-            <button className="btn-secondary" onClick={onOpenSettings}>Open Settings</button>
-          </div>
-        }
-      />
+        <PageTitlePanel
+          eyebrow="Private local music identity"
+          title="No listening analysis loaded yet"
+          titleAnimationKey={titleAnimationKey}
+          subtitle={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
+          actions={
+            <div className="flex flex-wrap justify-center gap-3">
+              <button className="btn-primary" onClick={onRefresh} disabled={busy}>
+                <RefreshCw size={17} /> {busy ? "Refreshing..." : useDemo ? "Load Demo Data" : "Refresh My Music Data"}
+              </button>
+              <button className="btn-secondary" onClick={onOpenSettings}>Open Settings</button>
+            </div>
+          }
+        />
       </div>
     );
   }
 
-  const taste = overview.taste_interpretation;
-  const sourceLabel = source === "spotify" ? "Spotify" : "YouTube Music";
-  const coreTitle = overview.headline_persona || taste.core_genre_families.map((cluster) => cluster.name).slice(0, 2).join(" / ") || "Music identity";
-  const summary = taste.summary || "A compact read of your current listening profile from local music data.";
-  const visualTheme = resolvePersonaVisualTheme(overview, currentTaste);
-  const updatedLabel = overview.last_refreshed_at ? formatShortDate(overview.last_refreshed_at) : "not refreshed yet";
+  const data = activeResponse.overview;
+  const identity = activeResponse.identity;
+  const visualTheme = resolvePersonaVisualTheme(data, currentTaste);
+  const updatedLabel = data.last_refreshed_at ? formatShortDate(data.last_refreshed_at) : "not refreshed yet";
+  const months = activeResponse.selectedPeriod.availableMonths;
 
   return (
     <div className="space-y-7">
+      <section className="overview-period-control" aria-label="Overview timeframe">
+        <div className="overview-period-control__buttons">
+          {PERIOD_OPTIONS.map((option) => (
+            <button
+              key={option.key}
+              className={period === option.key ? "overview-period-button overview-period-button--active" : "overview-period-button"}
+              type="button"
+              aria-pressed={period === option.key}
+              onClick={() => {
+                setPeriod(option.key);
+                if (option.key === "month" && !selectedMonth) setSelectedMonth(months[months.length - 1]?.value ?? null);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        {period === "month" ? (
+          <select
+            className="overview-period-select"
+            value={selectedMonth ?? ""}
+            onChange={(event) => setSelectedMonth(event.target.value || null)}
+            aria-label="Select overview month"
+          >
+            {months.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        ) : null}
+        <p className="overview-period-control__label">{activeResponse.selectedPeriod.label}</p>
+      </section>
+
+      {periodLoading ? <p className="overview-period-status" role="status">Loading {periodLabel(period).toLowerCase()}...</p> : null}
+      {periodError ? <p className="overview-period-status overview-period-status--error" role="alert">{periodError}</p> : null}
+
       <PageTitlePanel
-        eyebrow="Private local music identity"
-        title={coreTitle}
-        titleAnimationKey={titleAnimationKey}
+        eyebrow="Private music identity"
+        title={identity.characterTitle}
+        titleAnimationKey={`${titleAnimationKey}-${activeResponse.languageFingerprint}`}
         titleClassName="max-w-4xl text-3xl font-black leading-tight text-white md:text-4xl"
-        subtitle={summary}
+        subtitle={`${identity.tagline} ${identity.explanation}`}
         subtitleClassName="mt-4 max-w-3xl text-base leading-7 text-mist"
         lineMode="animated"
         className="overview-hero-panel"
@@ -147,27 +189,23 @@ export function OverviewPage({
         actions={
           <div className="overview-hero-sound">
             <p className="overview-hero-sound__label">Most active sound</p>
-            <p className="overview-hero-sound__value">{overview.top_genre_cluster || "Still mapping"}</p>
-            <p className="overview-hero-sound__context">{visualTheme.accentLabel}</p>
-            <button className="btn-primary mt-5" type="button" onClick={onOpenReport}>
-              Open Persona Report
-            </button>
+            <p className="overview-hero-sound__value">{identity.mostActiveSound.label}</p>
+            <p className="overview-hero-sound__context">{identity.mostActiveSound.description}</p>
+            <button className="btn-primary mt-5" type="button" onClick={onOpenReport}>Open Persona Report</button>
           </div>
         }
         metadata={
-          <span>{sourceLabel} &middot; {overview.coverage.days_represented.toLocaleString()} days analysed &middot; Updated {updatedLabel}</span>
+          <span>{activeResponse.sourceLabel} &middot; {activeResponse.selectedPeriod.label} &middot; {data.coverage.days_represented.toLocaleString()} active days &middot; Updated {updatedLabel}</span>
         }
       />
 
       <OverviewStepper
-        overview={overview}
-        thisMonthMinutes={thisMonthMinutes}
-        rollingYearMinutes={rollingYearMinutes}
-        scores={scores}
+        overview={data}
+        identity={identity}
+        musicalAge={activeResponse.musicalAge}
+        topFive={activeResponse.topFive}
+        selectedPeriod={activeResponse.selectedPeriod}
         currentTaste={currentTaste}
-        comparison={comparison}
-        currentTopArtists={currentTopArtists}
-        currentTopTracks={currentTopTracks}
         visualTheme={visualTheme}
         onOpenTop10={onOpenTop10}
         onOpenScores={onOpenScores}
@@ -178,8 +216,12 @@ export function OverviewPage({
   );
 }
 
+function periodLabel(period: OverviewPeriodKey) {
+  return PERIOD_OPTIONS.find((option) => option.key === period)?.label ?? "period";
+}
+
 function formatShortDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }

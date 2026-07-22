@@ -57,7 +57,7 @@ export function PersonaAlbumBackdrop({ albums }: PersonaAlbumBackdropProps) {
   }, []);
 
   const tiles = useMemo(() => {
-    const limit = smallViewport ? 8 : MAX_BACKDROP_ALBUMS;
+    const limit = smallViewport ? Math.min(12, MAX_BACKDROP_ALBUMS) : MAX_BACKDROP_ALBUMS;
     return albums.slice(0, limit).map((item, index) => ({ item, layout: makeAlbumLayout(index, Math.min(albums.length, limit), smallViewport) }));
   }, [albums, smallViewport]);
 
@@ -79,8 +79,6 @@ export function PersonaAlbumBackdrop({ albums }: PersonaAlbumBackdropProps) {
           </div>
         ))}
       </motion.div>
-      <div className="persona-album-backdrop__text-shade" />
-      <div className="persona-album-backdrop__edge-mask" />
     </div>
   );
 }

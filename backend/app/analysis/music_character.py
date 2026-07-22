@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import date
 from typing import Any, Callable
 
 from app.analysis.periods import albums_payload, filter_events, normalised_for_events, resolve_period, taste_dna_payload, top_payload
@@ -16,15 +17,16 @@ def character_payload(
     period: str = "rolling_year",
     month: str | None = None,
     timezone_name: str | None = None,
+    today: date | None = None,
 ) -> dict[str, Any]:
-    spec = resolve_period(normalised, period, month, timezone_name)
+    spec = resolve_period(normalised, period, month, timezone_name, today)
     events = filter_events(normalised, spec)
     period_normalised = normalised_for_events(normalised, events, spec)
     analysis = build_analysis(period_normalised)
-    sound = taste_dna_payload(normalised, spec["period"], spec.get("month"), spec["timezone"])
-    tracks = top_payload(normalised, "tracks", spec["period"], spec.get("month"), spec["timezone"])
-    artists = top_payload(normalised, "artists", spec["period"], spec.get("month"), spec["timezone"])
-    albums = albums_payload(normalised, spec["period"], spec.get("month"), spec["timezone"])
+    sound = taste_dna_payload(normalised, spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
+    tracks = top_payload(normalised, "tracks", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
+    artists = top_payload(normalised, "artists", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
+    albums = albums_payload(normalised, spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
     signals = build_signals(analysis, sound, tracks, artists, albums, events)
     matches = [score_character(definition, signals) for definition in CHARACTER_DEFINITIONS]
     matches.sort(key=lambda item: (-item["match_score"], item["priority"], item["name"]))

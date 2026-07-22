@@ -12,7 +12,7 @@ import { ReportPage } from "./pages/ReportPage";
 import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, Charts, ListeningMinutes, MusicSource, Overview, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, Charts, ListeningMinutes, MusicSource, OverviewResponse, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
 
 function getHistoryPage(): Page {
   if (typeof window === "undefined") return "overview";
@@ -30,7 +30,7 @@ export default function App() {
     return "youtube";
   });
   const [useDemo, setUseDemo] = useState(() => localStorage.getItem("smp_use_demo") === "true");
-  const [overview, setOverview] = useState<Overview | null>(null);
+  const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [tracks, setTracks] = useState<TopTrack[]>([]);
   const [artists, setArtists] = useState<TopArtist[]>([]);
   const [scores, setScores] = useState<ScoreMetric[]>([]);
@@ -82,9 +82,10 @@ export default function App() {
     const setIfCurrent = <T,>(setter: (value: T) => void) => (value: T) => {
       if (isCurrentRequest()) setter(value);
     };
-    const nextOverview = await api.overview(activeSource);
+    const nextOverview = await api.overview("this_month", null, activeSource);
     if (!isCurrentRequest()) return;
     setOverview(nextOverview);
+    setMessage(null);
     setTracks([]);
     setArtists([]);
     setScores([]);
@@ -133,9 +134,13 @@ export default function App() {
   useEffect(() => {
     void loadAnalysis(source).catch((error) => {
       clearAnalysis();
-      if (source === "spotify") {
-        setMessage(error instanceof Error ? error.message : "Connect Spotify in Settings, then refresh Spotify data.");
-      }
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : source === "spotify"
+            ? "Connect Spotify in Settings, then refresh Spotify data."
+            : "YouTube Music analysis could not be loaded.",
+      );
     });
   }, [source]);
 
@@ -404,7 +409,7 @@ function SourceSwitcher({
 }) {
   const label = source === "spotify" ? "Spotify" : "YouTube Music";
   return (
-    <GlowPanel as="section" variant="card" wrapperClassName="mb-5" className="p-3">
+    <GlowPanel as="section" variant="card" wrapperClassName="relative z-10 mb-5" className="p-3">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-mist/70">Music source</p>

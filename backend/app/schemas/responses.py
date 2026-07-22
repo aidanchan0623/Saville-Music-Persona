@@ -59,6 +59,94 @@ class TakeoutImportResponse(BaseModel):
     message: str
 
 
+class OverviewPeriod(BaseModel):
+    key: str
+    month: str | None = None
+    label: str
+    timezone: str
+    startDate: str
+    endDate: str
+    availableMonths: list[dict[str, str]] = Field(default_factory=list)
+
+
+class MostActiveSound(BaseModel):
+    label: str
+    description: str
+
+
+class OverviewIdentity(BaseModel):
+    characterTitle: str
+    tagline: str
+    explanation: str
+    mostActiveSound: MostActiveSound
+    generationSource: Literal["gemma", "cache-gemma", "fallback"]
+
+
+class MusicalAgeFactors(BaseModel):
+    repeatAttachment: float
+    discovery: float
+    tasteStability: float
+    catalogMaturity: float
+    albumDepth: float
+    crossEraBreadth: float
+    emotionalIntensity: float
+    reflectiveListening: float
+
+
+class MusicalAge(BaseModel):
+    age: int
+    likelyMin: int
+    likelyMax: int
+    title: str
+    summary: str
+    explanation: str
+    confidence: float
+    confidenceLabel: str
+    factors: MusicalAgeFactors
+    calculationVersion: int
+    generationSource: Literal["gemma", "cache-gemma", "fallback"]
+    sourcePeriod: OverviewPeriod
+    strongestFactors: list[str] = Field(default_factory=list)
+    metadataCoverage: dict[str, float] = Field(default_factory=dict)
+
+
+class TopFiveSong(BaseModel):
+    rank: int
+    title: str
+    artist: str
+    album: str | None = None
+    imageUrl: str | None = None
+    detectedPlays: int
+    detectedMinutes: float | None = None
+
+
+class TopFiveArtist(BaseModel):
+    rank: int
+    name: str
+    imageUrl: str | None = None
+    detectedPlays: int
+    uniqueSongs: int
+
+
+class TopFive(BaseModel):
+    period: OverviewPeriod
+    songs: list[TopFiveSong] = Field(default_factory=list)
+    artists: list[TopFiveArtist] = Field(default_factory=list)
+
+
+class OverviewAnalysisResponse(BaseModel):
+    schemaVersion: int
+    source: Literal["youtube", "spotify"]
+    sourceLabel: str
+    selectedPeriod: OverviewPeriod
+    musicalAgePeriod: OverviewPeriod
+    overview: dict[str, Any]
+    identity: OverviewIdentity
+    musicalAge: MusicalAge
+    topFive: TopFive
+    languageFingerprint: str
+
+
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
     source: Literal["youtube", "spotify"] = "youtube"

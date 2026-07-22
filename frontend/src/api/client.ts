@@ -5,7 +5,7 @@ import type {
   MusicSource,
   MusicCharacterResponse,
   MusicCharacterRewrite,
-  Overview,
+  OverviewResponse,
   PersonaReport,
   TopAlbumSongsResponse,
   TopAlbumsResponse,
@@ -21,7 +21,7 @@ import type {
   TopTrack,
 } from "../types/api";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 function paramsWithSource(source: MusicSource = "youtube", values: Record<string, string | null | undefined> = {}) {
   const params = new URLSearchParams({ source });
@@ -50,6 +50,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message);
   }
   return response.json() as Promise<T>;
+}
+
+function requireOverviewSchema(value: OverviewResponse) {
+  if (value.schemaVersion !== 3 || !value.identity || !value.musicalAge || !value.topFive) {
+    throw new Error("Saved Overview data uses an older schema. Refresh your music data to rebuild it.");
+  }
+  return value;
 }
 
 export const api = {
@@ -86,7 +93,10 @@ export const api = {
     }
     return response.json() as Promise<{ imported_count: number; earliest_play: string | null; latest_play: string | null; message: string }>;
   },
-  overview: (source: MusicSource = "youtube") => request<Overview>(`/analysis/overview?${paramsWithSource(source).toString()}`),
+  overview: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
+    const params = paramsWithSource(source, { period, month });
+    return request<OverviewResponse>(`/analysis/overview?${params.toString()}`).then(requireOverviewSchema);
+  },
   topTracks: (source: MusicSource = "youtube") => request<TopTrack[]>(`/analysis/top-tracks?${paramsWithSource(source).toString()}`),
   topArtists: (source: MusicSource = "youtube") => request<TopArtist[]>(`/analysis/top-artists?${paramsWithSource(source).toString()}`),
   scores: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {

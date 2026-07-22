@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.config import Settings
 
 REPORT_GENERATE_TIMEOUT_SECONDS = 240.0
+OVERVIEW_GENERATE_TIMEOUT_SECONDS = 12.0
 
 
 class PersonalityTag(BaseModel):
@@ -47,8 +48,8 @@ class ClosingStory(BaseModel):
 
 
 class PersonaReport(BaseModel):
-    personaReportSchemaVersion: int = 2
-    schemaVersion: int = 2
+    personaReportSchemaVersion: int = 3
+    schemaVersion: int = 3
     personaName: str = ""
     openingHook: str = ""
     coreSound: StoryChapter = Field(default_factory=StoryChapter)
@@ -108,6 +109,44 @@ class OllamaService:
             "message": "Ollama is reachable." if installed else f"Ollama is reachable, but {self.settings.ollama_model} is not installed.",
         }
 
+    def generate_overview_language(self, evidence: dict[str, Any]) -> dict[str, Any] | None:
+        """Write bounded language from calculated facts without choosing any facts."""
+
+        status = self.status()
+        if not status["reachable"] or not status["model_installed"]:
+            return None
+        prompt = (
+            "You write compact music-persona language from supplied calculated facts. "
+            "The analytics already decided every number, rank, artist, song, date, period, genre and trait. "
+            "Do not add or change any of them. Do not diagnose the listener or infer relationships, mental health, "
+            "real-life events, physical age, or emotional maturity. Do not name any artist in this response.\n\n"
+            "Return strict JSON with exactly this shape: "
+            '{"identity":{"characterTitle":"","tagline":"","explanation":""},'
+            '"musicalAge":{"summary":"","explanation":""}}.\n'
+            "Identity characterTitle: 3-7 words, max 60 characters, starts with 'The', describes a listener character, "
+            "and must not start with a genre after 'The'. Tagline max 140 characters. Identity explanation max 400 characters.\n"
+            "Musical-age summary: one concise sentence. Musical-age explanation: 2-3 concise sentences, playful but grounded. "
+            "Do not write digits or restate the age. Explain the supplied strongest factors without scientific certainty.\n\n"
+            f"CALCULATED_FACTS_JSON:{json.dumps(evidence, ensure_ascii=True, separators=(',', ':'))}"
+        )
+        try:
+            data = self._request_json(
+                "POST",
+                "/api/generate",
+                {
+                    "model": self.settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.2, "top_p": 0.82, "num_predict": 260},
+                },
+                timeout=min(float(self.settings.ollama_generate_timeout_seconds), OVERVIEW_GENERATE_TIMEOUT_SECONDS),
+            )
+            parsed = self.extract_json(str(data.get("response") or ""))
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
     def generate_report(self, profile: dict[str, Any], mode: str) -> PersonaReport:
         started = time.monotonic()
         status = self.status()
@@ -131,7 +170,7 @@ class OllamaService:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.1, "top_p": 0.8, "num_predict": 260},
+                    "options": {"temperature": 0.1, "top_p": 0.8, "num_predict": 220},
                 },
                 timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
             )
@@ -176,7 +215,7 @@ class OllamaService:
     def _log_report_generation(self, report: PersonaReport) -> None:
         reason = f" reason={report.fallbackReason}" if report.fallbackReason else ""
         print(
-            f"[persona-report] source={report.generationSource} model={report.model or self.settings.ollama_model} "
+            f"[persona] source={report.generationSource} model={report.model or self.settings.ollama_model} "
             f"schema={report.schemaVersion} duration_ms={report.durationMs or 0}{reason}",
             flush=True,
         )
@@ -314,7 +353,7 @@ class OllamaService:
             "- Avoid therapy language, diagnosis language, corporate phrasing, or robotic analysis language.\n"
             "- Keep roasts light, friendly, and music-focused.\n"
             "- Write in second person using you and your.\n"
-            "- personaName must be a music archetype, not a human name.\n"
+            "- personaName must exactly match the supplied deterministic identity title.\n"
             "- Do not output hashtags, social captions, dates, signatures, or tags.\n"
             "- Do not output Markdown, HTML, reasoning, notes, alternatives, or an introduction.\n"
             "- Do not start with phrases like 'Based on your data'.\n"
@@ -322,10 +361,9 @@ class OllamaService:
             "- Use the deterministic characters as the anchor. Do not choose or rename the character.\n"
             "- The style should be observant, slightly dramatic, and immediately readable.\n"
             f"{mode_instruction}\n"
-            'Return only valid JSON matching this seed schema: {"s":["string","string","string","string","string","string","string","string","string","string","string","string","string"]}\n'
-            "The 13 strings must be in this order: personaName, openingHook, coreHeadline, coreBody, coreQuote, "
-            "comfortHeadline, comfortBody, comfortQuote, plotHeadline, plotBody, closingHeadline, closingBody, finalLine.\n"
-            "Length limits: every string max 8 words. No extra keys.\n\n"
+            'Return only valid JSON matching this seed schema: {"s":["string","string","string","string","string","string"]}\n'
+            "The 6 strings must be in this order: openingHook, coreBody, comfortBody, plotBody, closingBody, finalLine.\n"
+            "Length limits: openingHook and finalLine max 12 words; each body max 20 words. No extra keys.\n\n"
             f"SUPPLIED_PROFILE_JSON:{json.dumps(compact, ensure_ascii=True, separators=(',', ':'))}"
         )
 
@@ -351,9 +389,20 @@ class OllamaService:
         primary = character_summary(character.get("primary"))
         secondary = character_summary(character.get("secondary"))
         modifier = character_summary(character.get("modifier"))
+        identity = profile.get("identity") if isinstance(profile.get("identity"), dict) else {}
+        musical_age = profile.get("musical_age") if isinstance(profile.get("musical_age"), dict) else {}
         return {
             "mode": mode,
             "period": (character.get("period") or {}).get("label") if isinstance(character.get("period"), dict) else None,
+            "deterministic_identity_title": identity.get("characterTitle"),
+            "identity_tagline": identity.get("tagline"),
+            "musical_age": {
+                "age": musical_age.get("age"),
+                "category": musical_age.get("title"),
+                "summary": musical_age.get("summary"),
+                "strongest_factors": musical_age.get("strongestFactors"),
+                "source_period": musical_age.get("sourcePeriod"),
+            },
             "primary_character": primary,
             "secondary_character": secondary,
             "modifier": modifier,
@@ -503,8 +552,8 @@ class OllamaService:
             repaired.update(self._sanitize_story_seed(data, fallback, evidence or {}))
             repaired["fallback"] = False
         elif self._has_v2_story_data(data):
-            repaired["personaReportSchemaVersion"] = 2
-            repaired["personaName"] = self._sanitize_persona_name(data.get("personaName"), fallback["personaName"])
+            repaired["personaReportSchemaVersion"] = 3
+            repaired["personaName"] = fallback["personaName"]
             repaired["openingHook"] = self._limit_words(self._clean_text(data.get("openingHook"), 90), 20) or fallback["openingHook"]
             repaired["coreSound"] = self._sanitize_story_chapter(data.get("coreSound"), fallback["coreSound"])
             repaired["comfortLoop"] = self._sanitize_story_chapter(data.get("comfortLoop"), fallback["comfortLoop"])
@@ -542,12 +591,12 @@ class OllamaService:
             if isinstance(value, str) and value.strip():
                 values.append(value)
             cursor = quote_index + end
-        return {"s": values} if len(values) >= 13 else {}
+        return {"s": values} if len(values) >= 6 else {}
 
     def _has_story_seed_data(self, data: dict[str, Any]) -> bool:
         if isinstance(data.get("s"), list):
             seed = data["s"]
-            return len(seed) >= 13 and all(isinstance(value, str) and value.strip() for value in seed[:13])
+            return len(seed) >= 6 and all(isinstance(value, str) and value.strip() for value in seed[:6])
         required = {
             "personaName",
             "openingHook",
@@ -570,21 +619,31 @@ class OllamaService:
     def _sanitize_story_seed(self, data: dict[str, Any], fallback: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
         if isinstance(data.get("s"), list):
             seed = list(data["s"][:13])
-            (
-                persona_name,
-                opening_hook,
-                core_headline,
-                core_body,
-                core_quote,
-                comfort_headline,
-                comfort_body,
-                comfort_quote,
-                plot_headline,
-                plot_body,
-                closing_headline,
-                closing_body,
-                final_line,
-            ) = seed
+            if len(seed) >= 13:
+                (
+                    persona_name,
+                    opening_hook,
+                    core_headline,
+                    core_body,
+                    core_quote,
+                    comfort_headline,
+                    comfort_body,
+                    comfort_quote,
+                    plot_headline,
+                    plot_body,
+                    closing_headline,
+                    closing_body,
+                    final_line,
+                ) = seed
+            else:
+                opening_hook, core_body, comfort_body, plot_body, closing_body, final_line = seed[:6]
+                persona_name = fallback["personaName"]
+                core_headline = fallback["coreSound"]["headline"]
+                core_quote = fallback["coreSound"]["pullQuote"]
+                comfort_headline = fallback["comfortLoop"]["headline"]
+                comfort_quote = fallback["comfortLoop"]["pullQuote"]
+                plot_headline = fallback["plotTwist"]["headline"]
+                closing_headline = fallback["closing"]["headline"]
             characters = fallback["mainCharacters"]
         else:
             persona_name = data.get("personaName")
@@ -602,9 +661,9 @@ class OllamaService:
             final_line = data.get("finalLine")
             characters = self._sanitize_main_characters(data.get("mainCharacters"), fallback["mainCharacters"], evidence)
         return {
-            "personaReportSchemaVersion": 2,
-            "schemaVersion": 2,
-            "personaName": self._sanitize_persona_name(persona_name, fallback["personaName"]),
+            "personaReportSchemaVersion": 3,
+            "schemaVersion": 3,
+            "personaName": fallback["personaName"],
             "openingHook": self._limit_words(self._clean_text(opening_hook, 90), 20) or fallback["openingHook"],
             "coreSound": {
                 "headline": self._limit_words(self._clean_text(core_headline, 90), 12) or fallback["coreSound"]["headline"],
@@ -629,8 +688,8 @@ class OllamaService:
         }
 
     def _fill_report_gaps(self, report: PersonaReport, fallback: dict[str, Any]) -> PersonaReport:
-        report.personaReportSchemaVersion = 2
-        report.schemaVersion = 2
+        report.personaReportSchemaVersion = 3
+        report.schemaVersion = 3
         report.personaName = self._sanitize_persona_name(report.personaName, fallback["personaName"])
         report.openingHook = self._limit_words(report.openingHook or fallback["openingHook"], 20)
         report.coreSound = StoryChapter(**self._sanitize_story_chapter(report.coreSound.model_dump(), fallback["coreSound"]))
@@ -659,7 +718,7 @@ class OllamaService:
         return report
 
     def _has_v2_story_data(self, data: dict[str, Any]) -> bool:
-        return data.get("personaReportSchemaVersion") == 2 or any(
+        return data.get("personaReportSchemaVersion") in {2, 3} or any(
             key in data
             for key in ("personaName", "openingHook", "coreSound", "comfortLoop", "mainCharacters", "plotTwist", "closing")
         )
@@ -772,6 +831,7 @@ class OllamaService:
         if not isinstance(value, str):
             return ""
         clean = re.sub(r"\s+", " ", value).strip()
+        clean = re.sub(r"[*_`]+", "", clean)
         return clean[:max_chars].rstrip()
 
     def _limit_words(self, value: str, max_words: int) -> str:
@@ -832,12 +892,14 @@ class OllamaService:
             if full_year
             else "This should be read as a current snapshot rather than a full-year identity."
         )
-        headline = str(primary.get("name") or evidence.get("headline_persona") or "Saville Music Persona")
+        identity = evidence.get("identity") if isinstance(evidence.get("identity"), dict) else {}
+        headline = str(identity.get("characterTitle") or evidence.get("headline_persona") or primary.get("name") or "Saville Music Persona")
         subheadline = str(primary.get("roast") or "Your listening profile has a point of view, even when the model is offline.")
         primary_profile = str(primary.get("profile") or "")
         secondary_profile = str(secondary.get("profile") or "There is not a strong secondary character yet; the main identity carries most of the signal.")
         modifier_profile = str(modifier.get("profile") or "No separate behaviour modifier is strong enough to overtake the main character.")
         sound_centre = self._join_names(core_families[:3]) or "the strongest mapped sound families"
+        lead_sound = core_families[0] if core_families else sound_centre
         side_colour = self._join_names(secondary_families[:2] or sonic_traits[:2]) or "smaller side colours"
         trait_text = self._join_names(sonic_traits[:4]) or "a few recurring sonic habits"
         listener_axis = evidence.get("listener_axis") if isinstance(evidence.get("listener_axis"), dict) else {}
@@ -931,11 +993,12 @@ class OllamaService:
             {"tag": "Sound-world read", "reason": f"The recurring sound colours include {self._join_names(sonic_traits[:3] or mood_tags) or 'mixed listening contexts'}."},
         ]
         return {
-            "personaReportSchemaVersion": 2,
+            "personaReportSchemaVersion": 3,
+            "schemaVersion": 3,
             "personaName": self._limit_words(headline, 8),
             "openingHook": self._limit_words(f"Your headphones keep choosing {sound_centre}, then adding just enough drama around the edges.", 20),
             "coreSound": {
-                "headline": self._limit_words(f"{sound_centre} Holds The Centre", 12),
+                "headline": self._limit_words(f"{lead_sound} Holds The Centre", 12),
                 "body": self._limit_words(core_sound_body, 55),
                 "pullQuote": self._limit_words(trait_text.capitalize(), 14),
             },

@@ -1,7 +1,7 @@
 import { Sparkles } from "lucide-react";
 import { useMemo, useRef } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
+import type { ReactNode } from "react";
+import { motion, useInView, useReducedMotion } from "motion/react";
 import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
 import CountUp from "../../components/reactbits/CountUp/CountUp";
 import { FadeContent } from "../../components/reactbits/FadeContent/FadeContent";
@@ -39,7 +39,6 @@ type ChapterLabel = {
   label: string;
 };
 
-const STORY_SPRING = { stiffness: 82, damping: 30, mass: 0.5 };
 const REPORT_ACTIONS: { mode: GenerateMode; label: string }[] = [
   { mode: "serious", label: "Regenerate" },
   { mode: "playful", label: "Playful" },
@@ -59,10 +58,6 @@ export function PersonaStoryExperience({
   source,
   titleAnimationKey,
 }: PersonaStoryExperienceProps) {
-  const storyRef = useRef<HTMLDivElement | null>(null);
-  const reducedMotion = useReducedMotion();
-  const { scrollYProgress } = useScroll({ target: storyRef, offset: ["start start", "end end"] });
-  const smoothProgress = useSpring(scrollYProgress, STORY_SPRING);
   const albumCovers = useMemo(() => buildAlbumBackdropItems(favouriteAlbums, topTracks), [favouriteAlbums, topTracks]);
   const genreSegments = useMemo(() => buildGenreSegments(rollingCharacter), [rollingCharacter]);
   const topAlbum = favouriteAlbums.find((album) => album.album_image_url) ?? favouriteAlbums[0] ?? null;
@@ -70,38 +65,36 @@ export function PersonaStoryExperience({
   const discoveryScore = scoreValue(rollingCharacter, "discovery");
   const dominantSound = rollingCharacter?.top_clusters[0]?.name ?? genreSegments[0]?.label ?? "Your strongest sound-world";
   const traits = rollingCharacter?.sonic_traits.slice(0, 5) ?? [];
-  const storyTone = useTransform(smoothProgress, [0, 0.24, 0.48, 0.72, 1], ["#090607", "#120709", "#080708", "#11070a", "#070607"]);
 
   return (
-    <div className="persona-report">
+    <div className="persona-report-page">
       <PersonaAlbumBackdrop albums={albumCovers} />
+      <div className="persona-report-content">
+        <header className="persona-report__masthead" aria-label="Persona report controls">
+          <div>
+            <p className="persona-report__eyebrow">Persona Report</p>
+            <p className="persona-report__meta">
+              Six-part local story
+              {!prerequisitesModelReady ? " / Gemma can fall back deterministically" : ""}
+            </p>
+          </div>
+          <div className="persona-report__actions" aria-label="Generate persona report">
+            {REPORT_ACTIONS.map((action, index) => (
+              <button
+                key={action.mode}
+                className={index === 0 ? "btn-secondary persona-report__action-primary" : "btn-secondary"}
+                disabled={busy}
+                type="button"
+                onClick={() => onGenerate(action.mode)}
+              >
+                {index === 0 ? <Sparkles size={16} /> : null}
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </header>
 
-      <header className="persona-report__masthead" aria-label="Persona report controls">
-        <div>
-          <p className="persona-report__eyebrow">Persona Report</p>
-          <p className="persona-report__meta">
-            Six-part local story
-            {!prerequisitesModelReady ? " / Gemma can fall back deterministically" : ""}
-          </p>
-        </div>
-        <div className="persona-report__actions" aria-label="Generate persona report">
-          {REPORT_ACTIONS.map((action, index) => (
-            <button
-              key={action.mode}
-              className={index === 0 ? "btn-secondary persona-report__action-primary" : "btn-secondary"}
-              disabled={busy}
-              type="button"
-              onClick={() => onGenerate(action.mode)}
-            >
-              {index === 0 ? <Sparkles size={16} /> : null}
-              {action.label}
-            </button>
-          ))}
-        </div>
-      </header>
-
-      <article ref={storyRef} className="persona-story" aria-label="Persona story report">
-        <motion.div className="persona-story__tone" aria-hidden="true" style={reducedMotion ? undefined : { backgroundColor: storyTone }} />
+        <article className="persona-story" aria-label="Persona story report">
 
         <OpeningSection
           chapter={{ number: "01", label: "Opening" }}
@@ -152,7 +145,7 @@ export function PersonaStoryExperience({
           variant="twist"
           reversed
         >
-          <PlotTwistVisual rollingCharacter={rollingCharacter} currentCharacter={currentCharacter} />
+          <PlotTwistVisual rollingName={story.personaName} rollingCharacter={rollingCharacter} currentCharacter={currentCharacter} />
         </EditorialSection>
 
         <EditorialSection
@@ -165,7 +158,8 @@ export function PersonaStoryExperience({
         >
           <ClosingVisual finalLine={story.closing.finalLine} />
         </EditorialSection>
-      </article>
+        </article>
+      </div>
     </div>
   );
 }
@@ -184,8 +178,8 @@ function OpeningSection({
   titleAnimationKey: string;
 }) {
   return (
-    <section id="opening" className="persona-section persona-section--opening" aria-labelledby="opening-title">
-      <div className="persona-section__copy persona-section__copy--opening">
+    <section id="opening" className="persona-story-section persona-section persona-section--opening" aria-labelledby="opening-title">
+      <div className="persona-section__copy persona-section__copy--opening persona-copy-scrim">
         <StoryReveal delay={0.02}>
           <ChapterKicker chapter={chapter} />
         </StoryReveal>
@@ -233,10 +227,10 @@ function EditorialSection({ id, chapter, headline, body, pullQuote, children, va
   return (
     <section
       id={id}
-      className={`persona-section persona-section--${variant}${reversed ? " persona-section--reversed" : ""}`}
+      className={`persona-story-section persona-section persona-section--${variant}${reversed ? " persona-section--reversed" : ""}`}
       aria-labelledby={`${id}-title`}
     >
-      <div className="persona-section__copy">
+      <div className="persona-section__copy persona-copy-scrim">
         <StoryReveal delay={0.02}>
           <ChapterKicker chapter={chapter} />
         </StoryReveal>
@@ -393,7 +387,7 @@ function MainCharactersVisual({ characters, topArtists, source }: { characters: 
         const artist = findArtist(topArtists, character.artistName);
         return (
           <StoryReveal key={character.artistName} delay={index * 0.1} distance={30}>
-            <article className="persona-artist-cast__item" style={{ "--artist-offset": `${index * 2.25}rem` } as CSSProperties}>
+            <article className="persona-artist-cast__item">
               <ArtistAvatar artistImageUrl={artist?.artist_image_url} artistName={character.artistName} size="hero" shape="rounded" fallbackLabel={initials(character.artistName)} />
               <div>
                 <p>{character.role}</p>
@@ -409,8 +403,7 @@ function MainCharactersVisual({ characters, topArtists, source }: { characters: 
   );
 }
 
-function PlotTwistVisual({ rollingCharacter, currentCharacter }: { rollingCharacter: MusicCharacterResponse | null; currentCharacter: MusicCharacterResponse | null }) {
-  const rollingName = rollingCharacter?.primary.name ?? "Long-term character";
+function PlotTwistVisual({ rollingName, rollingCharacter, currentCharacter }: { rollingName: string; rollingCharacter: MusicCharacterResponse | null; currentCharacter: MusicCharacterResponse | null }) {
   const currentName = currentCharacter?.primary.name ?? "Current phase";
   const hasContrast = Boolean(rollingCharacter && currentCharacter && rollingCharacter.primary.id !== currentCharacter.primary.id);
   const sideSignals = rollingCharacter?.top_clusters.slice(1, 3).map((item) => item.name) ?? [];

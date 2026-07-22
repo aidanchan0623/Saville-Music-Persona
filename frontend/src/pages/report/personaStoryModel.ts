@@ -42,7 +42,7 @@ export function buildPersonaStory(
   topArtists: TopArtist[],
 ): PersonaStory | null {
   const fallback = fallbackStoryFromCharacter(rolling, current, topArtists);
-  if (report && report.personaReportSchemaVersion === 2) {
+  if (report && report.personaReportSchemaVersion === 3) {
     return {
       personaName: cleanText(report.personaName || report.headline || fallback?.personaName || "Saville Music Persona"),
       openingHook: cleanText(report.openingHook || fallback?.openingHook || report.subheadline || "Your listening has a character read."),

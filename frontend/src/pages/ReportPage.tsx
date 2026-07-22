@@ -61,9 +61,10 @@ export function ReportPage({ report, prerequisites, busy, topArtists, topTracks,
     };
   }, [source]);
 
+  const reportTopArtists = useMemo(() => artistsFromReportEvidence(report, topArtists), [report, topArtists]);
   const story = useMemo(
-    () => buildPersonaStory(report, rollingCharacter, currentCharacter, topArtists),
-    [report, rollingCharacter, currentCharacter, topArtists],
+    () => buildPersonaStory(report, rollingCharacter, currentCharacter, reportTopArtists),
+    [report, rollingCharacter, currentCharacter, reportTopArtists],
   );
   const reportEvidenceAlbums = useMemo(() => albumsFromReportEvidence(report), [report]);
   const storyAlbums = favouriteAlbums.length ? favouriteAlbums : reportEvidenceAlbums;
@@ -100,7 +101,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, topTracks,
       rollingCharacter={rollingCharacter}
       currentCharacter={currentCharacter}
       favouriteAlbums={storyAlbums}
-      topArtists={topArtists}
+      topArtists={reportTopArtists}
       topTracks={topTracks}
       prerequisitesModelReady={modelReady}
       busy={busy}
@@ -109,6 +110,29 @@ export function ReportPage({ report, prerequisites, busy, topArtists, topTracks,
       titleAnimationKey={titleAnimationKey}
     />
   );
+}
+
+function artistsFromReportEvidence(report: PersonaReport | null, fallback: TopArtist[]): TopArtist[] {
+  const evidence = report?.evidence as { top_artists?: unknown } | undefined;
+  const records = Array.isArray(evidence?.top_artists) ? evidence.top_artists : [];
+  const fallbackByName = new Map(fallback.map((artist) => [artist.artist.toLocaleLowerCase(), artist]));
+  const artists: TopArtist[] = [];
+  for (const item of records) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const name = String(record.artist || "").trim();
+    const base = fallbackByName.get(name.toLocaleLowerCase());
+    if (!name || !base) continue;
+    const playCount = Number(record.play_count ?? base.play_count);
+    const uniqueSongs = Number(record.unique_songs_played ?? base.unique_songs_played);
+    artists.push({
+      ...base,
+      play_count: Number.isFinite(playCount) ? playCount : base.play_count,
+      unique_songs_played: Number.isFinite(uniqueSongs) ? uniqueSongs : base.unique_songs_played,
+      artist_image_url: String(record.artist_image_url || base.artist_image_url || "") || null,
+    });
+  }
+  return artists.length ? artists : fallback;
 }
 
 function albumsFromReportEvidence(report: PersonaReport | null): TopAlbumItem[] {

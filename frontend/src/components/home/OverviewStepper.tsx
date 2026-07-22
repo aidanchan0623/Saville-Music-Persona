@@ -1,21 +1,17 @@
-import { ArrowDown, ArrowUp, BarChart3, Compass, Disc3, Gauge, RotateCcw, Sparkles } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
-import { ArtistAvatar, PersonaBackground } from "../Artwork";
+import { ArtistAvatar, PersonaBackground, TrackArtwork } from "../Artwork";
 import Stepper, { Step } from "../reactbits/Stepper/Stepper";
-import type { ListeningMinutes, Overview, PeriodTopItem, PeriodTopResponse, ScoreMetric, TasteDnaComparison, TasteDnaExplorer } from "../../types/api";
-import { asPercent, formatMinutes } from "../../utils/format";
+import type { MusicIdentity, MusicalAge, Overview, OverviewPeriod, TasteDnaExplorer, TopFive } from "../../types/api";
 import type { PersonaThemeImage, PersonaVisualTheme } from "../../utils/personaVisualTheme";
 import "./OverviewStepper.css";
 
 type OverviewStepperProps = {
   overview: Overview;
-  thisMonthMinutes: ListeningMinutes | null;
-  rollingYearMinutes: ListeningMinutes | null;
-  scores: ScoreMetric[];
+  identity: MusicIdentity;
+  musicalAge: MusicalAge;
+  topFive: TopFive;
+  selectedPeriod: OverviewPeriod;
   currentTaste: TasteDnaExplorer | null;
-  comparison: TasteDnaComparison | null;
-  currentTopArtists: PeriodTopResponse | null;
-  currentTopTracks: PeriodTopResponse | null;
   visualTheme: PersonaVisualTheme;
   onOpenTop10: () => void;
   onOpenScores: () => void;
@@ -23,26 +19,21 @@ type OverviewStepperProps = {
   onOpenReport: () => void;
 };
 
-const STEP_LABELS = ["Current State", "Core Sound", "Behaviour", "Movement", "Summary"];
+const STEP_LABELS = ["Current State", "Core Sound", "Musical Age", "Top 5", "Summary"];
 
 export function OverviewStepper({
   overview,
-  thisMonthMinutes,
-  rollingYearMinutes,
-  scores,
+  identity,
+  musicalAge,
+  topFive,
+  selectedPeriod,
   currentTaste,
-  comparison,
-  currentTopArtists,
-  currentTopTracks,
   visualTheme,
   onOpenTop10,
   onOpenScores,
   onOpenPatterns,
   onOpenReport,
 }: OverviewStepperProps) {
-  const scoreByKey = new Map(scores.map((score) => [score.key, score]));
-  const topArtist = currentTopArtists?.items[0] ?? null;
-
   return (
     <Stepper
       className="overview-stepper"
@@ -53,37 +44,22 @@ export function OverviewStepper({
       completeAction="restart"
     >
       <Step>
-        <ListeningStateSection
-          overview={overview}
-          thisMonthMinutes={thisMonthMinutes}
-          currentTaste={currentTaste}
-          topArtist={topArtist}
-          repeatScore={overview.repeat_score}
-          discoveryScore={overview.discovery_score}
-          visualTheme={visualTheme}
-          onOpenReport={onOpenReport}
-        />
+        <ListeningStateSection overview={overview} topFive={topFive} period={selectedPeriod} visualTheme={visualTheme} onOpenReport={onOpenReport} />
       </Step>
       <Step>
         <CoreSoundSection overview={overview} currentTaste={currentTaste} visualTheme={visualTheme} />
       </Step>
       <Step>
-        <ListeningBehaviourSection
-          overview={overview}
-          thisMonthMinutes={thisMonthMinutes}
-          rollingYearMinutes={rollingYearMinutes}
-          artistLoyaltyScore={scoreByKey.get("artist_loyalty")}
-          nicheScore={scoreByKey.get("mainstream_niche")}
-          visualTheme={visualTheme}
-        />
+        <MusicalAgeSection musicalAge={musicalAge} visualTheme={visualTheme} />
       </Step>
       <Step>
-        <RecentMovementSection currentTopArtists={currentTopArtists} currentTopTracks={currentTopTracks} comparison={comparison} visualTheme={visualTheme} onOpenTop10={onOpenTop10} />
+        <TopFiveSection topFive={topFive} visualTheme={visualTheme} onOpenTop10={onOpenTop10} />
       </Step>
       <Step>
         <PersonalSummarySection
           overview={overview}
-          currentTopArtists={currentTopArtists}
+          identity={identity}
+          period={selectedPeriod}
           visualTheme={visualTheme}
           onOpenReport={onOpenReport}
           onOpenScores={onOpenScores}
@@ -96,49 +72,42 @@ export function OverviewStepper({
 
 function ListeningStateSection({
   overview,
-  thisMonthMinutes,
-  currentTaste,
-  topArtist,
-  repeatScore,
-  discoveryScore,
+  topFive,
+  period,
   visualTheme,
   onOpenReport,
 }: {
   overview: Overview;
-  thisMonthMinutes: ListeningMinutes | null;
-  currentTaste: TasteDnaExplorer | null;
-  topArtist: PeriodTopItem | null;
-  repeatScore: ScoreMetric;
-  discoveryScore: ScoreMetric;
+  topFive: TopFive;
+  period: OverviewPeriod;
   visualTheme: PersonaVisualTheme;
   onOpenReport: () => void;
 }) {
-  const dominantCluster = currentTaste?.nodes[0]?.name ?? overview.top_genre_cluster;
-  const comfortLabel = repeatScore.value >= discoveryScore.value ? "comfort-leaning" : "discovery-leaning";
-  const headline = repeatScore.value >= discoveryScore.value ? "This phase is built around repeat gravity." : "This phase is more exploratory than usual.";
-  const anchorLine = topArtist ? `${topArtist.artist} anchors this window.` : "No clear anchor yet.";
+  const topArtist = topFive.artists[0] ?? null;
+  const topSong = topFive.songs[0] ?? null;
+  const headline = topArtist ? `${topArtist.name} holds the centre of this window.` : "This listening window is still forming.";
 
   return (
     <OverviewSection
       eyebrow="Current Listening State"
       title={headline}
-      intro={`${dominantCluster || "Your mapped sound"} leads right now. ${anchorLine}`}
+      intro={`${overview.top_genre_cluster || "Your mapped sound"} leads ${period.label}. Rankings and counts below use this same timeframe.`}
       image={visualTheme.secondaryImages[0]}
       aside={
         <aside className="overview-stepper__artist-focus">
-          <ArtistAvatar artistImageUrl={topArtist?.artist_image_url} artistName={topArtist?.artist ?? "Current anchor artist"} size="hero" priority fallbackLabel={initials(topArtist?.artist ?? "Artist")} shape="rounded" />
+          <ArtistAvatar artistImageUrl={topArtist?.imageUrl} artistName={topArtist?.name ?? "Current anchor artist"} size="hero" priority shape="rounded" />
           <div className="min-w-0">
             <p className="overview-stepper__micro-label">Current anchor</p>
-            <h3 className="overview-stepper__artist-name">{topArtist?.artist ?? "No clear anchor yet"}</h3>
-            <p className="overview-stepper__plain-copy">{topArtist ? `${topArtist.unique_songs ?? 0} songs in rotation` : "More current data will sharpen this."}</p>
+            <h3 className="overview-stepper__artist-name">{topArtist?.name ?? "No clear anchor yet"}</h3>
+            <p className="overview-stepper__plain-copy">{topArtist ? `${topArtist.detectedPlays.toLocaleString()} detected plays across ${topArtist.uniqueSongs.toLocaleString()} songs` : "More listening will sharpen this view."}</p>
           </div>
         </aside>
       }
     >
-      <div className="overview-stepper__metric-grid overview-stepper__metric-grid--state">
-        <DataCard label="Listening time" value={thisMonthMinutes ? formatMinutes(thisMonthMinutes.metrics.current_month_total_minutes) : "Unavailable"} />
-        <DataCard label="Dominant sound" value={dominantCluster || "Still mapping"} />
-        <DataCard label="Comfort vs discovery" value={comfortLabel} />
+      <div className="overview-stepper__metric-grid">
+        <DataCard label="Top song" value={topSong?.title ?? "Still mapping"} detail={topSong?.artist} />
+        <DataCard label="Dominant sound" value={overview.top_genre_cluster || "Still mapping"} />
+        <DataCard label="Detected plays" value={overview.total_detected_plays.toLocaleString()} detail={period.label} />
       </div>
       <div className="overview-stepper__actions">
         <button className="btn-primary" type="button" onClick={onOpenReport}>Open Persona Report</button>
@@ -151,12 +120,13 @@ function CoreSoundSection({ overview, currentTaste, visualTheme }: { overview: O
   const taste = overview.taste_interpretation;
   const segments = buildGenreSegments(taste);
   const traits = (currentTaste?.traits.map((trait) => trait.trait) ?? taste.sonic_traits).slice(0, 5);
+  const supporting = segments.slice(1, 3).map((item) => item.label).join(" and ");
 
   return (
     <OverviewSection
       eyebrow="Core Sound"
-      title="The centre is emotional alternative, with atmosphere around the edges."
-      intro="Mapped genre composition from your listening."
+      title={`${overview.top_genre_cluster || "Your strongest sound"} holds the centre${supporting ? `, with ${supporting} around it` : ""}.`}
+      intro="Mapped composition from the selected listening window."
       image={visualTheme.secondaryImages[1] ?? visualTheme.primaryImage}
     >
       <GenreStack segments={segments} />
@@ -170,73 +140,68 @@ function CoreSoundSection({ overview, currentTaste, visualTheme }: { overview: O
   );
 }
 
-function ListeningBehaviourSection({
-  overview,
-  thisMonthMinutes,
-  rollingYearMinutes,
-  artistLoyaltyScore,
-  nicheScore,
-  visualTheme,
-}: {
-  overview: Overview;
-  thisMonthMinutes: ListeningMinutes | null;
-  rollingYearMinutes: ListeningMinutes | null;
-  artistLoyaltyScore?: ScoreMetric;
-  nicheScore?: ScoreMetric;
-  visualTheme: PersonaVisualTheme;
-}) {
-  const dna = overview.taste_dna;
-  const activeDays = thisMonthMinutes?.metrics.active_listening_days ?? rollingYearMinutes?.metrics.active_listening_days;
-  const streak = thisMonthMinutes?.metrics.current_listening_streak_days ?? rollingYearMinutes?.metrics.current_listening_streak_days;
-  const durationCoverage = thisMonthMinutes?.duration_quality.duration_coverage_percent ?? rollingYearMinutes?.duration_quality.duration_coverage_percent;
-
+function MusicalAgeSection({ musicalAge, visualTheme }: { musicalAge: MusicalAge; visualTheme: PersonaVisualTheme }) {
   return (
     <OverviewSection
-      eyebrow="Listening Behaviour"
-      title="Known favourites carry the profile, but the sound world is not narrow."
-      intro="Replay, discovery, artist pull, and listening rhythm."
+      eyebrow="Musical Age"
+      title={musicalAge.title}
+      intro={`Musical age based on your ${musicalAge.sourcePeriod.label.replace(/^Rolling year/, "rolling year")} profile.`}
       image={visualTheme.secondaryImages[0] ?? visualTheme.primaryImage}
     >
-      <div className="overview-stepper__metric-grid overview-stepper__metric-grid--wide">
-        <SignalCard icon={<RotateCcw size={18} />} label="Repeat listening" value={asPercent(overview.repeat_score.value)} detail={overview.repeat_score.label} />
-        <SignalCard icon={<Compass size={18} />} label="Discovery" value={asPercent(overview.discovery_score.value)} detail={overview.discovery_score.label} />
-        <SignalCard icon={<Gauge size={18} />} label="Artist concentration" value={asPercent(dna.artist_concentration.value)} detail={dna.artist_concentration.label} />
-        <SignalCard icon={<Disc3 size={18} />} label="Comfort tendency" value={asPercent(dna.exploration_vs_comfort.value)} detail={dna.exploration_vs_comfort.label} />
+      <div className="overview-stepper__age-layout">
+        <div className="overview-stepper__age-number" aria-label={`Musical age ${musicalAge.age}`}>
+          {musicalAge.age}
+        </div>
+        <div className="overview-stepper__age-copy">
+          <p className="overview-stepper__age-summary">{musicalAge.summary}</p>
+          <p className="overview-stepper__plain-copy">Likely range: {musicalAge.likelyMin}-{musicalAge.likelyMax}</p>
+          <p className="overview-stepper__confidence">{musicalAge.confidenceLabel}</p>
+        </div>
       </div>
-      <div className="overview-stepper__support-row">
-        {artistLoyaltyScore ? <DataCard label="Artist loyalty" value={asPercent(artistLoyaltyScore.value)} detail={artistLoyaltyScore.label} /> : null}
-        {nicheScore ? <DataCard label="Niche estimate" value={asPercent(nicheScore.value)} detail={nicheScore.label} /> : null}
-        {activeDays !== undefined ? <DataCard label="Active days" value={activeDays.toLocaleString()} detail={streak ? `${streak} day streak` : undefined} /> : null}
-        {durationCoverage !== undefined ? <DataCard label="Minute confidence" value={asPercent(durationCoverage)} /> : null}
-      </div>
+      <p className="overview-stepper__age-explanation">{musicalAge.explanation}</p>
+      <details className="overview-stepper__age-disclosure">
+        <summary>What does this mean?</summary>
+        <p>Musical age is a playful estimate of the emotional character of your listening. It is not your physical age or a measure of emotional maturity.</p>
+      </details>
     </OverviewSection>
   );
 }
 
-function RecentMovementSection({
-  currentTopArtists,
-  currentTopTracks,
-  comparison,
-  visualTheme,
-  onOpenTop10,
-}: {
-  currentTopArtists: PeriodTopResponse | null;
-  currentTopTracks: PeriodTopResponse | null;
-  comparison: TasteDnaComparison | null;
-  visualTheme: PersonaVisualTheme;
-  onOpenTop10: () => void;
-}) {
-  const movers = [...movementItems(currentTopTracks?.items ?? [], "song"), ...movementItems(currentTopArtists?.items ?? [], "artist")].slice(0, 6);
-
+function TopFiveSection({ topFive, visualTheme, onOpenTop10 }: { topFive: TopFive; visualTheme: PersonaVisualTheme; onOpenTop10: () => void }) {
   return (
     <OverviewSection
-      eyebrow="Recent Movement"
-      title="The current month has a few clear jumps, not a full identity reset."
-      intro={comparison?.claims.growing_cluster ? `${comparison.claims.growing_cluster.name} is rising.` : "Rank movement from the current period."}
+      eyebrow="Your Rotation"
+      title={`Top 5 for ${topFive.period.label}`}
+      intro="The same deterministic ranking used by the Top 10 page."
       image={visualTheme.secondaryImages[2] ?? visualTheme.primaryImage}
     >
-      <div className="overview-stepper__movement-list">
-        {movers.length ? movers.map((item) => <MovementRow key={item.key} item={item} />) : <p className="overview-stepper__empty-line">No meaningful movement signal is available for this period yet.</p>}
+      <div className="overview-stepper__top-five-grid">
+        <RankingList title={`Top songs for ${topFive.period.label}`} empty="No valid songs in this period.">
+          {topFive.songs.map((song) => (
+            <article className="overview-stepper__ranking-row" key={`${song.rank}-${song.title}-${song.artist}`}>
+              <span className="overview-stepper__ranking-number">{song.rank}</span>
+              <TrackArtwork trackImageUrl={song.imageUrl} title={song.title} size="sm" />
+              <div className="min-w-0">
+                <strong>{song.title}</strong>
+                <span>{song.artist}</span>
+              </div>
+              <em>{song.detectedPlays.toLocaleString()} plays</em>
+            </article>
+          ))}
+        </RankingList>
+        <RankingList title={`Top artists for ${topFive.period.label}`} empty="No valid artists in this period.">
+          {topFive.artists.map((artist) => (
+            <article className="overview-stepper__ranking-row" key={`${artist.rank}-${artist.name}`}>
+              <span className="overview-stepper__ranking-number">{artist.rank}</span>
+              <ArtistAvatar artistImageUrl={artist.imageUrl} artistName={artist.name} size="sm" />
+              <div className="min-w-0">
+                <strong>{artist.name}</strong>
+                <span>{artist.uniqueSongs.toLocaleString()} unique songs</span>
+              </div>
+              <em>{artist.detectedPlays.toLocaleString()} plays</em>
+            </article>
+          ))}
+        </RankingList>
       </div>
       <div className="overview-stepper__actions">
         <button className="btn-secondary" type="button" onClick={onOpenTop10}>Open Top 10</button>
@@ -245,34 +210,44 @@ function RecentMovementSection({
   );
 }
 
+function RankingList({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
+  const hasItems = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  return (
+    <section className="overview-stepper__ranking-list">
+      <h3>{title}</h3>
+      {hasItems ? children : <p className="overview-stepper__empty-line">{empty}</p>}
+    </section>
+  );
+}
+
 function PersonalSummarySection({
   overview,
-  currentTopArtists,
+  identity,
+  period,
   visualTheme,
   onOpenReport,
   onOpenScores,
   onOpenPatterns,
 }: {
   overview: Overview;
-  currentTopArtists: PeriodTopResponse | null;
+  identity: MusicIdentity;
+  period: OverviewPeriod;
   visualTheme: PersonaVisualTheme;
   onOpenReport: () => void;
   onOpenScores: () => void;
   onOpenPatterns: () => void;
 }) {
-  const topCurrentArtist = currentTopArtists?.items[0]?.artist ?? overview.top_3_artists[0]?.artist;
-  const distinctive = overview.taste_interpretation.listening_character.slice(0, 3).join(", ") || overview.taste_dna.core_dna[0] || "a stable mapped taste profile";
-
   return (
     <OverviewSection
       eyebrow="Personal Summary"
-      title={overview.headline_persona}
-      intro={`The most distinctive pattern is ${distinctive}. ${topCurrentArtist ? `${topCurrentArtist} is one of the strongest artist signals right now.` : "The artist signal is spread across several favourites."}`}
+      title={identity.characterTitle}
+      intro={`${identity.explanation} This summary uses ${period.label}.`}
       image={visualTheme.primaryImage}
     >
-      <div className="overview-stepper__snapshot" aria-label="Data snapshot">
+      <div className="overview-stepper__snapshot" aria-label="Selected-period data snapshot">
         <SnapshotItem label="Unique artists" value={overview.unique_artists.toLocaleString()} />
         <SnapshotItem label="Unique tracks" value={overview.unique_tracks.toLocaleString()} />
+        <SnapshotItem label="Detected plays" value={overview.total_detected_plays.toLocaleString()} />
       </div>
       <div className="overview-stepper__actions overview-stepper__actions--wrap">
         <button className="btn-primary" type="button" onClick={onOpenReport}>Read full report</button>
@@ -283,28 +258,10 @@ function PersonalSummarySection({
   );
 }
 
-function OverviewSection({
-  eyebrow,
-  title,
-  intro,
-  aside,
-  image,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  aside?: ReactNode;
-  image?: PersonaThemeImage;
-  children: ReactNode;
-}) {
+function OverviewSection({ eyebrow, title, intro, aside, image, children }: { eyebrow: string; title: string; intro: string; aside?: ReactNode; image?: PersonaThemeImage; children: ReactNode }) {
   return (
     <section className={`overview-stepper__section${image ? " overview-stepper__section--with-image" : ""}`}>
-      {image ? (
-        <div className="overview-stepper__image-edge" aria-hidden="true">
-          <PersonaBackground image={image} />
-        </div>
-      ) : null}
+      {image ? <div className="overview-stepper__image-edge" aria-hidden="true"><PersonaBackground image={image} /></div> : null}
       <div className={aside ? "overview-stepper__section-grid" : ""}>
         <div className="min-w-0">
           <p className="overview-stepper__eyebrow">{eyebrow}</p>
@@ -319,74 +276,27 @@ function OverviewSection({
 }
 
 function DataCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
-  return (
-    <article className="overview-stepper__data-card">
-      <p className="overview-stepper__micro-label">{label}</p>
-      <p className="overview-stepper__data-value">{value}</p>
-      {detail ? <p className="overview-stepper__plain-copy">{detail}</p> : null}
-    </article>
-  );
+  return <article className="overview-stepper__data-card"><p className="overview-stepper__micro-label">{label}</p><p className="overview-stepper__data-value">{value}</p>{detail ? <p className="overview-stepper__plain-copy">{detail}</p> : null}</article>;
 }
 
-function SignalCard({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
-  return (
-    <article className="overview-stepper__signal-card">
-      <div className="overview-stepper__signal-icon">{icon}</div>
-      <div className="min-w-0">
-        <p className="overview-stepper__micro-label">{label}</p>
-        <p className="overview-stepper__data-value">{value}</p>
-        <p className="overview-stepper__plain-copy">{detail}</p>
-      </div>
-    </article>
-  );
-}
-
-type GenreSegment = {
-  label: string;
-  value: number;
-  color: string;
-};
+type GenreSegment = { label: string; value: number; color: string };
 
 function GenreStack({ segments }: { segments: GenreSegment[] }) {
-  if (!segments.length) {
-    return <p className="overview-stepper__empty-line">No confident genre composition yet.</p>;
-  }
+  if (!segments.length) return <p className="overview-stepper__empty-line">No confident genre composition yet.</p>;
   return (
     <div className="overview-stepper__genre-stack" aria-label="Core genre composition">
       <div className="overview-stepper__stack-bar">
-        {segments.map((segment, index) => (
-          <span
-            key={segment.label}
-            className="overview-stepper__stack-segment"
-            style={{
-              "--segment-share": `${segment.value}%`,
-              "--segment-color": segment.color,
-              "--segment-delay": `${index * 90}ms`,
-            } as CSSProperties}
-            title={`${segment.label}: ${formatShare(segment.value)}`}
-            aria-label={`${segment.label}: ${formatShare(segment.value)}`}
-          />
-        ))}
+        {segments.map((segment, index) => <span key={segment.label} className="overview-stepper__stack-segment" style={{ "--segment-share": `${segment.value}%`, "--segment-color": segment.color, "--segment-delay": `${index * 90}ms` } as CSSProperties} title={`${segment.label}: ${formatShare(segment.value)}`} />)}
       </div>
       <div className="overview-stepper__stack-legend">
-        {segments.map((segment) => (
-          <span key={segment.label} className="overview-stepper__legend-item">
-            <i style={{ backgroundColor: segment.color }} aria-hidden="true" />
-            <span>{segment.label}</span>
-            <strong>{formatShare(segment.value)}</strong>
-          </span>
-        ))}
+        {segments.map((segment) => <span key={segment.label} className="overview-stepper__legend-item"><i style={{ backgroundColor: segment.color }} aria-hidden="true" /><span>{segment.label}</span><strong>{formatShare(segment.value)}</strong></span>)}
       </div>
     </div>
   );
 }
 
 function buildGenreSegments(taste: Overview["taste_interpretation"]): GenreSegment[] {
-  const source = (
-    taste.cluster_shares.length
-      ? taste.cluster_shares
-      : [...taste.core_genre_families, ...taste.secondary_genre_families, ...taste.side_quests]
-  ).filter((item) => item.share > 0);
+  const source = (taste.cluster_shares.length ? taste.cluster_shares : [...taste.core_genre_families, ...taste.secondary_genre_families, ...taste.side_quests]).filter((item) => item.share > 0);
   const palette = ["#e52b32", "#7b1118", "#4a1d22", "#5f5f66", "#96969d"];
   const segments: GenreSegment[] = [];
   let used = 0;
@@ -398,10 +308,12 @@ function buildGenreSegments(taste: Overview["taste_interpretation"]): GenreSegme
     used += value;
   }
   const remaining = roundShare(Math.max(0, 100 - used));
-  if (remaining >= 0.5) {
-    segments.push({ label: "Other / unclassified", value: remaining, color: "#29292e" });
-  }
+  if (remaining >= 0.5) segments.push({ label: "Other / unclassified", value: remaining, color: "#29292e" });
   return segments;
+}
+
+function SnapshotItem({ label, value }: { label: string; value: string }) {
+  return <div className="overview-stepper__snapshot-item"><span>{label}</span><strong>{value}</strong></div>;
 }
 
 function formatShare(value: number) {
@@ -410,61 +322,4 @@ function formatShare(value: number) {
 
 function roundShare(value: number) {
   return Math.round(value * 10) / 10;
-}
-
-type MovementItem = {
-  key: string;
-  rank: number;
-  title: string;
-  subtitle: string;
-  metric: string;
-  direction: "up" | "down" | "new" | "returning" | "stable";
-};
-
-function movementItems(items: PeriodTopItem[], kind: "song" | "artist"): MovementItem[] {
-  return items
-    .filter((item) => item.movement || item.interpretation_label === "Returning favourite")
-    .map((item) => {
-      const movement = item.movement;
-      const direction = movement?.direction === "up" ? "up" : movement?.direction === "down" ? "down" : movement?.direction === "new" ? "new" : item.interpretation_label === "Returning favourite" ? "returning" : "stable";
-      return {
-        key: `${kind}-${item.key}`,
-        rank: item.rank,
-        title: kind === "artist" ? item.artist : item.title ?? "Unknown track",
-        subtitle: kind === "artist" ? `${item.unique_songs ?? 0} songs, top track ${item.most_played_song ?? "unknown"}` : item.artist,
-        metric: movement?.label ?? item.interpretation_label,
-        direction,
-      };
-    });
-}
-
-function MovementRow({ item }: { item: MovementItem }) {
-  const Icon = item.direction === "up" ? ArrowUp : item.direction === "down" ? ArrowDown : item.direction === "new" ? Sparkles : item.direction === "returning" ? RotateCcw : BarChart3;
-  return (
-    <article className="overview-stepper__movement-row">
-      <span className="overview-stepper__movement-rank">#{item.rank}</span>
-      <div className="overview-stepper__movement-icon" data-direction={item.direction}>
-        <Icon size={16} />
-      </div>
-      <div className="min-w-0">
-        <h3 className="overview-stepper__movement-title">{item.title}</h3>
-        <p className="overview-stepper__movement-subtitle">{item.subtitle}</p>
-      </div>
-      <span className="overview-stepper__movement-metric">{item.metric}</span>
-    </article>
-  );
-}
-
-function SnapshotItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="overview-stepper__snapshot-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
-  );
-}
-
-function initials(value: string) {
-  const parts = value.split(/\s+/).filter(Boolean);
-  return (parts[0]?.[0] ?? "?") + (parts[1]?.[0] ?? "");
 }

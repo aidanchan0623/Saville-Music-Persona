@@ -170,6 +170,99 @@ export interface Overview {
   warnings: string[];
   source?: MusicSource;
   source_label?: string;
+  selected_period?: OverviewPeriod;
+}
+
+export type OverviewPeriodKey = "this_month" | "month" | "last_7" | "last_30" | "rolling_year" | "all";
+
+export interface OverviewPeriod {
+  key: OverviewPeriodKey;
+  month: string | null;
+  label: string;
+  timezone: string;
+  startDate: string;
+  endDate: string;
+  availableMonths: { value: string; label: string }[];
+}
+
+export interface MusicIdentity {
+  characterTitle: string;
+  tagline: string;
+  explanation: string;
+  mostActiveSound: {
+    label: string;
+    description: string;
+  };
+  generationSource: "gemma" | "cache-gemma" | "fallback";
+}
+
+export interface MusicalAgeFactors {
+  repeatAttachment: number;
+  discovery: number;
+  tasteStability: number;
+  catalogMaturity: number;
+  albumDepth: number;
+  crossEraBreadth: number;
+  emotionalIntensity: number;
+  reflectiveListening: number;
+}
+
+export interface MusicalAge {
+  age: number;
+  likelyMin: number;
+  likelyMax: number;
+  title: string;
+  summary: string;
+  explanation: string;
+  confidence: number;
+  confidenceLabel: string;
+  factors: MusicalAgeFactors;
+  calculationVersion: number;
+  generationSource: "gemma" | "cache-gemma" | "fallback";
+  sourcePeriod: OverviewPeriod;
+  strongestFactors: string[];
+  metadataCoverage: {
+    releaseYearPercent: number;
+    traitPercent: number;
+    durationPercent: number;
+  };
+}
+
+export interface TopFiveSong {
+  rank: number;
+  title: string;
+  artist: string;
+  album: string | null;
+  imageUrl: string | null;
+  detectedPlays: number;
+  detectedMinutes: number | null;
+}
+
+export interface TopFiveArtist {
+  rank: number;
+  name: string;
+  imageUrl: string | null;
+  detectedPlays: number;
+  uniqueSongs: number;
+}
+
+export interface TopFive {
+  period: OverviewPeriod;
+  songs: TopFiveSong[];
+  artists: TopFiveArtist[];
+}
+
+export interface OverviewResponse {
+  schemaVersion: 3;
+  source: MusicSource;
+  sourceLabel: string;
+  selectedPeriod: OverviewPeriod;
+  musicalAgePeriod: OverviewPeriod;
+  overview: Overview;
+  identity: MusicIdentity;
+  musicalAge: MusicalAge;
+  topFive: TopFive;
+  languageFingerprint: string;
 }
 
 export interface PeriodSpec {
