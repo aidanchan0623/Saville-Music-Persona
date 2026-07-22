@@ -525,6 +525,7 @@ export interface PersonaClosing {
 
 export interface PersonaReport {
   personaReportSchemaVersion?: number;
+  schemaVersion?: number;
   personaName?: string;
   openingHook?: string;
   coreSound?: PersonaStoryChapter;
@@ -551,6 +552,12 @@ export interface PersonaReport {
   recommendation_explanations: Record<string, string>[];
   mode: string;
   model: string;
+  generationSource?: "gemma" | "cache-gemma" | "fallback";
+  fallbackReason?: string | null;
+  generatedAt?: string;
+  durationMs?: number | null;
+  analyticsFingerprint?: string;
+  cacheKey?: string;
   evidence: Record<string, unknown>;
   generated_at: string;
   source?: MusicSource;

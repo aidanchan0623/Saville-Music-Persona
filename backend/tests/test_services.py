@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
+from app.api.routes import persona_report_cache_key, persona_report_fingerprint
 from app.analysis.thumbnails import best_thumbnail_url
 from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
 from app.services.ollama_service import OllamaService
@@ -69,6 +70,76 @@ def test_v2_persona_report_json_is_sanitized_and_artist_limited() -> None:
     assert all(item.artistName != "Imaginary Artist" for item in report.mainCharacters)
     assert report.coreSound.headline
     assert report.closing.finalLine
+
+
+def test_report_generation_marks_fresh_gemma_source() -> None:
+    service = FakeOllamaReportService(
+        response={
+            "response": """
+            {
+              "personaReportSchemaVersion": 2,
+              "personaName": "Alternative Night Driver",
+              "openingHook": "Your headphones keep choosing stormy guitars with a bright pop exit sign.",
+              "coreSound": {"headline": "Guitars Hold The Centre", "body": "Alternative rock is the main lane, with pop edges keeping the report readable and direct.", "pullQuote": "Stormy, but catchy"},
+              "comfortLoop": {"headline": "The Returns Matter", "body": "Repeat behaviour points to trusted songs earning their place instead of random looping.", "pullQuote": "Comfort with standards"},
+              "mainCharacters": [{"artistName": "Bring Me The Horizon", "role": "The anchor", "line": "They hold the loud centre."}],
+              "plotTwist": {"headline": "Consistency Is The Twist", "body": "The supplied evidence supports steadiness more than a fake reinvention."},
+              "closing": {"headline": "Closing Credits", "body": "The profile closes around guitars, repeatable anchors, and a taste for drama that still wants hooks.", "finalLine": "Roll the next song with intent."}
+            }
+            """
+        }
+    )
+    report = service.generate_report({"top_artists": [{"artist": "Bring Me The Horizon"}]}, "serious")
+    assert report.generationSource == "gemma"
+    assert report.fallback is False
+    assert report.fallbackReason is None
+    assert report.model == "gemma3:4b"
+    assert report.durationMs is not None
+    assert service.generate_calls == 1
+
+
+def test_report_generation_marks_ollama_unavailable_fallback() -> None:
+    service = FakeOllamaReportService(status={"reachable": False, "model_installed": False, "model": "gemma3:4b", "message": "offline"})
+    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
+    assert report.generationSource == "fallback"
+    assert report.fallback is True
+    assert report.fallbackReason == "ollama_unavailable"
+    assert service.generate_calls == 0
+
+
+def test_report_generation_marks_malformed_response_fallback() -> None:
+    service = FakeOllamaReportService(response={"response": "not json"})
+    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
+    assert report.generationSource == "fallback"
+    assert report.fallbackReason == "invalid_or_missing_story_json"
+    assert report.personaReportSchemaVersion == 2
+
+
+def test_report_generation_marks_timeout_fallback() -> None:
+    service = FakeOllamaReportService(error=TimeoutError("too slow"))
+    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
+    assert report.generationSource == "fallback"
+    assert report.fallbackReason == "ollama_timeout"
+
+
+def test_report_cache_key_uses_source_schema_period_and_fingerprint() -> None:
+    profile = {
+        "total_detected_plays": 12,
+        "top_artists": [{"artist": "Artist A", "play_count": 4}],
+        "top_tracks": [{"title": "Song A", "artist": "Artist A", "play_count": 3}],
+    }
+    changed = {
+        "total_detected_plays": 13,
+        "top_artists": [{"artist": "Artist A", "play_count": 4}],
+        "top_tracks": [{"title": "Song A", "artist": "Artist A", "play_count": 3}],
+    }
+    fingerprint = persona_report_fingerprint(profile)
+    assert fingerprint != persona_report_fingerprint(changed)
+    key = persona_report_cache_key("youtube", "serious", fingerprint)
+    assert "youtube" in key
+    assert "rolling_year" in key
+    assert "v2" in key
+    assert fingerprint in key
 
 
 def test_recommendation_duplicate_removal() -> None:
@@ -326,6 +397,31 @@ class FakeYTMusic:
         if payload is None:
             raise RuntimeError("album page failed")
         return payload
+
+
+class FakeOllamaReportService(OllamaService):
+    def __init__(
+        self,
+        response: dict[str, object] | None = None,
+        status: dict[str, object] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        super().__init__(Settings())
+        self.response = response or {"response": "{}"}
+        self.status_payload = status or {"reachable": True, "model_installed": True, "model": "gemma3:4b", "message": "ready"}
+        self.error = error
+        self.generate_calls = 0
+
+    def status(self) -> dict[str, object]:
+        return self.status_payload
+
+    def _request_json(self, method: str, path: str, payload: dict[str, object] | None = None, timeout: float = 10.0) -> dict[str, object]:
+        if path == "/api/generate":
+            self.generate_calls += 1
+            if self.error:
+                raise self.error
+            return self.response
+        return self.status_payload
 
 
 def fake_service(fake: FakeYTMusic) -> YTMusicService:

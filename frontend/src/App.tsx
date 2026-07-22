@@ -289,7 +289,7 @@ export default function App() {
       case "patterns":
         return <PatternsPage charts={charts} source={source} titleAnimationKey={titleAnimationKey} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
+        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} topTracks={tracks} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
         return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} titleAnimationKey={titleAnimationKey} />;
       case "settings":
@@ -327,7 +327,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-ink text-white">
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,43,45,0.16),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(123,17,24,0.15),transparent_25%)]" />
-      <DesktopSidebar activePage={page} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={prerequisites?.model_installed} onNavigate={navigate} />
+      <DesktopSidebar activePage={page} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onNavigate={navigate} />
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">

@@ -6,6 +6,7 @@ import type {
   PersonaStoryChapter,
   TopAlbumItem,
   TopArtist,
+  TopTrack,
 } from "../../types/api";
 
 export type PersonaStory = {
@@ -26,11 +27,12 @@ export type GenreSegment = {
   color: string;
 };
 
-export type PersonaAlbumDomeItem = {
-  src: string;
-  title: string;
-  artist: string;
-  rank: number;
+export type PersonaAlbumBackdropItem = {
+  albumBrowseId: string | null;
+  albumTitle: string;
+  artistName: string;
+  albumImageUrl: string;
+  source: "favourite_album" | "track_album_art";
 };
 
 export function buildPersonaStory(
@@ -56,8 +58,8 @@ export function buildPersonaStory(
         body: cleanText(report.closing?.body || fallback?.closing.body || report.summary || "The report is ready, but the story needs more refreshed listening data to sharpen."),
         finalLine: cleanText(report.closing?.finalLine || fallback?.closing.finalLine || "Roll the next song with intent."),
       },
-      sourceLabel: report.fallback || !report.model ? "Deterministic story fallback" : `Gemma story: ${report.model}`,
-      usedFallback: Boolean(report.fallback || !report.model),
+      sourceLabel: reportSourceLabel(report),
+      usedFallback: report.generationSource === "fallback" || Boolean(report.fallback),
     };
   }
 
@@ -77,22 +79,40 @@ export function buildPersonaStory(
   };
 }
 
-export function buildAlbumDomeItems(albums: TopAlbumItem[]): PersonaAlbumDomeItem[] {
+export function buildAlbumBackdropItems(albums: TopAlbumItem[], tracks: TopTrack[] = []): PersonaAlbumBackdropItem[] {
   const seen = new Set<string>();
-  const result: PersonaAlbumDomeItem[] = [];
+  const result: PersonaAlbumBackdropItem[] = [];
   for (const album of albums) {
     const albumImageUrl = cleanText(album.album_image_url);
     if (!albumImageUrl) continue;
-    const key = normaliseName(album.album_id || album.key || `${album.album} ${album.artist}`);
+    const key = albumIdentity(album.album_id, album.album, album.artist);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     result.push({
-      src: albumImageUrl,
-      title: album.album,
-      artist: album.artist,
-      rank: album.rank,
+      albumBrowseId: album.album_id,
+      albumTitle: album.album,
+      artistName: album.artist,
+      albumImageUrl,
+      source: "favourite_album",
     });
-    if (result.length >= 12) break;
+    if (result.length >= 20) return result;
+  }
+  for (const track of tracks) {
+    const albumImageUrl = cleanText(track.album_art_url);
+    const albumTitle = cleanText(track.album);
+    const artistName = cleanText(track.artist);
+    if (!albumImageUrl || !albumTitle || !artistName) continue;
+    const key = albumIdentity(null, albumTitle, artistName);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    result.push({
+      albumBrowseId: null,
+      albumTitle,
+      artistName,
+      albumImageUrl,
+      source: "track_album_art",
+    });
+    if (result.length >= 20) break;
   }
   return result;
 }
@@ -248,6 +268,22 @@ function normaliseName(value: string | null | undefined) {
   return cleanText(value).toLocaleLowerCase();
 }
 
+function albumIdentity(albumBrowseId: string | null | undefined, album: string | null | undefined, artist: string | null | undefined) {
+  const browseId = normaliseName(albumBrowseId);
+  if (browseId) return `id:${browseId}`;
+  const albumName = normaliseName(album);
+  const artistName = normaliseName(artist);
+  if (!albumName || !artistName) return "";
+  return `name:${albumName}::${artistName}`;
+}
+
 function roundShare(value: number) {
   return Math.round(value * 10) / 10;
+}
+
+function reportSourceLabel(report: PersonaReport) {
+  if (report.generationSource === "cache-gemma") return `Cached Gemma story: ${report.model || "configured model"}`;
+  if (report.generationSource === "gemma") return `Gemma story: ${report.model || "configured model"}`;
+  if (report.generationSource === "fallback" || report.fallback) return "Deterministic story fallback";
+  return report.model ? `Gemma story: ${report.model}` : "Deterministic Music Character";
 }

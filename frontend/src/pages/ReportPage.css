@@ -1,12 +1,17 @@
 .persona-report {
-  --persona-display: "Instrument Serif", Georgia, "Times New Roman", serif;
-  --persona-sans: "Manrope", Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
   --persona-red: #ef2b2d;
   --persona-red-soft: rgb(254 202 202 / 82%);
-  --persona-muted: rgb(212 212 216 / 74%);
+  --persona-muted: rgb(212 212 216 / 76%);
   --persona-burgundy: #5e111b;
   position: relative;
-  font-family: var(--persona-sans);
+  isolation: isolate;
+  color: white;
+}
+
+.persona-report__masthead,
+.persona-story {
+  position: relative;
+  z-index: 1;
 }
 
 .persona-report__masthead {
@@ -23,16 +28,27 @@
 .persona-section__label {
   margin: 0;
   color: var(--persona-red-soft);
-  font-family: var(--persona-sans);
-  font-size: clamp(0.69rem, 1vw, 0.78rem);
+  font-size: clamp(0.75rem, 1vw, 0.84rem);
   font-weight: 800;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
+}
+
+.persona-section__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: rgb(254 226 226 / 80%);
+}
+
+.persona-section__label span {
+  color: rgb(248 113 113 / 92%);
+  font-weight: 900;
 }
 
 .persona-report__meta {
   margin: 0.38rem 0 0;
-  color: rgb(164 164 173 / 76%);
+  color: rgb(164 164 173 / 78%);
   font-size: 0.86rem;
   line-height: 1.5;
 }
@@ -50,92 +66,55 @@
 }
 
 .persona-story {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
   margin-top: clamp(1.2rem, 3vw, 2.2rem);
-  color: white;
+  isolation: isolate;
 }
 
 .persona-story__tone {
   position: absolute;
   inset: 0;
-  z-index: -3;
+  z-index: -1;
+  border-radius: 0.5rem;
   background: #090607;
   pointer-events: none;
 }
 
-.persona-story::before,
-.persona-story::after {
+.persona-story::before {
   position: absolute;
   inset: 0;
-  z-index: -1;
+  z-index: 0;
   content: "";
   pointer-events: none;
-}
-
-.persona-story::before {
   background:
-    linear-gradient(90deg, rgb(5 5 5 / 88%) 0%, rgb(5 5 5 / 52%) 46%, rgb(5 5 5 / 78%) 100%),
-    radial-gradient(circle at 78% 12%, rgb(239 43 45 / 18%), transparent 32rem),
-    radial-gradient(circle at 16% 58%, rgb(94 17 27 / 22%), transparent 34rem);
-}
-
-.persona-story::after {
-  background:
-    linear-gradient(180deg, rgb(5 5 5 / 0%) 0%, rgb(5 5 5 / 22%) 38%, rgb(5 5 5 / 76%) 100%),
-    linear-gradient(90deg, rgb(5 5 5 / 18%) 0%, transparent 18%, transparent 80%, rgb(5 5 5 / 50%) 100%);
-}
-
-.persona-story__album-field {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.persona-story__album-sticky {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  min-height: 42rem;
-  pointer-events: none;
-}
-
-.persona-story-progress {
-  position: fixed;
-  top: 22vh;
-  right: max(1rem, calc((100vw - 76rem) / 2));
-  z-index: 8;
-  width: 2px;
-  height: 56vh;
-  border-radius: 999px;
-  background: linear-gradient(180deg, rgb(254 202 202 / 85%), rgb(239 43 45 / 72%), rgb(94 17 27 / 0%));
-  pointer-events: none;
-  transform-origin: top;
+    linear-gradient(90deg, rgb(5 5 5 / 88%) 0%, rgb(5 5 5 / 72%) 37%, rgb(5 5 5 / 20%) 64%, rgb(5 5 5 / 34%) 100%),
+    radial-gradient(circle at 18% 22%, rgb(94 17 27 / 22%), transparent 28rem),
+    radial-gradient(circle at 84% 14%, rgb(239 43 45 / 12%), transparent 32rem);
 }
 
 .persona-section {
   position: relative;
   z-index: 1;
   display: grid;
-  min-height: clamp(42rem, 86vh, 62rem);
-  grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.74fr);
+  min-height: clamp(40rem, 82vh, 60rem);
+  grid-template-columns: minmax(0, 1fr) minmax(17rem, 0.72fr);
   grid-template-areas: "copy visual";
   align-items: center;
-  gap: clamp(2rem, 6vw, 6rem);
-  padding: clamp(5rem, 12vh, 8.5rem) clamp(0.2rem, 2vw, 1rem);
+  gap: clamp(2rem, 5.5vw, 5.5rem);
+  padding: clamp(4.8rem, 11vh, 8rem) clamp(0.2rem, 2vw, 1rem);
+}
+
+.persona-section + .persona-section {
+  border-top: 1px solid rgb(255 255 255 / 8%);
 }
 
 .persona-section + .persona-section::before {
   position: absolute;
-  top: 0;
+  top: -1px;
   left: clamp(0.2rem, 2vw, 1rem);
-  width: min(13rem, 34vw);
+  width: min(18rem, 42vw);
   height: 1px;
   content: "";
-  background: linear-gradient(90deg, rgb(248 113 113 / 40%), rgb(248 113 113 / 0%));
+  background: linear-gradient(90deg, rgb(248 113 113 / 46%), rgb(248 113 113 / 0%));
 }
 
 .persona-section--reversed {
@@ -145,11 +124,11 @@
 
 .persona-section__copy {
   grid-area: copy;
-  max-width: 48rem;
+  max-width: 50rem;
 }
 
 .persona-section__copy--opening {
-  max-width: 58rem;
+  max-width: 60rem;
 }
 
 .persona-section__visual {
@@ -159,54 +138,52 @@
 
 .persona-section__copy h1,
 .persona-report-empty h1 {
-  max-width: 10ch;
-  margin: 0.45rem 0 0;
+  max-width: 13ch;
+  margin: 0.55rem 0 0;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(3.5rem, 10vw, 7.5rem);
-  font-weight: 400;
-  line-height: 0.9;
+  font-size: clamp(3.5rem, 8vw, 7rem);
+  font-weight: 900;
+  line-height: 0.94;
   letter-spacing: 0;
 }
 
 .persona-section__copy h2 {
-  max-width: 12ch;
-  margin: 0.58rem 0 0;
+  max-width: 14ch;
+  margin: 0.62rem 0 0;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(2.65rem, 6.4vw, 5.15rem);
-  font-weight: 400;
-  line-height: 0.94;
+  font-size: clamp(2.5rem, 5vw, 5rem);
+  font-weight: 850;
+  line-height: 1;
   letter-spacing: 0;
 }
 
 .persona-opening-hook p,
 .persona-section__body {
-  max-width: 64ch;
-  margin: clamp(1.05rem, 2.2vw, 1.55rem) 0 0;
+  max-width: 66ch;
+  margin: clamp(1rem, 2vw, 1.35rem) 0 0;
   color: rgb(244 244 245 / 86%);
-  font-size: clamp(1.06rem, 1.45vw, 1.24rem);
-  line-height: 1.68;
+  font-size: clamp(1.06rem, 1.35vw, 1.22rem);
+  line-height: 1.62;
 }
 
 .persona-section__quote {
-  margin-top: clamp(1.2rem, 2.6vw, 1.85rem);
+  margin-top: clamp(1rem, 2.4vw, 1.55rem);
 }
 
 .persona-section__quote blockquote {
-  max-width: 18ch;
+  max-width: 28ch;
   margin: 0;
-  color: rgb(254 226 226 / 92%);
-  font-family: var(--persona-display);
-  font-size: clamp(1.72rem, 3.5vw, 2.8rem);
-  font-style: italic;
-  font-weight: 400;
-  line-height: 1.08;
+  border-left: 2px solid rgb(248 113 113 / 48%);
+  padding-left: 1rem;
+  color: rgb(254 226 226 / 88%);
+  font-size: clamp(1.5rem, 2.5vw, 2.5rem);
+  font-weight: 650;
+  line-height: 1.16;
 }
 
 .persona-opening-signal {
   display: grid;
-  max-width: 28rem;
+  max-width: 32rem;
   margin-top: clamp(1.7rem, 3.2vw, 2.5rem);
   gap: 0.4rem;
 }
@@ -223,14 +200,14 @@
   color: rgb(254 202 202 / 76%);
   font-size: 0.75rem;
   font-weight: 800;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
 .persona-opening-signal strong {
   color: white;
   font-size: clamp(2rem, 3.8vw, 3.6rem);
-  font-weight: 800;
+  font-weight: 850;
   line-height: 1;
 }
 
@@ -243,37 +220,36 @@
 
 .persona-opening-atmosphere {
   display: grid;
-  max-width: 24rem;
-  gap: 0.7rem;
+  max-width: 25rem;
+  gap: 0.72rem;
   justify-self: end;
-  border-left: 1px solid rgb(248 113 113 / 30%);
+  border-left: 1px solid rgb(248 113 113 / 34%);
   padding-left: clamp(1rem, 2vw, 1.6rem);
 }
 
 .persona-opening-atmosphere strong {
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(2.6rem, 5vw, 4.7rem);
-  font-weight: 400;
-  line-height: 0.96;
+  font-size: clamp(2.2rem, 4.2vw, 4rem);
+  font-weight: 850;
+  line-height: 1;
 }
 
 .persona-opening-atmosphere p {
   margin: 0;
   color: var(--persona-muted);
   font-size: 1rem;
-  line-height: 1.65;
+  line-height: 1.6;
 }
 
 .persona-sound-visual {
   display: grid;
-  gap: 1.15rem;
+  gap: 1.1rem;
 }
 
 .persona-genre-ribbon {
   display: flex;
   width: 100%;
-  height: clamp(2rem, 4vw, 3rem);
+  height: clamp(2.1rem, 4vw, 3rem);
   overflow: hidden;
   border-radius: 0.5rem;
   background: rgb(255 255 255 / 7%);
@@ -281,13 +257,8 @@
 }
 
 .persona-genre-ribbon__segment {
-  flex: 0 0 var(--segment-share);
-  min-width: 0.35rem;
-  background: var(--segment-color);
-  transform: scaleX(0);
-  transform-origin: left center;
-  animation: persona-ribbon-grow 820ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
-  animation-delay: var(--segment-delay);
+  flex: 0 0 auto;
+  min-width: 0;
 }
 
 .persona-genre-ribbon__segment + .persona-genre-ribbon__segment {
@@ -297,9 +268,9 @@
 .persona-genre-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.68rem 1rem;
+  gap: 0.62rem 0.95rem;
   color: rgb(228 228 231 / 82%);
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   line-height: 1.4;
 }
 
@@ -318,36 +289,35 @@
 
 .persona-genre-list strong {
   color: white;
-  font-weight: 800;
+  font-weight: 850;
 }
 
 .persona-trait-line {
   margin: 0;
-  color: rgb(254 226 226 / 84%);
-  font-size: clamp(1.08rem, 1.7vw, 1.32rem);
+  color: rgb(254 226 226 / 82%);
+  font-size: clamp(1.02rem, 1.55vw, 1.2rem);
   font-weight: 700;
-  line-height: 1.65;
+  line-height: 1.58;
 }
 
 .persona-comfort-visual {
   display: grid;
-  gap: clamp(1.2rem, 3vw, 2rem);
+  gap: clamp(1.15rem, 3vw, 1.9rem);
 }
 
 .persona-main-number strong {
   display: block;
-  margin-top: 0.1rem;
+  margin-top: 0.12rem;
   color: white;
-  font-family: var(--persona-sans);
-  font-size: clamp(5.5rem, 12vw, 9.2rem);
-  font-weight: 800;
-  line-height: 0.88;
+  font-size: clamp(5rem, 10vw, 8.2rem);
+  font-weight: 900;
+  line-height: 0.9;
 }
 
 .persona-meter-list {
   display: grid;
-  gap: 0.8rem;
   max-width: 28rem;
+  gap: 0.78rem;
 }
 
 .persona-meter {
@@ -365,12 +335,12 @@
 .persona-meter strong {
   color: white;
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 850;
 }
 
 .persona-meter i {
   display: block;
-  height: 0.46rem;
+  height: 0.48rem;
   overflow: hidden;
   border-radius: 999px;
   background: rgb(255 255 255 / 11%);
@@ -398,34 +368,38 @@
 
 .persona-album-signal strong {
   display: block;
-  margin-top: 0.38rem;
+  margin-top: 0.35rem;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(1.85rem, 3.8vw, 3.1rem);
-  font-weight: 400;
-  line-height: 0.98;
+  font-size: clamp(1.7rem, 3.2vw, 2.8rem);
+  font-weight: 850;
+  line-height: 1;
 }
 
 .persona-album-signal p {
-  margin: 0.62rem 0 0;
+  margin: 0.58rem 0 0;
   color: var(--persona-muted);
-  font-size: 0.98rem;
-  line-height: 1.55;
+  font-size: 0.96rem;
+  line-height: 1.5;
 }
 
 .persona-artist-cast {
   display: grid;
-  gap: clamp(1.1rem, 2.2vw, 1.6rem);
+  gap: clamp(1.05rem, 2.2vw, 1.55rem);
+}
+
+.persona-artist-cast .fade-content {
+  display: block;
 }
 
 .persona-artist-cast__item {
   display: grid;
-  grid-template-columns: clamp(6.4rem, 12vw, 9.5rem) minmax(0, 1fr);
+  grid-template-columns: clamp(6.2rem, 12vw, 9.4rem) minmax(0, 1fr);
   align-items: center;
   gap: clamp(1rem, 2.5vw, 1.7rem);
-  max-width: 39rem;
+  width: calc(100% - var(--artist-offset));
+  max-width: 40rem;
   margin-left: var(--artist-offset);
-  padding-block: 0.85rem;
+  padding-block: 0.86rem;
   border-top: 1px solid rgb(255 255 255 / 10%);
 }
 
@@ -434,21 +408,25 @@
   border-radius: 0.5rem;
 }
 
+.persona-artist-cast__item > div {
+  min-width: 0;
+}
+
 .persona-artist-cast__item h3 {
-  margin: 0.16rem 0 0.25rem;
+  margin: 0.18rem 0 0.24rem;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(2rem, 4.6vw, 3.5rem);
-  font-weight: 400;
-  line-height: 0.96;
+  font-size: clamp(2rem, 4vw, 4.2rem);
+  font-weight: 850;
+  line-height: 0.98;
+  overflow-wrap: anywhere;
 }
 
 .persona-artist-cast__item small {
   display: block;
-  margin-top: 0.5rem;
+  margin-top: 0.48rem;
   color: rgb(228 228 231 / 78%);
-  font-size: 0.96rem;
-  line-height: 1.55;
+  font-size: 0.94rem;
+  line-height: 1.52;
 }
 
 .persona-plot-visual {
@@ -457,58 +435,55 @@
 }
 
 .persona-plot-visual div {
-  max-width: 27rem;
+  max-width: 28rem;
   border-left: 1px solid rgb(248 113 113 / 34%);
   padding-left: clamp(1rem, 2vw, 1.4rem);
 }
 
 .persona-plot-visual strong {
   display: block;
-  margin-top: 0.45rem;
+  margin-top: 0.42rem;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(2.4rem, 5.5vw, 4.8rem);
-  font-weight: 400;
-  line-height: 0.94;
+  font-size: clamp(2rem, 4.5vw, 4rem);
+  font-weight: 850;
+  line-height: 1;
 }
 
 .persona-plot-visual em {
-  color: rgb(254 202 202 / 78%);
-  font-family: var(--persona-display);
-  font-size: clamp(1.6rem, 3vw, 2.45rem);
-  font-style: italic;
+  color: rgb(254 202 202 / 76%);
+  font-size: clamp(1.3rem, 2.4vw, 2rem);
+  font-style: normal;
+  font-weight: 750;
   line-height: 1;
 }
 
 .persona-closing-visual {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.65rem;
   justify-items: start;
 }
 
 .persona-closing-visual p {
-  max-width: 11ch;
+  max-width: 16ch;
   margin: 0;
   color: white;
-  font-family: var(--persona-display);
-  font-size: clamp(2.8rem, 7vw, 5.7rem);
-  font-style: italic;
-  font-weight: 400;
-  line-height: 0.94;
+  font-size: clamp(2.4rem, 5.8vw, 5rem);
+  font-weight: 850;
+  line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .persona-section--closing {
-  min-height: clamp(40rem, 82vh, 58rem);
+  min-height: clamp(38rem, 80vh, 56rem);
 }
 
 .persona-report-empty {
   min-height: 28rem;
   padding: clamp(1.4rem, 4vw, 3rem);
-  font-family: var(--persona-sans);
 }
 
 .persona-report-empty h1 {
-  max-width: 12ch;
+  max-width: 14ch;
 }
 
 .persona-report-empty p:last-child {
@@ -517,12 +492,6 @@
   color: rgb(212 212 216 / 82%);
   font-size: 1.05rem;
   line-height: 1.7;
-}
-
-@keyframes persona-ribbon-grow {
-  to {
-    transform: scaleX(1);
-  }
 }
 
 @media (max-width: 980px) {
@@ -542,7 +511,7 @@
     grid-template-areas:
       "copy"
       "visual";
-    padding-block: clamp(4.5rem, 9vh, 6.5rem);
+    padding-block: clamp(4.2rem, 9vh, 6.2rem);
   }
 
   .persona-section__visual {
@@ -568,32 +537,25 @@
     padding-inline: 0.8rem;
   }
 
-  .persona-story {
-    margin-inline: -0.2rem;
-  }
-
-  .persona-story__album-sticky {
-    min-height: 30rem;
-  }
-
-  .persona-story-progress {
-    display: none;
-  }
-
   .persona-section,
   .persona-section--reversed {
     gap: 2rem;
-    padding: clamp(3.7rem, 13vw, 5rem) 0.2rem;
+    padding: clamp(3.4rem, 12vw, 4.8rem) 0;
   }
 
   .persona-section__copy h1,
   .persona-report-empty h1 {
-    max-width: 9ch;
-    font-size: clamp(3.35rem, 17vw, 5.2rem);
+    max-width: 11ch;
+    font-size: clamp(3rem, 14vw, 4.8rem);
   }
 
   .persona-section__copy h2 {
-    font-size: clamp(2.7rem, 13vw, 4.3rem);
+    max-width: 12ch;
+    font-size: clamp(2.4rem, 11vw, 3.9rem);
+  }
+
+  .persona-section__quote blockquote {
+    max-width: 24ch;
   }
 
   .persona-opening-atmosphere {
@@ -617,11 +579,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .persona-genre-ribbon__segment {
-    animation: none;
-    transform: scaleX(1);
-  }
-
-  .persona-story-progress {
-    display: none;
+    transition: none;
   }
 }

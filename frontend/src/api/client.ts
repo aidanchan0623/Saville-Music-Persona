@@ -105,8 +105,8 @@ export const api = {
     const params = paramsWithSource(source, { period, type, month });
     return request<PeriodTopResponse>(`/top?${params.toString()}`);
   },
-  topAlbums: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
-    const params = paramsWithSource(source, { period, month });
+  topAlbums: (period = "this_month", month?: string | null, source: MusicSource = "youtube", limit?: number) => {
+    const params = paramsWithSource(source, { period, month, limit: limit ? String(limit) : undefined });
     return request<TopAlbumsResponse>(`/top/albums?${params.toString()}`);
   },
   artistSongs: (artist: string, period = "this_month", month?: string | null, source: MusicSource = "youtube") => {

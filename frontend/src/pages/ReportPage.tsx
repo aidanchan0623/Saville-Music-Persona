@@ -1,14 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api/client";
-import type { MusicCharacterResponse, MusicSource, PersonaReport, Prerequisites, TopAlbumItem, TopArtist } from "../types/api";
+import type { MusicCharacterResponse, MusicSource, PersonaReport, Prerequisites, TopAlbumItem, TopArtist, TopTrack } from "../types/api";
 import { PersonaStoryExperience } from "./report/PersonaStoryExperience";
 import { buildPersonaStory } from "./report/personaStoryModel";
-import "@fontsource/instrument-serif/latin-400.css";
-import "@fontsource/instrument-serif/latin-400-italic.css";
-import "@fontsource/manrope/latin-400.css";
-import "@fontsource/manrope/latin-600.css";
-import "@fontsource/manrope/latin-700.css";
-import "@fontsource/manrope/latin-800.css";
 import "./ReportPage.css";
 
 interface Props {
@@ -16,12 +10,13 @@ interface Props {
   prerequisites: Prerequisites | null;
   busy: boolean;
   topArtists: TopArtist[];
+  topTracks: TopTrack[];
   onGenerate: (mode: "serious" | "playful" | "roast") => void;
   source: MusicSource;
   titleAnimationKey: string;
 }
 
-export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate, source, titleAnimationKey }: Props) {
+export function ReportPage({ report, prerequisites, busy, topArtists, topTracks, onGenerate, source, titleAnimationKey }: Props) {
   const [rollingCharacter, setRollingCharacter] = useState<MusicCharacterResponse | null>(null);
   const [currentCharacter, setCurrentCharacter] = useState<MusicCharacterResponse | null>(null);
   const [favouriteAlbums, setFavouriteAlbums] = useState<TopAlbumItem[]>([]);
@@ -54,7 +49,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
   useEffect(() => {
     let active = true;
     setFavouriteAlbums([]);
-    api.topAlbums("rolling_year", null, source)
+    api.topAlbums("rolling_year", null, source, 20)
       .then((albums) => {
         if (active) setFavouriteAlbums(albums.albums);
       })
@@ -106,6 +101,7 @@ export function ReportPage({ report, prerequisites, busy, topArtists, onGenerate
       currentCharacter={currentCharacter}
       favouriteAlbums={storyAlbums}
       topArtists={topArtists}
+      topTracks={topTracks}
       prerequisitesModelReady={modelReady}
       busy={busy}
       onGenerate={onGenerate}
@@ -149,7 +145,7 @@ function albumsFromReportEvidence(report: PersonaReport | null): TopAlbumItem[] 
       label: "Saved report album signal",
       album_signal_note: "Album cover carried from saved report evidence.",
     });
-    if (albums.length >= 8) break;
+    if (albums.length >= 20) break;
   }
   return albums;
 }

@@ -680,6 +680,7 @@ def albums_payload(
     month: str | None = None,
     timezone_name: str | None = None,
     today: date | None = None,
+    limit: int = 10,
 ) -> dict[str, Any]:
     spec = resolve_period(normalised, period, month, timezone_name, today)
     events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
@@ -691,7 +692,7 @@ def albums_payload(
         "total_play_count": len(events),
         "duration_quality": duration_quality(events),
         "sample_warning": "Limited monthly sample - this view may be shaped by short-term spikes." if len(events) < MIN_STRONG_SAMPLE_PLAYS and spec["period"] in {"this_month", "month"} else None,
-        "albums": albums[:10],
+        "albums": albums[: max(1, min(int(limit or 10), 20))],
         "methodology": "Favourite albums are ranked from existing local listening events grouped by album metadata. Albums without usable album names are excluded instead of being guessed.",
     }
 

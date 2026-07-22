@@ -1,0 +1,27 @@
+.fade-content {
+  opacity: 1;
+  transform: none;
+}
+
+.fade-content[data-ready="true"][data-visible="false"] {
+  opacity: 0;
+  transform: translateY(var(--fade-content-distance));
+}
+
+.fade-content[data-ready="true"][data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity var(--fade-content-duration) cubic-bezier(0.22, 1, 0.36, 1) var(--fade-content-delay),
+    transform var(--fade-content-duration) cubic-bezier(0.22, 1, 0.36, 1) var(--fade-content-delay);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-content,
+  .fade-content[data-ready="true"][data-visible="false"],
+  .fade-content[data-ready="true"][data-visible="true"] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}

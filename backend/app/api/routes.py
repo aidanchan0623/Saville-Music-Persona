@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import shutil
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -52,6 +54,9 @@ ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 
+PERSONA_REPORT_SCHEMA_VERSION = 2
+PERSONA_REPORT_PERIOD = "rolling_year"
+
 SPOTIFY_CACHE_KEYS = [
     "spotify_tokens",
     "spotify_profile",
@@ -63,6 +68,97 @@ SPOTIFY_CACHE_KEYS = [
     "spotify_recommendations",
     "spotify_oauth_state",
 ]
+
+
+def persona_report_fingerprint(profile: dict[str, Any]) -> str:
+    compact = {
+        "coverage": profile.get("coverage"),
+        "total_detected_plays": profile.get("total_detected_plays"),
+        "unique_tracks": profile.get("unique_tracks"),
+        "unique_artists": profile.get("unique_artists"),
+        "top_artists": [
+            {
+                "artist": item.get("artist"),
+                "play_count": item.get("play_count"),
+                "unique_songs_played": item.get("unique_songs_played"),
+            }
+            for item in profile.get("top_artists", [])
+            if isinstance(item, dict)
+        ],
+        "top_tracks": [
+            {
+                "title": item.get("title"),
+                "artist": item.get("artist"),
+                "play_count": item.get("play_count"),
+            }
+            for item in profile.get("top_tracks", [])
+            if isinstance(item, dict)
+        ],
+        "favourite_albums": [
+            {
+                "album": item.get("album"),
+                "artist": item.get("artist"),
+                "album_id": item.get("album_id"),
+                "plays": item.get("plays"),
+                "unique_songs": item.get("unique_songs"),
+            }
+            for item in profile.get("favourite_albums", [])
+            if isinstance(item, dict)
+        ],
+        "music_character": profile.get("music_character"),
+        "current_month_character": profile.get("current_month_character"),
+        "scores": [
+            {
+                "key": item.get("key"),
+                "value": item.get("value"),
+                "label": item.get("label"),
+            }
+            for item in profile.get("scores", [])
+            if isinstance(item, dict)
+        ],
+    }
+    payload = json.dumps(compact, sort_keys=True, ensure_ascii=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
+
+
+def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str) -> str:
+    return f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:{analytics_fingerprint}:{mode}"
+
+
+def persona_report_pointer_key(source: str) -> str:
+    return f"persona_report_pointer:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}"
+
+
+def annotate_persona_report_payload(
+    payload: dict[str, Any],
+    *,
+    source: str,
+    mode: str,
+    generated_at: str,
+    analytics_fingerprint: str,
+    report_cache_key: str,
+) -> dict[str, Any]:
+    payload["personaReportSchemaVersion"] = PERSONA_REPORT_SCHEMA_VERSION
+    payload["schemaVersion"] = PERSONA_REPORT_SCHEMA_VERSION
+    payload["source"] = source
+    payload["mode"] = mode
+    payload["generated_at"] = generated_at
+    payload["generatedAt"] = generated_at
+    payload["analyticsFingerprint"] = analytics_fingerprint
+    payload["cacheKey"] = report_cache_key
+    payload.setdefault("generationSource", "fallback" if payload.get("fallback") else "gemma")
+    payload.setdefault("fallbackReason", None if not payload.get("fallback") else "deterministic_fallback")
+    return payload
+
+
+def log_persona_report_payload(payload: dict[str, Any]) -> None:
+    reason = f" reason={payload.get('fallbackReason')}" if payload.get("fallbackReason") else ""
+    print(
+        f"[persona-report] source={payload.get('generationSource')} model={payload.get('model') or settings.ollama_model} "
+        f"schema={payload.get('schemaVersion') or payload.get('personaReportSchemaVersion')} "
+        f"duration_ms={payload.get('durationMs') or 0}{reason}",
+        flush=True,
+    )
 
 
 def require_cache(key: str) -> Any:
@@ -599,8 +695,9 @@ def period_albums(
     month: str | None = Query(None),
     timezone_name: str | None = Query(None, alias="timezone"),
     source: str = Query("youtube"),
+    limit: int = Query(10, ge=1, le=20),
 ) -> dict[str, Any]:
-    return albums_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
+    return albums_payload(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone, limit=limit)
 
 
 @router.get("/top/album-songs")
@@ -687,7 +784,7 @@ def report_profile_with_characters(source: str | None = "youtube") -> dict[str, 
     profile["listener_axis"] = listener_axis(profile, rolling_character)
     profile["album_or_track_behavior"] = album_or_track_behavior(rolling_character)
     try:
-        profile["favourite_albums"] = albums_payload(normalised, "rolling_year", None, settings.local_timezone).get("albums", [])[:8]
+        profile["favourite_albums"] = albums_payload(normalised, "rolling_year", None, settings.local_timezone, limit=20).get("albums", [])[:20]
     except Exception:
         profile["favourite_albums"] = []
     return profile
@@ -765,28 +862,74 @@ def album_or_track_behavior(character: dict[str, Any]) -> str:
 def generate_report(request: ReportRequest) -> dict[str, Any]:
     source = normalise_source(request.source)
     profile = report_profile_with_characters(source)
+    analytics_fingerprint = persona_report_fingerprint(profile)
+    report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint)
     report = ollama.generate_report(profile, request.mode)
     payload = report.model_dump()
-    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-    payload["source"] = source
-    repo.save_json(cache_key("latest_report", source), payload)
+    generated_at = datetime.now(timezone.utc).isoformat()
+    payload = annotate_persona_report_payload(
+        payload,
+        source=source,
+        mode=request.mode,
+        generated_at=generated_at,
+        analytics_fingerprint=analytics_fingerprint,
+        report_cache_key=report_cache_key,
+    )
+    repo.save_json(report_cache_key, payload)
+    repo.save_json(
+        persona_report_pointer_key(source),
+        {
+            "cacheKey": report_cache_key,
+            "source": source,
+            "mode": request.mode,
+            "period": PERSONA_REPORT_PERIOD,
+            "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
+            "analyticsFingerprint": analytics_fingerprint,
+            "generatedAt": generated_at,
+        },
+    )
     return payload
 
 
 @router.get("/report/latest")
 def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
     resolved_source = normalise_source(source)
-    payload = require_source_cache("latest_report", resolved_source)
-    if isinstance(payload, dict) and payload.get("personaReportSchemaVersion") == 2:
-        return payload
     profile = report_profile_with_characters(resolved_source)
-    mode = str(payload.get("mode") or "serious") if isinstance(payload, dict) else "serious"
-    migrated = ollama.fallback_report(profile, mode)
-    migrated_payload = migrated.model_dump()
-    migrated_payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-    migrated_payload["source"] = resolved_source
-    repo.save_json(cache_key("latest_report", resolved_source), migrated_payload)
-    return migrated_payload
+    analytics_fingerprint = persona_report_fingerprint(profile)
+    pointer = repo.load_json(persona_report_pointer_key(resolved_source))
+    if (
+        isinstance(pointer, dict)
+        and pointer.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
+        and pointer.get("period") == PERSONA_REPORT_PERIOD
+        and pointer.get("source") == resolved_source
+        and pointer.get("analyticsFingerprint") == analytics_fingerprint
+        and pointer.get("cacheKey")
+    ):
+        cached = repo.load_json(str(pointer["cacheKey"]))
+        if isinstance(cached, dict) and cached.get("personaReportSchemaVersion") == PERSONA_REPORT_SCHEMA_VERSION:
+            payload = dict(cached)
+            if payload.get("generationSource") == "gemma":
+                payload["generationSource"] = "cache-gemma"
+                payload["fallback"] = False
+                payload["fallbackReason"] = None
+            log_persona_report_payload(payload)
+            return payload
+
+    mode = str(pointer.get("mode") or "serious") if isinstance(pointer, dict) else "serious"
+    fallback = ollama.fallback_report(profile, mode, fallback_reason="no_matching_gemma_cache")
+    fallback_payload = fallback.model_dump()
+    generated_at = datetime.now(timezone.utc).isoformat()
+    report_cache_key = persona_report_cache_key(resolved_source, mode, analytics_fingerprint)
+    fallback_payload = annotate_persona_report_payload(
+        fallback_payload,
+        source=resolved_source,
+        mode=mode,
+        generated_at=generated_at,
+        analytics_fingerprint=analytics_fingerprint,
+        report_cache_key=report_cache_key,
+    )
+    log_persona_report_payload(fallback_payload)
+    return fallback_payload
 
 
 @router.get("/recommendations")

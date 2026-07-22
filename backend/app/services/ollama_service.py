@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.config import Settings
 
-REPORT_GENERATE_TIMEOUT_SECONDS = 35.0
+REPORT_GENERATE_TIMEOUT_SECONDS = 240.0
 
 
 class PersonalityTag(BaseModel):
@@ -48,6 +48,7 @@ class ClosingStory(BaseModel):
 
 class PersonaReport(BaseModel):
     personaReportSchemaVersion: int = 2
+    schemaVersion: int = 2
     personaName: str = ""
     openingHook: str = ""
     coreSound: StoryChapter = Field(default_factory=StoryChapter)
@@ -74,6 +75,12 @@ class PersonaReport(BaseModel):
     recommendation_explanations: list[dict[str, str]] = Field(default_factory=list)
     mode: str = "serious"
     model: str = ""
+    generationSource: str = "fallback"
+    fallbackReason: str | None = None
+    generatedAt: str = ""
+    durationMs: int | None = None
+    analyticsFingerprint: str = ""
+    cacheKey: str = ""
     evidence: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -102,9 +109,18 @@ class OllamaService:
         }
 
     def generate_report(self, profile: dict[str, Any], mode: str) -> PersonaReport:
+        started = time.monotonic()
         status = self.status()
-        if not status["reachable"] or not status["model_installed"]:
-            return self.fallback_report(profile, mode)
+        if not status["reachable"]:
+            report = self.fallback_report(profile, mode, fallback_reason="ollama_unavailable")
+            report.durationMs = self._duration_ms(started)
+            self._log_report_generation(report)
+            return report
+        if not status["model_installed"]:
+            report = self.fallback_report(profile, mode, fallback_reason="model_not_installed")
+            report.durationMs = self._duration_ms(started)
+            self._log_report_generation(report)
+            return report
         prompt = self._build_report_prompt(profile, mode)
         try:
             data = self._request_json(
@@ -115,7 +131,7 @@ class OllamaService:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.5, "top_p": 0.9, "num_predict": 620},
+                    "options": {"temperature": 0.1, "top_p": 0.8, "num_predict": 260},
                 },
                 timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
             )
@@ -124,17 +140,46 @@ class OllamaService:
             report.mode = mode
             report.model = self.settings.ollama_model
             report.evidence = profile
+            report.durationMs = self._duration_ms(started)
+            if report.fallback:
+                report.generationSource = "fallback"
+                report.fallbackReason = "invalid_or_missing_story_json"
+            else:
+                report.generationSource = "gemma"
+                report.fallbackReason = None
+            self._log_report_generation(report)
+            return report
+        except TimeoutError:
+            report = self.fallback_report(profile, mode, fallback_reason="ollama_timeout")
+            report.durationMs = self._duration_ms(started)
+            self._log_report_generation(report)
             return report
         except Exception:
-            return self.fallback_report(profile, mode)
+            report = self.fallback_report(profile, mode, fallback_reason="ollama_error")
+            report.durationMs = self._duration_ms(started)
+            self._log_report_generation(report)
+            return report
 
-    def fallback_report(self, profile: dict[str, Any], mode: str = "serious") -> PersonaReport:
+    def fallback_report(self, profile: dict[str, Any], mode: str = "serious", fallback_reason: str | None = None) -> PersonaReport:
         report = PersonaReport(**self._fallback_report_data(profile))
         report.mode = mode
-        report.model = ""
+        report.model = self.settings.ollama_model
         report.evidence = profile
         report.fallback = True
+        report.generationSource = "fallback"
+        report.fallbackReason = fallback_reason or "deterministic_fallback"
         return report
+
+    def _duration_ms(self, started: float) -> int:
+        return max(0, int((time.monotonic() - started) * 1000))
+
+    def _log_report_generation(self, report: PersonaReport) -> None:
+        reason = f" reason={report.fallbackReason}" if report.fallbackReason else ""
+        print(
+            f"[persona-report] source={report.generationSource} model={report.model or self.settings.ollama_model} "
+            f"schema={report.schemaVersion} duration_ms={report.durationMs or 0}{reason}",
+            flush=True,
+        )
 
     def generate_recommendation_explanations(self, profile: dict[str, Any], recommendations: list[dict[str, Any]]) -> list[dict[str, str]]:
         status = self.status()
@@ -257,59 +302,61 @@ class OllamaService:
         }.get(mode, "Write it like a polished music identity editorial.")
         compact = self._report_prompt_evidence(profile, mode)
         return (
-            "You are a witty but careful music-profile writer creating a cinematic music-persona story. "
+            "You are a witty but careful music-profile writer creating a compact cinematic music-persona story seed. "
             "You are not calculating metrics. Deterministic analytics have already calculated every fact.\n\n"
-            "Your job is to write short, specific interpretation for a six-chapter scrolling report.\n\n"
+            "Your job is to write concise, specific language for a six-chapter scrolling report.\n\n"
             "Rules:\n"
             "- Use only the supplied evidence.\n"
             "- Do not calculate or invent statistics.\n"
             "- Do not invent artist facts, track facts, genres, dates, behaviours, personal details, emotional problems, or life facts.\n"
-            "- mainCharacters artistName values must exactly match one of allowed_main_character_artists.\n"
             "- Mention artist names only when they appear in the supplied JSON.\n"
             "- Avoid generic lines like 'you have a diverse taste'.\n"
             "- Avoid therapy language, diagnosis language, corporate phrasing, or robotic analysis language.\n"
             "- Keep roasts light, friendly, and music-focused.\n"
+            "- Write in second person using you and your.\n"
+            "- personaName must be a music archetype, not a human name.\n"
+            "- Do not output hashtags, social captions, dates, signatures, or tags.\n"
             "- Do not output Markdown, HTML, reasoning, notes, alternatives, or an introduction.\n"
             "- Do not start with phrases like 'Based on your data'.\n"
             "- Do not repeat the same genre list or metric list across chapters.\n"
-            "- The style should be playful, observant, slightly dramatic, and readable immediately.\n"
+            "- Use the deterministic characters as the anchor. Do not choose or rename the character.\n"
+            "- The style should be observant, slightly dramatic, and immediately readable.\n"
             f"{mode_instruction}\n"
-            "Return only strict JSON matching this schema:\n"
-            "{\n"
-            '  "personaReportSchemaVersion": 2,\n'
-            '  "personaName": "string",\n'
-            '  "openingHook": "string",\n'
-            '  "coreSound": {"headline": "string", "body": "string", "pullQuote": "string"},\n'
-            '  "comfortLoop": {"headline": "string", "body": "string", "pullQuote": "string"},\n'
-            '  "mainCharacters": [{"artistName": "string", "role": "string", "line": "string"}],\n'
-            '  "plotTwist": {"headline": "string", "body": "string"},\n'
-            '  "closing": {"headline": "string", "body": "string", "finalLine": "string"}\n'
-            "}\n"
-            "Length limits: personaName max 8 words; openingHook max 20 words; chapter headline max 12 words; "
-            "chapter body 25 to 55 words; pullQuote max 14 words; artist line max 20 words; "
-            "closing body max 70 words; finalLine max 18 words. Return about three mainCharacters.\n\n"
-            f"SUPPLIED_PROFILE_JSON:\n{json.dumps(compact, ensure_ascii=True)}"
+            'Return only valid JSON matching this seed schema: {"s":["string","string","string","string","string","string","string","string","string","string","string","string","string"]}\n'
+            "The 13 strings must be in this order: personaName, openingHook, coreHeadline, coreBody, coreQuote, "
+            "comfortHeadline, comfortBody, comfortQuote, plotHeadline, plotBody, closingHeadline, closingBody, finalLine.\n"
+            "Length limits: every string max 8 words. No extra keys.\n\n"
+            f"SUPPLIED_PROFILE_JSON:{json.dumps(compact, ensure_ascii=True, separators=(',', ':'))}"
         )
 
     def _report_prompt_evidence(self, profile: dict[str, Any], mode: str) -> dict[str, Any]:
         character = profile.get("music_character") if isinstance(profile.get("music_character"), dict) else {}
-        current = profile.get("current_month_character") if isinstance(profile.get("current_month_character"), dict) else {}
         taste = profile.get("taste_interpretation") if isinstance(profile.get("taste_interpretation"), dict) else {}
         top_artists = profile.get("top_artists") if isinstance(profile.get("top_artists"), list) else []
-        top_tracks = profile.get("top_tracks") if isinstance(profile.get("top_tracks"), list) else []
-        top_albums = profile.get("favourite_albums") if isinstance(profile.get("favourite_albums"), list) else []
-        scores = profile.get("scores") if isinstance(profile.get("scores"), list) else []
         cluster_candidates = taste.get("cluster_shares") if isinstance(taste.get("cluster_shares"), list) else []
         if not cluster_candidates:
             cluster_candidates = taste.get("core_genre_families") if isinstance(taste.get("core_genre_families"), list) else []
+
+        def character_summary(value: Any) -> dict[str, Any] | None:
+            if not isinstance(value, dict):
+                return None
+            return {
+                "name": value.get("name"),
+                "profile": value.get("profile"),
+                "roast": value.get("roast"),
+                "match_score": value.get("match_score"),
+                "confidence": value.get("confidence"),
+            }
+
+        primary = character_summary(character.get("primary"))
+        secondary = character_summary(character.get("secondary"))
+        modifier = character_summary(character.get("modifier"))
         return {
             "mode": mode,
             "period": (character.get("period") or {}).get("label") if isinstance(character.get("period"), dict) else None,
-            "primary_character": character.get("primary"),
-            "secondary_character": character.get("secondary"),
-            "modifier": character.get("modifier"),
-            "current_month_character": current.get("primary"),
-            "current_vs_long_term": profile.get("current_vs_long_term"),
+            "primary_character": primary,
+            "secondary_character": secondary,
+            "modifier": modifier,
             "allowed_main_character_artists": [
                 str(item.get("artist"))
                 for item in top_artists[:6]
@@ -323,49 +370,16 @@ class OllamaService:
                     "share_of_listens": item.get("share_of_listens"),
                     "unique_songs_played": item.get("unique_songs_played"),
                     "taste_role": item.get("taste_role"),
-                    "why_it_matters": item.get("why_it_matters"),
                 }
-                for item in top_artists[:5]
+                for item in top_artists[:4]
                 if isinstance(item, dict) and item.get("artist")
-            ],
-            "top_tracks": [
-                {"title": item.get("title"), "artist": item.get("artist"), "play_count": item.get("play_count")}
-                for item in top_tracks[:5]
-                if isinstance(item, dict) and item.get("title")
-            ],
-            "favourite_albums": [
-                {
-                    "album": item.get("album"),
-                    "artist": item.get("artist"),
-                    "plays": item.get("plays"),
-                    "unique_songs": item.get("unique_songs"),
-                    "share": item.get("share"),
-                    "has_album_image": bool(item.get("album_image_url")),
-                }
-                for item in top_albums[:8]
-                if isinstance(item, dict) and item.get("album")
-            ],
-            "scores": [
-                {
-                    "key": item.get("key"),
-                    "name": item.get("name"),
-                    "value": item.get("value"),
-                    "label": item.get("label"),
-                    "plain_english": (item.get("interpretation") or {}).get("plain_english") if isinstance(item.get("interpretation"), dict) else None,
-                }
-                for item in scores
-                if isinstance(item, dict)
             ],
             "top_sound_clusters": [
                 {"name": item.get("name"), "share": item.get("share")}
-                for item in cluster_candidates[:5]
+                for item in cluster_candidates[:4]
                 if isinstance(item, dict) and item.get("name")
             ],
-            "sonic_traits": list(taste.get("sonic_traits", [])[:8]) if isinstance(taste.get("sonic_traits"), list) else [],
-            "plain_language_scores": profile.get("plain_language_scores", {}),
-            "listener_axis": profile.get("listener_axis", {}),
-            "album_or_track_behavior": profile.get("album_or_track_behavior"),
-            "important_instruction": "Use the deterministic characters as the anchor. Do not choose or rename the character.",
+            "sonic_traits": list(taste.get("sonic_traits", [])[:5]) if isinstance(taste.get("sonic_traits"), list) else [],
         }
 
     def _request_json(self, method: str, path: str, payload: dict[str, Any] | None = None, timeout: float = 10.0) -> dict[str, Any]:
@@ -390,7 +404,12 @@ class OllamaService:
                 if remaining <= 0:
                     raise TimeoutError(f"Ollama did not finish within {timeout:.0f} seconds.")
                 conn.settimeout(min(max(remaining, 0.1), 5.0))
-                chunk = conn.recv(65536)
+                try:
+                    chunk = conn.recv(65536)
+                except socket.timeout as exc:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(f"Ollama did not finish within {timeout:.0f} seconds.") from exc
+                    continue
                 if not chunk:
                     break
                 chunks.append(chunk)
@@ -430,6 +449,8 @@ class OllamaService:
             port = int(port_text)
         else:
             host, port = host_port, 80
+        if host.lower() == "localhost":
+            host = "127.0.0.1"
         return host, port, prefix
 
     def _decode_chunked_body(self, body: bytes) -> bytes:
@@ -449,7 +470,7 @@ class OllamaService:
         return bytes(decoded)
 
     def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
-        data = self.extract_json(raw)
+        data = self._extract_story_seed(raw) or self.extract_json(raw)
         fallback = self._fallback_report_data(evidence or {})
         repaired = dict(fallback)
         for key in [
@@ -478,9 +499,12 @@ class OllamaService:
         if isinstance(data.get("recommendation_explanations"), list):
             repaired["recommendation_explanations"] = [item for item in data["recommendation_explanations"] if isinstance(item, dict)]
 
-        if self._has_v2_story_data(data):
+        if self._has_story_seed_data(data):
+            repaired.update(self._sanitize_story_seed(data, fallback, evidence or {}))
+            repaired["fallback"] = False
+        elif self._has_v2_story_data(data):
             repaired["personaReportSchemaVersion"] = 2
-            repaired["personaName"] = self._limit_words(self._clean_text(data.get("personaName"), 60), 8) or fallback["personaName"]
+            repaired["personaName"] = self._sanitize_persona_name(data.get("personaName"), fallback["personaName"])
             repaired["openingHook"] = self._limit_words(self._clean_text(data.get("openingHook"), 90), 20) or fallback["openingHook"]
             repaired["coreSound"] = self._sanitize_story_chapter(data.get("coreSound"), fallback["coreSound"])
             repaired["comfortLoop"] = self._sanitize_story_chapter(data.get("comfortLoop"), fallback["comfortLoop"])
@@ -493,11 +517,121 @@ class OllamaService:
         try:
             return self._fill_report_gaps(PersonaReport(**repaired), fallback)
         except ValidationError:
-            return self.fallback_report(evidence or {})
+            return self.fallback_report(evidence or {}, fallback_reason="schema_validation_failed")
+
+    def _extract_story_seed(self, raw: str) -> dict[str, Any]:
+        text = str(raw or "")
+        key_index = text.find('"s"')
+        if key_index < 0:
+            return {}
+        bracket_index = text.find("[", key_index)
+        if bracket_index < 0:
+            return {}
+        decoder = json.JSONDecoder()
+        values: list[str] = []
+        cursor = bracket_index + 1
+        while cursor < len(text) and len(values) < 13:
+            quote_index = text.find('"', cursor)
+            if quote_index < 0:
+                break
+            try:
+                value, end = decoder.raw_decode(text[quote_index:])
+            except json.JSONDecodeError:
+                cursor = quote_index + 1
+                continue
+            if isinstance(value, str) and value.strip():
+                values.append(value)
+            cursor = quote_index + end
+        return {"s": values} if len(values) >= 13 else {}
+
+    def _has_story_seed_data(self, data: dict[str, Any]) -> bool:
+        if isinstance(data.get("s"), list):
+            seed = data["s"]
+            return len(seed) >= 13 and all(isinstance(value, str) and value.strip() for value in seed[:13])
+        required = {
+            "personaName",
+            "openingHook",
+            "coreHeadline",
+            "coreBody",
+            "coreQuote",
+            "comfortHeadline",
+            "comfortBody",
+            "comfortQuote",
+            "plotHeadline",
+            "plotBody",
+            "closingHeadline",
+            "closingBody",
+            "finalLine",
+            "mainCharacters",
+        }
+        text_fields = required - {"mainCharacters"}
+        return required <= set(data.keys()) and all(isinstance(data.get(field), str) and data[field].strip() for field in text_fields) and isinstance(data.get("mainCharacters"), list)
+
+    def _sanitize_story_seed(self, data: dict[str, Any], fallback: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+        if isinstance(data.get("s"), list):
+            seed = list(data["s"][:13])
+            (
+                persona_name,
+                opening_hook,
+                core_headline,
+                core_body,
+                core_quote,
+                comfort_headline,
+                comfort_body,
+                comfort_quote,
+                plot_headline,
+                plot_body,
+                closing_headline,
+                closing_body,
+                final_line,
+            ) = seed
+            characters = fallback["mainCharacters"]
+        else:
+            persona_name = data.get("personaName")
+            opening_hook = data.get("openingHook")
+            core_headline = data.get("coreHeadline")
+            core_body = data.get("coreBody")
+            core_quote = data.get("coreQuote")
+            comfort_headline = data.get("comfortHeadline")
+            comfort_body = data.get("comfortBody")
+            comfort_quote = data.get("comfortQuote")
+            plot_headline = data.get("plotHeadline")
+            plot_body = data.get("plotBody")
+            closing_headline = data.get("closingHeadline")
+            closing_body = data.get("closingBody")
+            final_line = data.get("finalLine")
+            characters = self._sanitize_main_characters(data.get("mainCharacters"), fallback["mainCharacters"], evidence)
+        return {
+            "personaReportSchemaVersion": 2,
+            "schemaVersion": 2,
+            "personaName": self._sanitize_persona_name(persona_name, fallback["personaName"]),
+            "openingHook": self._limit_words(self._clean_text(opening_hook, 90), 20) or fallback["openingHook"],
+            "coreSound": {
+                "headline": self._limit_words(self._clean_text(core_headline, 90), 12) or fallback["coreSound"]["headline"],
+                "body": self._limit_words(self._clean_text(core_body, 180), 32) or fallback["coreSound"]["body"],
+                "pullQuote": self._limit_words(self._clean_text(core_quote, 80), 9) or fallback["coreSound"]["pullQuote"],
+            },
+            "comfortLoop": {
+                "headline": self._limit_words(self._clean_text(comfort_headline, 90), 12) or fallback["comfortLoop"]["headline"],
+                "body": self._limit_words(self._clean_text(comfort_body, 180), 32) or fallback["comfortLoop"]["body"],
+                "pullQuote": self._limit_words(self._clean_text(comfort_quote, 80), 9) or fallback["comfortLoop"]["pullQuote"],
+            },
+            "mainCharacters": characters,
+            "plotTwist": {
+                "headline": self._limit_words(self._clean_text(plot_headline, 90), 12) or fallback["plotTwist"]["headline"],
+                "body": self._limit_words(self._clean_text(plot_body, 180), 32) or fallback["plotTwist"]["body"],
+            },
+            "closing": {
+                "headline": self._limit_words(self._clean_text(closing_headline, 90), 12) or fallback["closing"]["headline"],
+                "body": self._limit_words(self._clean_text(closing_body, 220), 34) or fallback["closing"]["body"],
+                "finalLine": self._limit_words(self._clean_text(final_line, 100), 12) or fallback["closing"]["finalLine"],
+            },
+        }
 
     def _fill_report_gaps(self, report: PersonaReport, fallback: dict[str, Any]) -> PersonaReport:
         report.personaReportSchemaVersion = 2
-        report.personaName = self._limit_words(report.personaName or fallback["personaName"], 8)
+        report.schemaVersion = 2
+        report.personaName = self._sanitize_persona_name(report.personaName, fallback["personaName"])
         report.openingHook = self._limit_words(report.openingHook or fallback["openingHook"], 20)
         report.coreSound = StoryChapter(**self._sanitize_story_chapter(report.coreSound.model_dump(), fallback["coreSound"]))
         report.comfortLoop = StoryChapter(**self._sanitize_story_chapter(report.comfortLoop.model_dump(), fallback["comfortLoop"]))
@@ -645,6 +779,12 @@ class OllamaService:
         if len(words) <= max_words:
             return value.strip()
         return " ".join(words[:max_words]).rstrip(" ,;:") + "."
+
+    def _sanitize_persona_name(self, value: Any, fallback: str) -> str:
+        clean = self._limit_words(self._clean_text(value, 60), 8)
+        if not clean or any(marker in clean for marker in ("#", "@")) or "," in clean or re.search(r"\b\d{4}\b", clean):
+            return fallback
+        return clean
 
     def _fallback_report_data(self, evidence: dict[str, Any]) -> dict[str, Any]:
         coverage = evidence.get("coverage") if isinstance(evidence.get("coverage"), dict) else {}
