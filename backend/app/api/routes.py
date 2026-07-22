@@ -670,8 +670,13 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def report_profile_with_characters(source: str | None = "youtube") -> dict[str, Any]:
-    normalised = require_source_cache("normalised", source)
-    analysis = require_source_cache("analysis", source)
+    resolved_source = normalise_source(source)
+    if resolved_source == "youtube":
+        normalised = require_cache("normalised")
+        analysis = require_cache("analysis")
+    else:
+        normalised = require_source_cache("normalised", resolved_source)
+        analysis = require_source_cache("analysis", resolved_source)
     profile = dict(analysis["report_profile"])
     rolling_character = character_payload(normalised, "rolling_year", timezone_name=settings.local_timezone)
     current_character = character_payload(normalised, "this_month", timezone_name=settings.local_timezone)
@@ -681,6 +686,10 @@ def report_profile_with_characters(source: str | None = "youtube") -> dict[str, 
     profile["plain_language_scores"] = plain_language_scores(profile.get("scores", []))
     profile["listener_axis"] = listener_axis(profile, rolling_character)
     profile["album_or_track_behavior"] = album_or_track_behavior(rolling_character)
+    try:
+        profile["favourite_albums"] = albums_payload(normalised, "rolling_year", None, settings.local_timezone).get("albums", [])[:8]
+    except Exception:
+        profile["favourite_albums"] = []
     return profile
 
 
@@ -756,9 +765,6 @@ def album_or_track_behavior(character: dict[str, Any]) -> str:
 def generate_report(request: ReportRequest) -> dict[str, Any]:
     source = normalise_source(request.source)
     profile = report_profile_with_characters(source)
-    status = ollama.status()
-    if not status["reachable"] or not status["model_installed"]:
-        raise HTTPException(status_code=503, detail={"error": "Ollama report unavailable", "detail": status["message"], "code": "ollama_unavailable"})
     report = ollama.generate_report(profile, request.mode)
     payload = report.model_dump()
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
@@ -769,7 +775,18 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
 
 @router.get("/report/latest")
 def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
-    return require_source_cache("latest_report", source)
+    resolved_source = normalise_source(source)
+    payload = require_source_cache("latest_report", resolved_source)
+    if isinstance(payload, dict) and payload.get("personaReportSchemaVersion") == 2:
+        return payload
+    profile = report_profile_with_characters(resolved_source)
+    mode = str(payload.get("mode") or "serious") if isinstance(payload, dict) else "serious"
+    migrated = ollama.fallback_report(profile, mode)
+    migrated_payload = migrated.model_dump()
+    migrated_payload["generated_at"] = datetime.now(timezone.utc).isoformat()
+    migrated_payload["source"] = resolved_source
+    repo.save_json(cache_key("latest_report", resolved_source), migrated_payload)
+    return migrated_payload
 
 
 @router.get("/recommendations")

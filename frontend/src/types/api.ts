@@ -500,7 +500,39 @@ export interface PersonaReportCard {
   body: string;
 }
 
+export interface PersonaStoryChapter {
+  headline: string;
+  body: string;
+  pullQuote?: string;
+}
+
+export interface PersonaMainCharacter {
+  artistName: string;
+  role: string;
+  line: string;
+}
+
+export interface PersonaPlotTwist {
+  headline: string;
+  body: string;
+}
+
+export interface PersonaClosing {
+  headline: string;
+  body: string;
+  finalLine: string;
+}
+
 export interface PersonaReport {
+  personaReportSchemaVersion?: number;
+  personaName?: string;
+  openingHook?: string;
+  coreSound?: PersonaStoryChapter;
+  comfortLoop?: PersonaStoryChapter;
+  mainCharacters?: PersonaMainCharacter[];
+  plotTwist?: PersonaPlotTwist;
+  closing?: PersonaClosing;
+  fallback?: boolean;
   headline: string;
   subheadline?: string;
   core_identity_paragraph?: string;

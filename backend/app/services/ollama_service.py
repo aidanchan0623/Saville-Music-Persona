@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import re
 import socket
+import time
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
 from app.config import Settings
+
+REPORT_GENERATE_TIMEOUT_SECONDS = 35.0
 
 
 class PersonalityTag(BaseModel):
@@ -20,7 +23,39 @@ class ReportCard(BaseModel):
     body: str
 
 
+class StoryChapter(BaseModel):
+    headline: str = ""
+    body: str = ""
+    pullQuote: str = ""
+
+
+class MainCharacterStory(BaseModel):
+    artistName: str = ""
+    role: str = ""
+    line: str = ""
+
+
+class PlotTwistStory(BaseModel):
+    headline: str = ""
+    body: str = ""
+
+
+class ClosingStory(BaseModel):
+    headline: str = ""
+    body: str = ""
+    finalLine: str = ""
+
+
 class PersonaReport(BaseModel):
+    personaReportSchemaVersion: int = 2
+    personaName: str = ""
+    openingHook: str = ""
+    coreSound: StoryChapter = Field(default_factory=StoryChapter)
+    comfortLoop: StoryChapter = Field(default_factory=StoryChapter)
+    mainCharacters: list[MainCharacterStory] = Field(default_factory=list)
+    plotTwist: PlotTwistStory = Field(default_factory=PlotTwistStory)
+    closing: ClosingStory = Field(default_factory=ClosingStory)
+    fallback: bool = False
     headline: str = ""
     subheadline: str = ""
     core_identity_paragraph: str = ""
@@ -68,28 +103,37 @@ class OllamaService:
 
     def generate_report(self, profile: dict[str, Any], mode: str) -> PersonaReport:
         status = self.status()
-        if not status["reachable"]:
-            raise RuntimeError(status["message"])
-        if not status["model_installed"]:
-            raise RuntimeError(status["message"])
+        if not status["reachable"] or not status["model_installed"]:
+            return self.fallback_report(profile, mode)
         prompt = self._build_report_prompt(profile, mode)
-        data = self._request_json(
-            "POST",
-            "/api/generate",
-            {
-                "model": self.settings.ollama_model,
-                "prompt": prompt,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.45, "top_p": 0.9, "num_predict": 900},
-            },
-            timeout=self.settings.ollama_generate_timeout_seconds,
-        )
-        raw = data.get("response", "")
-        report = self.parse_report(raw, profile)
+        try:
+            data = self._request_json(
+                "POST",
+                "/api/generate",
+                {
+                    "model": self.settings.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.5, "top_p": 0.9, "num_predict": 620},
+                },
+                timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
+            )
+            raw = data.get("response", "")
+            report = self.parse_report(raw, profile)
+            report.mode = mode
+            report.model = self.settings.ollama_model
+            report.evidence = profile
+            return report
+        except Exception:
+            return self.fallback_report(profile, mode)
+
+    def fallback_report(self, profile: dict[str, Any], mode: str = "serious") -> PersonaReport:
+        report = PersonaReport(**self._fallback_report_data(profile))
         report.mode = mode
-        report.model = self.settings.ollama_model
+        report.model = ""
         report.evidence = profile
+        report.fallback = True
         return report
 
     def generate_recommendation_explanations(self, profile: dict[str, Any], recommendations: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -213,27 +257,37 @@ class OllamaService:
         }.get(mode, "Write it like a polished music identity editorial.")
         compact = self._report_prompt_evidence(profile, mode)
         return (
-            "You are a witty but careful music-profile writer. You are not calculating the profile. "
-            "The character and evidence have already been selected by deterministic rules.\n\n"
-            "Your job is to interpret the listener's music identity in a way that feels insightful, human, and music-aware.\n\n"
+            "You are a witty but careful music-profile writer creating a cinematic music-persona story. "
+            "You are not calculating metrics. Deterministic analytics have already calculated every fact.\n\n"
+            "Your job is to write short, specific interpretation for a six-chapter scrolling report.\n\n"
             "Rules:\n"
             "- Use only the supplied evidence.\n"
-            "- Do not invent artists, tracks, genres, behaviours, emotional problems, or personal life facts.\n"
-            "- Do not simply restate the raw metrics.\n"
-            "- Translate data into interpretation.\n"
-            "- Explain what kind of listener this person is.\n"
-            "- Keep the tone playful, smart, and specific.\n"
-            "- Avoid generic language like 'you have a diverse taste'.\n"
-            "- Avoid therapy language or serious mental-health claims.\n"
-            "- Keep roasts light and music-focused.\n"
-            "- No cruel insults, slurs, sexual jokes, or protected-characteristic jokes.\n"
-            "- The output should feel like a music identity editorial, not an analytics summary.\n"
+            "- Do not calculate or invent statistics.\n"
+            "- Do not invent artist facts, track facts, genres, dates, behaviours, personal details, emotional problems, or life facts.\n"
+            "- mainCharacters artistName values must exactly match one of allowed_main_character_artists.\n"
+            "- Mention artist names only when they appear in the supplied JSON.\n"
+            "- Avoid generic lines like 'you have a diverse taste'.\n"
+            "- Avoid therapy language, diagnosis language, corporate phrasing, or robotic analysis language.\n"
+            "- Keep roasts light, friendly, and music-focused.\n"
+            "- Do not output Markdown, HTML, reasoning, notes, alternatives, or an introduction.\n"
+            "- Do not start with phrases like 'Based on your data'.\n"
+            "- Do not repeat the same genre list or metric list across chapters.\n"
+            "- The style should be playful, observant, slightly dramatic, and readable immediately.\n"
             f"{mode_instruction}\n"
-            "Return strict JSON matching this schema: "
-            '{"headline":"","subheadline":"","core_identity_paragraph":"","listener_type_cards":[{"title":"","body":""}],'
-            '"taste_world_paragraph":"","music_movement_paragraph":"","current_vs_long_term_paragraph":"","friendly_roast":""}.\n'
-            "Use 3 listener_type_cards: Primary character, Secondary character, Behaviour modifier. "
-            "Do not include raw percentages or play counts unless the evidence label already makes them meaningful.\n\n"
+            "Return only strict JSON matching this schema:\n"
+            "{\n"
+            '  "personaReportSchemaVersion": 2,\n'
+            '  "personaName": "string",\n'
+            '  "openingHook": "string",\n'
+            '  "coreSound": {"headline": "string", "body": "string", "pullQuote": "string"},\n'
+            '  "comfortLoop": {"headline": "string", "body": "string", "pullQuote": "string"},\n'
+            '  "mainCharacters": [{"artistName": "string", "role": "string", "line": "string"}],\n'
+            '  "plotTwist": {"headline": "string", "body": "string"},\n'
+            '  "closing": {"headline": "string", "body": "string", "finalLine": "string"}\n'
+            "}\n"
+            "Length limits: personaName max 8 words; openingHook max 20 words; chapter headline max 12 words; "
+            "chapter body 25 to 55 words; pullQuote max 14 words; artist line max 20 words; "
+            "closing body max 70 words; finalLine max 18 words. Return about three mainCharacters.\n\n"
             f"SUPPLIED_PROFILE_JSON:\n{json.dumps(compact, ensure_ascii=True)}"
         )
 
@@ -243,6 +297,11 @@ class OllamaService:
         taste = profile.get("taste_interpretation") if isinstance(profile.get("taste_interpretation"), dict) else {}
         top_artists = profile.get("top_artists") if isinstance(profile.get("top_artists"), list) else []
         top_tracks = profile.get("top_tracks") if isinstance(profile.get("top_tracks"), list) else []
+        top_albums = profile.get("favourite_albums") if isinstance(profile.get("favourite_albums"), list) else []
+        scores = profile.get("scores") if isinstance(profile.get("scores"), list) else []
+        cluster_candidates = taste.get("cluster_shares") if isinstance(taste.get("cluster_shares"), list) else []
+        if not cluster_candidates:
+            cluster_candidates = taste.get("core_genre_families") if isinstance(taste.get("core_genre_families"), list) else []
         return {
             "mode": mode,
             "period": (character.get("period") or {}).get("label") if isinstance(character.get("period"), dict) else None,
@@ -251,19 +310,55 @@ class OllamaService:
             "modifier": character.get("modifier"),
             "current_month_character": current.get("primary"),
             "current_vs_long_term": profile.get("current_vs_long_term"),
+            "allowed_main_character_artists": [
+                str(item.get("artist"))
+                for item in top_artists[:6]
+                if isinstance(item, dict) and item.get("artist")
+            ],
             "top_artists": [
-                {"artist": item.get("artist"), "role": item.get("artist_loyalty_label")}
+                {
+                    "artist": item.get("artist"),
+                    "role": item.get("artist_loyalty_label"),
+                    "play_count": item.get("play_count"),
+                    "share_of_listens": item.get("share_of_listens"),
+                    "unique_songs_played": item.get("unique_songs_played"),
+                    "taste_role": item.get("taste_role"),
+                    "why_it_matters": item.get("why_it_matters"),
+                }
                 for item in top_artists[:5]
                 if isinstance(item, dict) and item.get("artist")
             ],
             "top_tracks": [
-                {"title": item.get("title"), "artist": item.get("artist")}
+                {"title": item.get("title"), "artist": item.get("artist"), "play_count": item.get("play_count")}
                 for item in top_tracks[:5]
                 if isinstance(item, dict) and item.get("title")
             ],
+            "favourite_albums": [
+                {
+                    "album": item.get("album"),
+                    "artist": item.get("artist"),
+                    "plays": item.get("plays"),
+                    "unique_songs": item.get("unique_songs"),
+                    "share": item.get("share"),
+                    "has_album_image": bool(item.get("album_image_url")),
+                }
+                for item in top_albums[:8]
+                if isinstance(item, dict) and item.get("album")
+            ],
+            "scores": [
+                {
+                    "key": item.get("key"),
+                    "name": item.get("name"),
+                    "value": item.get("value"),
+                    "label": item.get("label"),
+                    "plain_english": (item.get("interpretation") or {}).get("plain_english") if isinstance(item.get("interpretation"), dict) else None,
+                }
+                for item in scores
+                if isinstance(item, dict)
+            ],
             "top_sound_clusters": [
-                {"name": item.get("name")}
-                for item in taste.get("core_genre_families", [])[:5]
+                {"name": item.get("name"), "share": item.get("share")}
+                for item in cluster_candidates[:5]
                 if isinstance(item, dict) and item.get("name")
             ],
             "sonic_traits": list(taste.get("sonic_traits", [])[:8]) if isinstance(taste.get("sonic_traits"), list) else [],
@@ -277,6 +372,7 @@ class OllamaService:
         host, port, prefix = self._parse_http_base_url()
         request_path = f"{prefix}{path}"
         body = json.dumps(payload).encode("utf-8") if payload is not None else None
+        deadline = time.monotonic() + timeout
         headers = [
             f"{method} {request_path} HTTP/1.1",
             f"Host: {host}:{port}",
@@ -286,11 +382,14 @@ class OllamaService:
         if body is not None:
             headers.extend(["Content-Type: application/json", f"Content-Length: {len(body)}"])
         raw_request = ("\r\n".join(headers) + "\r\n\r\n").encode("ascii") + (body or b"")
-        with socket.create_connection((host, port), timeout=timeout) as conn:
-            conn.settimeout(timeout)
+        with socket.create_connection((host, port), timeout=min(timeout, 5.0)) as conn:
             conn.sendall(raw_request)
             chunks: list[bytes] = []
             while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(f"Ollama did not finish within {timeout:.0f} seconds.")
+                conn.settimeout(min(max(remaining, 0.1), 5.0))
                 chunk = conn.recv(65536)
                 if not chunk:
                     break
@@ -352,31 +451,59 @@ class OllamaService:
     def parse_report(self, raw: str, evidence: dict[str, Any] | None = None) -> PersonaReport:
         data = self.extract_json(raw)
         fallback = self._fallback_report_data(evidence or {})
+        repaired = dict(fallback)
+        for key in [
+            "headline",
+            "subheadline",
+            "core_identity_paragraph",
+            "taste_world_paragraph",
+            "music_movement_paragraph",
+            "current_vs_long_term_paragraph",
+            "friendly_roast",
+            "summary",
+            "current_era",
+            "core_identity",
+            "listening_habits",
+            "comfort_artists",
+        ]:
+            value = self._clean_text(data.get(key), 180)
+            if value:
+                repaired[key] = value
+        if isinstance(data.get("listener_type_cards"), list):
+            repaired["listener_type_cards"] = self._sanitize_report_cards(data.get("listener_type_cards"), fallback["listener_type_cards"])
+        if isinstance(data.get("personality_tags"), list):
+            repaired["personality_tags"] = self._sanitize_personality_tags(data.get("personality_tags"), fallback["personality_tags"])
+        if isinstance(data.get("report_sections"), list):
+            repaired["report_sections"] = [self._clean_text(item, 80) for item in data["report_sections"] if self._clean_text(item, 80)] or fallback["report_sections"]
+        if isinstance(data.get("recommendation_explanations"), list):
+            repaired["recommendation_explanations"] = [item for item in data["recommendation_explanations"] if isinstance(item, dict)]
+
+        if self._has_v2_story_data(data):
+            repaired["personaReportSchemaVersion"] = 2
+            repaired["personaName"] = self._limit_words(self._clean_text(data.get("personaName"), 60), 8) or fallback["personaName"]
+            repaired["openingHook"] = self._limit_words(self._clean_text(data.get("openingHook"), 90), 20) or fallback["openingHook"]
+            repaired["coreSound"] = self._sanitize_story_chapter(data.get("coreSound"), fallback["coreSound"])
+            repaired["comfortLoop"] = self._sanitize_story_chapter(data.get("comfortLoop"), fallback["comfortLoop"])
+            repaired["mainCharacters"] = self._sanitize_main_characters(data.get("mainCharacters"), fallback["mainCharacters"], evidence or {})
+            repaired["plotTwist"] = self._sanitize_plot_twist(data.get("plotTwist"), fallback["plotTwist"])
+            repaired["closing"] = self._sanitize_closing(data.get("closing"), fallback["closing"])
+            repaired["fallback"] = False
+
+        repaired["evidence"] = evidence or {}
         try:
-            report = PersonaReport(**data)
-            return self._fill_report_gaps(report, fallback)
-        except ValidationError:
-            repaired = {
-                "headline": str(data.get("headline") or fallback["headline"]),
-                "summary": str(data.get("summary") or fallback["summary"]),
-                "current_era": str(data.get("current_era") or fallback["current_era"]),
-                "core_identity": str(data.get("core_identity") or fallback["core_identity"]),
-                "listening_habits": str(data.get("listening_habits") or fallback["listening_habits"]),
-                "comfort_artists": str(data.get("comfort_artists") or fallback["comfort_artists"]),
-                "personality_tags": data.get("personality_tags") if isinstance(data.get("personality_tags"), list) else fallback["personality_tags"],
-                "report_sections": data.get("report_sections") if isinstance(data.get("report_sections"), list) else fallback["report_sections"],
-                "recommendation_explanations": data.get("recommendation_explanations") if isinstance(data.get("recommendation_explanations"), list) else [],
-                "subheadline": str(data.get("subheadline") or fallback["subheadline"]),
-                "core_identity_paragraph": str(data.get("core_identity_paragraph") or fallback["core_identity_paragraph"]),
-                "listener_type_cards": data.get("listener_type_cards") if isinstance(data.get("listener_type_cards"), list) else fallback["listener_type_cards"],
-                "taste_world_paragraph": str(data.get("taste_world_paragraph") or fallback["taste_world_paragraph"]),
-                "music_movement_paragraph": str(data.get("music_movement_paragraph") or fallback["music_movement_paragraph"]),
-                "current_vs_long_term_paragraph": str(data.get("current_vs_long_term_paragraph") or fallback["current_vs_long_term_paragraph"]),
-                "friendly_roast": str(data.get("friendly_roast") or fallback["friendly_roast"]),
-            }
             return self._fill_report_gaps(PersonaReport(**repaired), fallback)
+        except ValidationError:
+            return self.fallback_report(evidence or {})
 
     def _fill_report_gaps(self, report: PersonaReport, fallback: dict[str, Any]) -> PersonaReport:
+        report.personaReportSchemaVersion = 2
+        report.personaName = self._limit_words(report.personaName or fallback["personaName"], 8)
+        report.openingHook = self._limit_words(report.openingHook or fallback["openingHook"], 20)
+        report.coreSound = StoryChapter(**self._sanitize_story_chapter(report.coreSound.model_dump(), fallback["coreSound"]))
+        report.comfortLoop = StoryChapter(**self._sanitize_story_chapter(report.comfortLoop.model_dump(), fallback["comfortLoop"]))
+        report.mainCharacters = [MainCharacterStory(**item) for item in self._sanitize_main_characters([item.model_dump() for item in report.mainCharacters], fallback["mainCharacters"], report.evidence)]
+        report.plotTwist = PlotTwistStory(**self._sanitize_plot_twist(report.plotTwist.model_dump(), fallback["plotTwist"]))
+        report.closing = ClosingStory(**self._sanitize_closing(report.closing.model_dump(), fallback["closing"]))
         report.headline = report.headline or fallback["headline"]
         report.subheadline = report.subheadline or fallback["subheadline"]
         report.core_identity_paragraph = report.core_identity_paragraph or fallback["core_identity_paragraph"]
@@ -397,11 +524,134 @@ class OllamaService:
             report.report_sections = list(fallback["report_sections"])
         return report
 
+    def _has_v2_story_data(self, data: dict[str, Any]) -> bool:
+        return data.get("personaReportSchemaVersion") == 2 or any(
+            key in data
+            for key in ("personaName", "openingHook", "coreSound", "comfortLoop", "mainCharacters", "plotTwist", "closing")
+        )
+
+    def _sanitize_story_chapter(self, value: Any, fallback: dict[str, Any]) -> dict[str, str]:
+        source = value if isinstance(value, dict) else {}
+        return {
+            "headline": self._limit_words(self._clean_text(source.get("headline"), 90), 12) or str(fallback.get("headline") or ""),
+            "body": self._limit_words(self._clean_text(source.get("body"), 380), 55) or str(fallback.get("body") or ""),
+            "pullQuote": self._limit_words(self._clean_text(source.get("pullQuote"), 90), 14) or str(fallback.get("pullQuote") or ""),
+        }
+
+    def _sanitize_plot_twist(self, value: Any, fallback: dict[str, Any]) -> dict[str, str]:
+        source = value if isinstance(value, dict) else {}
+        return {
+            "headline": self._limit_words(self._clean_text(source.get("headline"), 90), 12) or str(fallback.get("headline") or ""),
+            "body": self._limit_words(self._clean_text(source.get("body"), 380), 55) or str(fallback.get("body") or ""),
+        }
+
+    def _sanitize_closing(self, value: Any, fallback: dict[str, Any]) -> dict[str, str]:
+        source = value if isinstance(value, dict) else {}
+        return {
+            "headline": self._limit_words(self._clean_text(source.get("headline"), 90), 12) or str(fallback.get("headline") or ""),
+            "body": self._limit_words(self._clean_text(source.get("body"), 460), 70) or str(fallback.get("body") or ""),
+            "finalLine": self._limit_words(self._clean_text(source.get("finalLine"), 100), 18) or str(fallback.get("finalLine") or ""),
+        }
+
+    def _sanitize_main_characters(self, value: Any, fallback: list[dict[str, str]], evidence: dict[str, Any]) -> list[dict[str, str]]:
+        allowed = self._artist_name_lookup(evidence)
+        fallback_by_name = {self._normalise_name(item.get("artistName")): item for item in fallback if isinstance(item, dict)}
+        source = value if isinstance(value, list) else []
+        result: list[dict[str, str]] = []
+        used: set[str] = set()
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            requested = self._normalise_name(item.get("artistName") or item.get("artist") or item.get("name"))
+            artist_name = allowed.get(requested)
+            if not artist_name:
+                continue
+            normalized_artist = self._normalise_name(artist_name)
+            if normalized_artist in used:
+                continue
+            fallback_item = fallback_by_name.get(normalized_artist, {})
+            result.append(
+                {
+                    "artistName": artist_name,
+                    "role": self._limit_words(self._clean_text(item.get("role"), 80), 8) or str(fallback_item.get("role") or "The anchor"),
+                    "line": self._limit_words(self._clean_text(item.get("line"), 120), 20) or str(fallback_item.get("line") or "A recurring name in the story."),
+                }
+            )
+            used.add(normalized_artist)
+            if len(result) >= 3:
+                break
+        for item in fallback:
+            if len(result) >= 3:
+                break
+            if not isinstance(item, dict):
+                continue
+            normalized_artist = self._normalise_name(item.get("artistName"))
+            if normalized_artist and normalized_artist not in used:
+                result.append(
+                    {
+                        "artistName": str(item.get("artistName") or ""),
+                        "role": str(item.get("role") or "The anchor"),
+                        "line": str(item.get("line") or "A recurring name in the story."),
+                    }
+                )
+                used.add(normalized_artist)
+        return result[:3]
+
+    def _sanitize_report_cards(self, value: list[Any], fallback: list[dict[str, str]]) -> list[dict[str, str]]:
+        result: list[dict[str, str]] = []
+        for item in value[:3]:
+            if not isinstance(item, dict):
+                continue
+            title = self._clean_text(item.get("title"), 90)
+            body = self._clean_text(item.get("body"), 320)
+            if title and body:
+                result.append({"title": title, "body": body})
+        return result or fallback
+
+    def _sanitize_personality_tags(self, value: list[Any], fallback: list[dict[str, str]]) -> list[dict[str, str]]:
+        result: list[dict[str, str]] = []
+        for item in value[:4]:
+            if not isinstance(item, dict):
+                continue
+            tag = self._clean_text(item.get("tag"), 50)
+            reason = self._clean_text(item.get("reason"), 180)
+            if tag and reason:
+                result.append({"tag": tag, "reason": reason})
+        return result or fallback
+
+    def _artist_name_lookup(self, evidence: dict[str, Any]) -> dict[str, str]:
+        top_artists = evidence.get("top_artists") if isinstance(evidence.get("top_artists"), list) else []
+        lookup: dict[str, str] = {}
+        for item in top_artists[:8]:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("artist") or "").strip()
+            normalized = self._normalise_name(name)
+            if name and normalized:
+                lookup[normalized] = name
+        return lookup
+
+    def _normalise_name(self, value: Any) -> str:
+        return re.sub(r"\s+", " ", str(value or "").strip()).casefold()
+
+    def _clean_text(self, value: Any, max_chars: int = 220) -> str:
+        if not isinstance(value, str):
+            return ""
+        clean = re.sub(r"\s+", " ", value).strip()
+        return clean[:max_chars].rstrip()
+
+    def _limit_words(self, value: str, max_words: int) -> str:
+        words = re.findall(r"\S+", value)
+        if len(words) <= max_words:
+            return value.strip()
+        return " ".join(words[:max_words]).rstrip(" ,;:") + "."
+
     def _fallback_report_data(self, evidence: dict[str, Any]) -> dict[str, Any]:
         coverage = evidence.get("coverage") if isinstance(evidence.get("coverage"), dict) else {}
         taste = evidence.get("taste_interpretation") if isinstance(evidence.get("taste_interpretation"), dict) else {}
         top_artists = evidence.get("top_artists") if isinstance(evidence.get("top_artists"), list) else []
         top_tracks = evidence.get("top_tracks") if isinstance(evidence.get("top_tracks"), list) else []
+        top_albums = evidence.get("favourite_albums") if isinstance(evidence.get("favourite_albums"), list) else []
         scores = evidence.get("scores") if isinstance(evidence.get("scores"), list) else []
         moods = evidence.get("mood_profile") if isinstance(evidence.get("mood_profile"), list) else []
         character = evidence.get("music_character") if isinstance(evidence.get("music_character"), dict) else {}
@@ -411,6 +661,7 @@ class OllamaService:
         modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
         artist_names = [str(item.get("artist")) for item in top_artists[:3] if isinstance(item, dict) and item.get("artist")]
         track_names = [str(item.get("title")) for item in top_tracks[:3] if isinstance(item, dict) and item.get("title")]
+        album_names = [str(item.get("album")) for item in top_albums[:3] if isinstance(item, dict) and item.get("album")]
         day_count = coverage.get("days_represented") or 0
         play_count = evidence.get("total_detected_plays") or coverage.get("history_items_returned") or coverage.get("dated_history_items") or 0
         earliest = coverage.get("earliest_detected_play") or "the earliest detected day"
@@ -425,6 +676,8 @@ class OllamaService:
         mainstream = self._score_by_name(scores, "Mainstream-Niche Estimate")
         top_artist_text = self._join_names(artist_names) or "the available top artists"
         top_track_text = self._join_names(track_names) or "the available recent tracks"
+        top_album = top_albums[0] if top_albums and isinstance(top_albums[0], dict) else {}
+        top_album_text = str(top_album.get("album") or (album_names[0] if album_names else "the most revisited album"))
         core_families = [str(item.get("name")) for item in taste.get("core_genre_families", []) if isinstance(item, dict) and item.get("name")]
         secondary_families = [str(item.get("name")) for item in taste.get("secondary_genre_families", []) if isinstance(item, dict) and item.get("name")]
         sonic_traits = [str(item) for item in taste.get("sonic_traits", [])[:6]]
@@ -483,6 +736,39 @@ class OllamaService:
             f"{top_artist_text} matter because they point toward a repeatable sound-world, not just a leaderboard. "
             f"{top_track_text} give the track-level surface, but the character read comes from how those signals connect."
         )
+        main_characters = self._fallback_main_characters(top_artists)
+        repeat_value = float(repeat.get("value") or 0)
+        discovery_value = float(discovery.get("value") or 0)
+        core_sound_body = (
+            f"The centre of the report lives around {sound_centre}. "
+            f"{trait_text.capitalize()} keep showing up as the texture, while {top_artist_text} give that world a recognizable cast."
+        )
+        comfort_body = (
+            f"Repeat score {repeat_value:.0f} and discovery score {discovery_value:.0f} suggest a listener who "
+            f"{'returns hard once a song earns trust' if repeat_value >= discovery_value else 'keeps one hand on novelty without losing the thread'}. "
+            f"{top_album_text} is the clearest album-shaped signal in the current data."
+        )
+        plot_headline = "Consistency Is The Twist"
+        plot_body = (
+            f"The profile does not need a fake surprise: {sound_centre} remains the main character. "
+            f"{side_colour.capitalize()} still add enough side-light to keep the report from feeling flat."
+        )
+        if comparison.get("has_contrast") and current_name:
+            plot_headline = "This Month Changes The Lighting"
+            plot_body = (
+                f"Long-term you read as {long_name}, while this month leans toward {current_name}. "
+                "That contrast is supported by the current period, so the story feels like a phase shift rather than a rewrite."
+            )
+        elif secondary_families:
+            plot_headline = "The Side Quest Has Receipts"
+            plot_body = (
+                f"The main centre stays close to {sound_centre}, but {self._join_names(secondary_families[:2])} keep appearing as secondary colour. "
+                "It is not random wandering; it is a smaller lane orbiting the same identity."
+            )
+        closing_body = (
+            f"{headline} is a listener built around {sound_centre}, with {top_artist_text} acting as anchors and "
+            f"{trait_text} shaping the atmosphere. The strongest read is not a leaderboard; it is a pattern of returns, side quests, and recognizable musical weather."
+        )
         mood_tags = [str(item.get("tag")) for item in moods[:2] if isinstance(item, dict) and item.get("tag")]
         profile_label = "Full-year taste profile" if full_year else "Current listening snapshot"
         listener_type_cards = [
@@ -505,6 +791,30 @@ class OllamaService:
             {"tag": "Sound-world read", "reason": f"The recurring sound colours include {self._join_names(sonic_traits[:3] or mood_tags) or 'mixed listening contexts'}."},
         ]
         return {
+            "personaReportSchemaVersion": 2,
+            "personaName": self._limit_words(headline, 8),
+            "openingHook": self._limit_words(f"Your headphones keep choosing {sound_centre}, then adding just enough drama around the edges.", 20),
+            "coreSound": {
+                "headline": self._limit_words(f"{sound_centre} Holds The Centre", 12),
+                "body": self._limit_words(core_sound_body, 55),
+                "pullQuote": self._limit_words(trait_text.capitalize(), 14),
+            },
+            "comfortLoop": {
+                "headline": "The Songs Earn Their Return",
+                "body": self._limit_words(comfort_body, 55),
+                "pullQuote": "Comfort, but with standards.",
+            },
+            "mainCharacters": main_characters,
+            "plotTwist": {
+                "headline": self._limit_words(plot_headline, 12),
+                "body": self._limit_words(plot_body, 55),
+            },
+            "closing": {
+                "headline": self._limit_words(f"{headline}, In The Credits", 12),
+                "body": self._limit_words(closing_body, 70),
+                "finalLine": "Roll the next song with intent.",
+            },
+            "fallback": True,
             "headline": headline,
             "subheadline": subheadline,
             "core_identity_paragraph": core_identity_paragraph,
@@ -521,6 +831,24 @@ class OllamaService:
             "personality_tags": personality_tags,
             "report_sections": [core_identity_paragraph, taste_world_paragraph, music_movement_paragraph, current_vs_long_term],
         }
+
+    def _fallback_main_characters(self, top_artists: list[Any]) -> list[dict[str, str]]:
+        roles = ["The emotional anchor", "The recurring atmosphere", "The reliable wildcard"]
+        result: list[dict[str, str]] = []
+        for index, item in enumerate(top_artists[:3]):
+            if not isinstance(item, dict) or not item.get("artist"):
+                continue
+            artist = str(item.get("artist"))
+            play_count = int(item.get("play_count") or 0)
+            unique_songs = int(item.get("unique_songs_played") or 0)
+            role = roles[index] if index < len(roles) else "The anchor"
+            metric_text = (
+                f"{play_count} detected plays across {unique_songs} songs."
+                if play_count and unique_songs
+                else "A recurring name in the listening pattern."
+            )
+            result.append({"artistName": artist, "role": role, "line": self._limit_words(metric_text, 20)})
+        return result
 
     def _movement_paragraph(
         self,
@@ -575,15 +903,19 @@ class OllamaService:
         return f"{', '.join(clean[:-1])}, and {clean[-1]}"
 
     def extract_json(self, raw: str) -> dict[str, Any]:
+        raw = str(raw or "").strip()
+        fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL | re.IGNORECASE)
+        if fence:
+            raw = fence.group(1).strip()
         try:
             data = json.loads(raw)
             return data if isinstance(data, dict) else {}
         except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            if not match:
-                return {}
-            try:
-                data = json.loads(match.group(0))
-                return data if isinstance(data, dict) else {}
-            except json.JSONDecodeError:
-                return {}
+            decoder = json.JSONDecoder()
+            for match in re.finditer(r"\{", raw):
+                try:
+                    data, _ = decoder.raw_decode(raw[match.start() :])
+                    return data if isinstance(data, dict) else {}
+                except json.JSONDecodeError:
+                    continue
+            return {}

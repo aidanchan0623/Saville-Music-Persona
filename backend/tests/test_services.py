@@ -38,6 +38,39 @@ def test_partial_llm_report_is_filled_from_evidence() -> None:
     assert report.listener_type_cards
 
 
+def test_v2_persona_report_json_is_sanitized_and_artist_limited() -> None:
+    service = OllamaService(Settings())
+    report = service.parse_report(
+        """```json
+        {
+          "personaReportSchemaVersion": 2,
+          "personaName": "The Dramatic Alternative Night Walker With Too Many Words",
+          "openingHook": "Your headphones enter the room wearing eyeliner and carrying a suspiciously emotional guitar.",
+          "coreSound": {"headline": "Alternative guitars hold the centre", "body": "This is a focused chapter about supplied evidence, with enough words to feel written but not enough to become a dashboard essay.", "pullQuote": "Cathartic and guitar-driven"},
+          "comfortLoop": {"headline": "The returns matter", "body": "Repeat behaviour is interpreted here without inventing new numbers or pretending the model calculated anything itself.", "pullQuote": "Comfort with standards"},
+          "mainCharacters": [
+            {"artistName": "Bring Me The Horizon", "role": "The emotional anchor", "line": "They hold the loud centre."},
+            {"artistName": "Imaginary Artist", "role": "Fake", "line": "Should not survive."},
+            {"artistName": "Bring Me The Horizon", "role": "Duplicate", "line": "Should not duplicate."},
+            {"artistName": "My Chemical Romance", "role": "The theatre kid", "line": "They keep the drama legible."}
+          ],
+          "plotTwist": {"headline": "Consistency is the twist", "body": "The model reports stability because the supplied evidence does not justify a fake surprise."},
+          "closing": {"headline": "Closing credits", "body": "The listener is described through supplied sound families and anchor artists, not through invented psychology or unsupported biography.", "finalLine": "Roll the next song with intent."}
+        }
+        ```""",
+        {
+            "headline_persona": "Fallback",
+            "top_artists": [{"artist": "Bring Me The Horizon"}, {"artist": "My Chemical Romance"}],
+        },
+    )
+    assert report.personaReportSchemaVersion == 2
+    assert len(report.personaName.split()) <= 8
+    assert [item.artistName for item in report.mainCharacters[:2]] == ["Bring Me The Horizon", "My Chemical Romance"]
+    assert all(item.artistName != "Imaginary Artist" for item in report.mainCharacters)
+    assert report.coreSound.headline
+    assert report.closing.finalLine
+
+
 def test_recommendation_duplicate_removal() -> None:
     candidates = [
         {"videoId": "1", "title": "Song (Official Video)", "artists": [{"name": "Artist"}]},
