@@ -98,10 +98,16 @@ def test_ai_prompt_receives_structured_interpretation_data() -> None:
         today=date(2026, 7, 7),
     )
     analysis = build_analysis(normalised)
-    prompt = OllamaService(Settings())._build_report_prompt(analysis["report_profile"], "serious")
-    assert "primary_character" in prompt
-    assert "top_sound_clusters" in prompt
-    assert "deterministic characters" in prompt
+    evidence = {
+        "personality": {"id": "forming", "title": analysis["report_profile"]["headline_persona"]},
+        "strongestSignals": analysis["report_profile"].get("mood_profile", []),
+        "knownArtists": [item["artist"] for item in analysis["top_artists"]],
+        "knownGenres": analysis["report_profile"].get("genre_profile", []),
+    }
+    prompt = OllamaService(Settings())._build_persona_language_prompt(evidence, "serious")
+    assert "CALCULATED_EVIDENCE_JSON" in prompt
+    assert "knownArtists" in prompt
+    assert "Analytics already chose every fact" in prompt
     assert "r&b / soul" not in prompt
 
 

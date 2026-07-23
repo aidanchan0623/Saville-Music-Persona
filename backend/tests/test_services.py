@@ -3,188 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.config import Settings
-from app.api.routes import persona_report_cache_key, persona_report_fingerprint, report_top_artists, report_top_tracks
 from app.analysis.thumbnails import best_thumbnail_url
 from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
-from app.services.ollama_service import OllamaService
 from app.services.recommendations import dedupe_candidates
 from app.services.ytmusic_service import YTMusicService, friendly_auth_error, normalise_artist_name
-
-
-def test_malformed_llm_json_is_repaired() -> None:
-    service = OllamaService(Settings())
-    report = service.parse_report('noise {"headline":"Hi","summary":123} end', {"headline_persona": "Fallback"})
-    assert report.headline == "Hi"
-    assert report.summary
-    assert report.listener_type_cards
-
-
-def test_partial_llm_report_is_filled_from_evidence() -> None:
-    service = OllamaService(Settings())
-    report = service.parse_report(
-        '{"headline":"Only headline"}',
-        {
-            "headline_persona": "Fallback",
-            "coverage": {"days_represented": 7, "history_items_returned": 200, "earliest_detected_play": "2026-06-30", "latest_detected_play": "2026-07-06"},
-            "top_artists": [{"artist": "Bring Me The Horizon"}, {"artist": "My Chemical Romance"}],
-            "top_tracks": [{"title": "Drown"}],
-            "scores": [{"name": "Taste confidence", "label": "useful but partial"}],
-            "mood_profile": [{"tag": "late-night"}],
-        },
-    )
-    assert report.headline == "Only headline"
-    assert report.core_identity_paragraph
-    assert "Bring Me The Horizon" in report.comfort_artists
-    assert report.personality_tags
-    assert report.listener_type_cards
-
-
-def test_v2_persona_report_json_is_sanitized_and_artist_limited() -> None:
-    service = OllamaService(Settings())
-    report = service.parse_report(
-        """```json
-        {
-          "personaReportSchemaVersion": 2,
-          "personaName": "The Dramatic Alternative Night Walker With Too Many Words",
-          "openingHook": "Your headphones enter the room wearing eyeliner and carrying a suspiciously emotional guitar.",
-          "coreSound": {"headline": "Alternative guitars hold the centre", "body": "This is a focused chapter about supplied evidence, with enough words to feel written but not enough to become a dashboard essay.", "pullQuote": "Cathartic and guitar-driven"},
-          "comfortLoop": {"headline": "The returns matter", "body": "Repeat behaviour is interpreted here without inventing new numbers or pretending the model calculated anything itself.", "pullQuote": "Comfort with standards"},
-          "mainCharacters": [
-            {"artistName": "Bring Me The Horizon", "role": "The emotional anchor", "line": "They hold the loud centre."},
-            {"artistName": "Imaginary Artist", "role": "Fake", "line": "Should not survive."},
-            {"artistName": "Bring Me The Horizon", "role": "Duplicate", "line": "Should not duplicate."},
-            {"artistName": "My Chemical Romance", "role": "The theatre kid", "line": "They keep the drama legible."}
-          ],
-          "plotTwist": {"headline": "Consistency is the twist", "body": "The model reports stability because the supplied evidence does not justify a fake surprise."},
-          "closing": {"headline": "Closing credits", "body": "The listener is described through supplied sound families and anchor artists, not through invented psychology or unsupported biography.", "finalLine": "Roll the next song with intent."}
-        }
-        ```""",
-        {
-            "headline_persona": "Fallback",
-            "top_artists": [{"artist": "Bring Me The Horizon"}, {"artist": "My Chemical Romance"}],
-        },
-    )
-    assert report.personaReportSchemaVersion == 3
-    assert len(report.personaName.split()) <= 8
-    assert [item.artistName for item in report.mainCharacters[:2]] == ["Bring Me The Horizon", "My Chemical Romance"]
-    assert all(item.artistName != "Imaginary Artist" for item in report.mainCharacters)
-    assert report.coreSound.headline
-    assert report.closing.finalLine
-
-
-def test_report_generation_marks_fresh_gemma_source() -> None:
-    service = FakeOllamaReportService(
-        response={
-            "response": """
-            {
-              "personaReportSchemaVersion": 2,
-              "personaName": "Alternative Night Driver",
-              "openingHook": "Your headphones keep choosing stormy guitars with a bright pop exit sign.",
-              "coreSound": {"headline": "Guitars Hold The Centre", "body": "Alternative rock is the main lane, with pop edges keeping the report readable and direct.", "pullQuote": "Stormy, but catchy"},
-              "comfortLoop": {"headline": "The Returns Matter", "body": "Repeat behaviour points to trusted songs earning their place instead of random looping.", "pullQuote": "Comfort with standards"},
-              "mainCharacters": [{"artistName": "Bring Me The Horizon", "role": "The anchor", "line": "They hold the loud centre."}],
-              "plotTwist": {"headline": "Consistency Is The Twist", "body": "The supplied evidence supports steadiness more than a fake reinvention."},
-              "closing": {"headline": "Closing Credits", "body": "The profile closes around guitars, repeatable anchors, and a taste for drama that still wants hooks.", "finalLine": "Roll the next song with intent."}
-            }
-            """
-        }
-    )
-    report = service.generate_report({"top_artists": [{"artist": "Bring Me The Horizon"}]}, "serious")
-    assert report.generationSource == "gemma"
-    assert report.fallback is False
-    assert report.fallbackReason is None
-    assert report.model == "gemma3:4b"
-    assert report.durationMs is not None
-    assert service.generate_calls == 1
-
-
-def test_compact_story_seed_uses_canonical_headlines_and_gemma_prose() -> None:
-    service = OllamaService(Settings())
-    evidence = {
-        "identity": {"characterTitle": "The Atmospheric Soundtrack Curator"},
-        "headline_persona": "The Atmospheric Soundtrack Curator",
-        "top_artists": [{"artist": "Artist A", "play_count": 7, "unique_songs_played": 3}],
-    }
-    report = service.parse_report(
-        '{"s":["Your soundtrack keeps its favourite weather close.","*Atmosphere* leads while trusted hooks keep the centre intact.","Repeated songs earn their place without closing every door.","The current month adds contrast without replacing the larger pattern.","Your credits roll on continuity, curiosity, and a clear sonic centre.","Keep the next song intentional."]}',
-        evidence,
-    )
-    assert report.fallback is False
-    assert report.personaName == "The Atmospheric Soundtrack Curator"
-    assert report.coreSound.body.startswith("Atmosphere leads")
-    assert report.closing.finalLine == "Keep the next song intentional."
-
-
-def test_report_generation_marks_ollama_unavailable_fallback() -> None:
-    service = FakeOllamaReportService(status={"reachable": False, "model_installed": False, "model": "gemma3:4b", "message": "offline"})
-    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
-    assert report.generationSource == "fallback"
-    assert report.fallback is True
-    assert report.fallbackReason == "ollama_unavailable"
-    assert service.generate_calls == 0
-
-
-def test_report_generation_marks_malformed_response_fallback() -> None:
-    service = FakeOllamaReportService(response={"response": "not json"})
-    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
-    assert report.generationSource == "fallback"
-    assert report.fallbackReason == "invalid_or_missing_story_json"
-    assert report.personaReportSchemaVersion == 3
-
-
-def test_report_generation_marks_timeout_fallback() -> None:
-    service = FakeOllamaReportService(error=TimeoutError("too slow"))
-    report = service.generate_report({"headline_persona": "Fallback"}, "serious")
-    assert report.generationSource == "fallback"
-    assert report.fallbackReason == "ollama_timeout"
-
-
-def test_report_cache_key_uses_source_schema_period_and_fingerprint() -> None:
-    profile = {
-        "total_detected_plays": 12,
-        "top_artists": [{"artist": "Artist A", "play_count": 4}],
-        "top_tracks": [{"title": "Song A", "artist": "Artist A", "play_count": 3}],
-    }
-    changed = {
-        "total_detected_plays": 13,
-        "top_artists": [{"artist": "Artist A", "play_count": 4}],
-        "top_tracks": [{"title": "Song A", "artist": "Artist A", "play_count": 3}],
-    }
-    fingerprint = persona_report_fingerprint(profile)
-    assert fingerprint != persona_report_fingerprint(changed)
-    key = persona_report_cache_key("youtube", "serious", fingerprint)
-    assert "youtube" in key
-    assert "rolling_year" in key
-    assert "v3" in key
-    assert "calc1" in key
-    assert "prompt4" in key
-    assert fingerprint in key
-
-
-def test_report_fingerprint_changes_with_canonical_identity_and_musical_age() -> None:
-    profile = {
-        "identity": {"characterTitle": "The Atmospheric Soundtrack Curator"},
-        "musical_age": {"age": 29, "calculationVersion": 1},
-    }
-    changed_identity = {**profile, "identity": {"characterTitle": "The Reflective Album Curator"}}
-    changed_age = {**profile, "musical_age": {"age": 30, "calculationVersion": 1}}
-    assert persona_report_fingerprint(profile) != persona_report_fingerprint(changed_identity)
-    assert persona_report_fingerprint(profile) != persona_report_fingerprint(changed_age)
-
-
-def test_report_rankings_use_canonical_period_counts() -> None:
-    artists = report_top_artists(
-        [{"artist": "Artist A", "play_count": 99, "unique_songs_played": 12, "why_it_matters": "Anchor"}],
-        [{"name": "Artist A", "detectedPlays": 7, "uniqueSongs": 3, "imageUrl": "https://img.example/a.jpg"}],
-    )
-    tracks = report_top_tracks(
-        [{"title": "Song A", "artist": "Artist A", "play_count": 44, "album": "Album A"}],
-        [{"title": "Song A", "artist": "Artist A", "album": "Album A", "detectedPlays": 5, "imageUrl": "https://img.example/song.jpg"}],
-    )
-    assert artists[0]["play_count"] == 7
-    assert artists[0]["unique_songs_played"] == 3
-    assert artists[0]["why_it_matters"] == "Anchor"
-    assert tracks[0]["play_count"] == 5
 
 
 def test_recommendation_duplicate_removal() -> None:
@@ -396,15 +218,15 @@ def test_artist_image_enrichment_keeps_list_on_upstream_exception() -> None:
 
 
 def test_artist_name_matching_handles_unicode_and_topic_suffix() -> None:
-    assert normalise_artist_name("Beyoncé - Topic") == normalise_artist_name("Beyonce")
+    assert normalise_artist_name("Beyonc\u00e9 - Topic") == normalise_artist_name("Beyonce")
     fake = FakeYTMusic(
-        search_results={"Beyoncé - Topic": [{"artist": "Beyonce", "browseId": "UC-b"}]},
+        search_results={"Beyonc\u00e9 - Topic": [{"artist": "Beyonce", "browseId": "UC-b"}]},
         artist_pages={"UC-b": {"artist": "Beyonce", "browseId": "UC-b", "thumbnails": [{"url": "https://img.example/beyonce.jpg", "width": 400, "height": 400}]}},
     )
     cache: dict[str, object] = {}
-    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Beyoncé - Topic")]}, cache)
+    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Beyonc\u00e9 - Topic")]}, cache)
     assert stats["added"] == 1
-    assert cache_record(cache, "Beyoncé - Topic", "UC-b")["url"] == "https://img.example/beyonce.jpg"
+    assert cache_record(cache, "Beyonc\u00e9 - Topic", "UC-b")["url"] == "https://img.example/beyonce.jpg"
 
 
 class FakeYTMusic:
@@ -442,31 +264,6 @@ class FakeYTMusic:
         if payload is None:
             raise RuntimeError("album page failed")
         return payload
-
-
-class FakeOllamaReportService(OllamaService):
-    def __init__(
-        self,
-        response: dict[str, object] | None = None,
-        status: dict[str, object] | None = None,
-        error: Exception | None = None,
-    ) -> None:
-        super().__init__(Settings())
-        self.response = response or {"response": "{}"}
-        self.status_payload = status or {"reachable": True, "model_installed": True, "model": "gemma3:4b", "message": "ready"}
-        self.error = error
-        self.generate_calls = 0
-
-    def status(self) -> dict[str, object]:
-        return self.status_payload
-
-    def _request_json(self, method: str, path: str, payload: dict[str, object] | None = None, timeout: float = 10.0) -> dict[str, object]:
-        if path == "/api/generate":
-            self.generate_calls += 1
-            if self.error:
-                raise self.error
-            return self.response
-        return self.status_payload
 
 
 def fake_service(fake: FakeYTMusic) -> YTMusicService:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FriendlyError(BaseModel):
@@ -259,6 +259,122 @@ class InsightsResponse(BaseModel):
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
     source: Literal["youtube", "spotify"] = "youtube"
+    period: Literal["rolling_year"] = "rolling_year"
+
+
+class StrictReportModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ReportPeriod(StrictReportModel):
+    key: str
+    label: str
+    startDate: str
+    endDate: str
+    timezone: str
+
+
+class ReportPersonality(StrictReportModel):
+    id: str
+    title: str
+    shortDescription: str
+    roastDescription: str
+    confidence: float = Field(ge=0, le=1)
+    evidenceKeys: list[str]
+    generationSource: Literal["gemma", "cache-gemma", "fallback"]
+
+
+class ReportGenre(StrictReportModel):
+    key: str
+    label: str
+    percentage: float = Field(ge=0, le=100)
+    detectedPlays: int = Field(ge=0)
+
+
+class ReportListeningWorld(StrictReportModel):
+    detectedMinutes: float = Field(ge=0)
+    formattedTime: str
+    durationCoverage: float = Field(ge=0, le=1)
+    genreCoverage: float = Field(ge=0, le=1)
+    genres: list[ReportGenre]
+    interpretation: str
+
+
+class ReportMusicalAge(StrictReportModel):
+    age: int
+    likelyMin: int
+    likelyMax: int
+    title: str
+    confidence: float = Field(ge=0, le=1)
+    confidenceLabel: str
+    explanation: str
+    strongestFactors: list[str]
+    sourcePeriod: ReportPeriod
+
+
+class ReportTopSong(StrictReportModel):
+    rank: int = Field(ge=1, le=5)
+    albumImageUrl: str | None = None
+    trackImageUrl: str | None = None
+    title: str
+    artist: str
+    album: str | None = None
+    detectedPlays: int = Field(ge=0)
+    detectedMinutes: float = Field(ge=0)
+    formattedMinutes: str
+
+
+class ReportTopArtist(StrictReportModel):
+    rank: int = Field(ge=1, le=5)
+    artistImageUrl: str | None = None
+    name: str
+    detectedPlays: int = Field(ge=0)
+    uniqueSongs: int = Field(ge=0)
+
+
+class ReportTopFive(StrictReportModel):
+    songs: list[ReportTopSong]
+    artists: list[ReportTopArtist]
+
+
+class ReportSummary(StrictReportModel):
+    headline: str
+    body: str
+    finalLine: str
+    generationSource: Literal["gemma", "cache-gemma", "fallback"]
+
+
+class ReportBackgroundAlbum(StrictReportModel):
+    albumBrowseId: str | None = None
+    albumTitle: str
+    artistName: str
+    albumImageUrl: str
+    detectedPlays: int = Field(ge=0)
+
+
+class ReportGeneration(StrictReportModel):
+    source: Literal["gemma", "cache-gemma", "fallback"]
+    model: str
+    promptVersion: int
+    generatedAt: str
+    fallbackReason: str | None = None
+    durationMs: int | None = None
+
+
+class PersonaReportResponse(StrictReportModel):
+    schemaVersion: Literal[5] = 5
+    source: Literal["youtube", "spotify"]
+    mode: Literal["serious", "playful", "roast"]
+    period: ReportPeriod
+    personality: ReportPersonality
+    listeningWorld: ReportListeningWorld
+    musicalAge: ReportMusicalAge
+    topFive: ReportTopFive
+    summary: ReportSummary
+    backgroundAlbums: list[ReportBackgroundAlbum]
+    generation: ReportGeneration
+    analyticsFingerprint: str
+    cacheKey: str
 
 
 class PlaylistCreateRequest(BaseModel):

@@ -8,7 +8,7 @@ No OpenAI, Gemini, or paid cloud API key is required. Credentials, cached histor
 
 Screenshots are intentionally left out until you run the app against your own private data. The dashboard includes:
 
-- Overview hero and analysis coverage card
+- Lightweight Overview hero with timeframe controls, Most Active Sound, analysis coverage, and one Persona Report entry point
 - Detected Listening Time overview
 - Monthly and rolling-year Top 10 songs and artists
 - Consolidated Insights dashboard for listening profile, scores, rhythm and rankings
@@ -16,7 +16,12 @@ Screenshots are intentionally left out until you run the app against your own pr
 - Compact listening score gauges with transparent formulas
 - Weekly/monthly detected-minutes rhythm toggle
 - Top artists, repeated songs and recent daily intensity
-- Music Character persona report modes
+- Cinematic five-chapter Persona Report controlled by natural scrolling
+- Deterministic Music Character classification from the canonical personality registry
+- Period-specific detected listening time, genre shares, and Top 5 rankings
+- Deterministic Musical Age with its rolling-year source period shown explicitly
+- Gemma-written descriptions and final roast with complete deterministic fallbacks
+- One persistent decorative album-dome background built from real ranked album covers
 - Evidence-driven recommendations
 - Connect YouTube Music settings page
 - Optional Spotify login/profile source switcher
@@ -173,6 +178,14 @@ Interpretation labels are deterministic:
 Taste DNA Explorer uses detected plays, curated artist genre mappings, and period filters. Node size reflects listening share. Cluster details show top contributing artists, songs, canonical genres, detected listening minutes, sonic traits, and confidence.
 
 The comparison lens only makes growth/decline claims when the selected period has enough detected plays. Taste DNA is interpretive music analysis, not psychology; it does not diagnose moods, personality, or life circumstances.
+
+## Persona Report
+
+Persona Report is a continuous five-chapter scroll story: Musical Personality, Your Listening World, Musical Age, Top Artists and Songs, and Final Roast. Desktop uses restrained sticky zoom and lateral transitions while tablet and mobile progressively simplify to normal vertical flow. Reduced-motion mode removes the pans, parallax, and ambient album movement without hiding any content.
+
+All report facts are deterministic. The Music Character registry selects the personality, the Musical Age engine selects the age, and the existing period services provide detected minutes, genre coverage, Top 5 songs, Top 5 artists, and background albums. Gemma only writes the short personality description, Musical Age explanation, and final roast. Invalid, unavailable, or stale model output falls back to deterministic language.
+
+The report uses one versioned schema and cache fingerprint that includes the music source, rolling-year report period, analytics data, report schema, prompt, Musical Age calculation, personality classifier, and configured Ollama model. Overview deliberately does not duplicate the report journey.
 
 ## Privacy and security
 

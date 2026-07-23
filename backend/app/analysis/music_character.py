@@ -9,6 +9,7 @@ from app.analysis.scoring import build_analysis
 
 
 THRESHOLD = 20.0
+MUSIC_CHARACTER_CLASSIFIER_VERSION = 1
 MODIFIER_IDS = {"comfort_loop_specialist", "album_loyalist", "single_song_prisoner", "genre_tourist", "one_artist_cult_member"}
 
 
@@ -72,6 +73,7 @@ def character_payload(
         "key_scores": signals["scores"],
         "sample_warning": sample_warning,
         "deterministic": True,
+        "classifier_version": MUSIC_CHARACTER_CLASSIFIER_VERSION,
         "methodology": "Music Character is selected by deterministic rule scores from local listening data. Gemma can rewrite the wording, but it does not choose the character.",
     }
 

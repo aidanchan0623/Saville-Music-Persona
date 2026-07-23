@@ -1,5 +1,5 @@
 import { Disc3, Music2, UserRound } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./Artwork.css";
 
 export type ArtworkProps = {
@@ -16,12 +16,15 @@ export type ArtworkProps = {
 export function Artwork({ src, alt, kind, size = "md", priority = false, className = "", fallbackLabel, shape }: ArtworkProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const previousSrcRef = useRef(src);
   const usableSrc = src && src !== failedSrc ? src : null;
   const loading = Boolean(usableSrc && loadedSrc !== usableSrc);
   const Icon = kind === "artist" ? UserRound : kind === "album" ? Disc3 : Music2;
   const resolvedShape = shape ?? (kind === "artist" ? "circle" : "rounded");
 
   useEffect(() => {
+    if (previousSrcRef.current === src) return;
+    previousSrcRef.current = src;
     setFailedSrc(null);
     setLoadedSrc(null);
   }, [src]);

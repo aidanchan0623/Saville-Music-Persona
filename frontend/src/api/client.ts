@@ -144,7 +144,7 @@ export const api = {
     }),
   latestReport: (source: MusicSource = "youtube") => request<PersonaReport>(`/report/latest?${paramsWithSource(source).toString()}`),
   generateReport: (mode: "serious" | "playful" | "roast", source: MusicSource = "youtube") =>
-    request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source }) }),
+    request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source, period: "rolling_year" }) }),
   recommendations: () => request<Recommendation[]>("/recommendations"),
   generateRecommendations: () => request<Recommendation[]>("/recommendations/generate", { method: "POST", body: "{}" }),
   createPlaylist: (title: string) =>

@@ -143,6 +143,64 @@ a:focus-visible {
   line-height: 1.55;
 }
 
+.overview-period-control {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.overview-period-control__buttons {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.overview-period-button,
+.overview-period-select {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(18, 18, 21, 0.82);
+  color: #c8c5cf;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.78rem;
+}
+
+.overview-period-button--active {
+  border-color: rgba(236, 72, 153, 0.62);
+  background: rgba(236, 72, 153, 0.14);
+  color: #fff;
+}
+
+.overview-period-control__label,
+.overview-period-status {
+  color: #a9a5b1;
+  font-size: 0.78rem;
+}
+
+.overview-period-status--error { color: #fca5a5; }
+
+.overview-coverage-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-block: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.overview-coverage-strip > div {
+  min-width: 0;
+  padding: 1rem 1.2rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.overview-coverage-strip > div:last-child { border-right: 0; }
+.overview-coverage-strip span { display: block; color: #8f8b98; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.overview-coverage-strip strong { display: block; margin-top: 0.28rem; color: #f7f6f8; font-size: 0.95rem; overflow-wrap: anywhere; }
+
+@media (max-width: 720px) {
+  .overview-coverage-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .overview-coverage-strip > div:nth-child(2) { border-right: 0; }
+}
+
 @media (max-width: 767px) {
   .overview-hero-sound {
     width: 100%;

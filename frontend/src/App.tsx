@@ -93,16 +93,18 @@ export default function App() {
     const setIfCurrent = <T,>(setter: (value: T) => void) => (value: T) => {
       if (isCurrentRequest()) setter(value);
     };
+    setReport(null);
+    void api.latestReport(activeSource)
+      .then(setIfCurrent(setReport))
+      .catch(() => { if (isCurrentRequest()) setReport(null); });
     const nextOverview = await api.overview("this_month", null, activeSource);
     if (!isCurrentRequest()) return;
     setOverview(nextOverview);
     setMessage(null);
     setTracks([]);
     setArtists([]);
-    setReport(null);
     void api.topTracks(activeSource).then(setIfCurrent(setTracks)).catch(() => { if (isCurrentRequest()) setTracks([]); });
     void api.topArtists(activeSource).then(setIfCurrent(setArtists)).catch(() => { if (isCurrentRequest()) setArtists([]); });
-    void api.latestReport(activeSource).then(setIfCurrent(setReport)).catch(() => { if (isCurrentRequest()) setReport(null); });
     if (activeSource === "youtube") {
       try {
         const nextRecommendations = await api.recommendations();
@@ -284,8 +286,6 @@ export default function App() {
             useDemo={useDemo}
             onRefresh={refresh}
             onOpenSettings={() => navigate("settings")}
-            onOpenTop10={() => navigate("top10")}
-            onOpenInsights={() => navigate("insights")}
             onOpenReport={() => navigate("report")}
             source={source}
             titleAnimationKey={titleAnimationKey}
@@ -296,7 +296,7 @@ export default function App() {
       case "insights":
         return <InsightsPage source={source} titleAnimationKey={titleAnimationKey} onOpenTop10={() => navigate("top10")} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} topTracks={tracks} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
+        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
         return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} titleAnimationKey={titleAnimationKey} />;
       case "settings":

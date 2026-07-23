@@ -13,7 +13,7 @@ from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
 from app.analysis.insights import insights_payload
 from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
-from app.analysis.music_character import character_payload
+from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.normalizer import normalise_collection
 from app.analysis.overview import (
@@ -37,6 +37,7 @@ from app.analysis.periods import (
     top_payload,
 )
 from app.analysis.scoring import build_analysis
+from app.analysis.persona_report import build_persona_report_evidence, compose_persona_report
 from app.analysis.spotify_adapter import SPOTIFY_LIMITATION_NOTE, spotify_raw_to_collection
 from app.config import settings
 from app.database.repository import JsonRepository
@@ -48,6 +49,7 @@ from app.schemas.responses import (
     PlaylistCreateResponse,
     PrerequisiteItem,
     PrerequisitesResponse,
+    PersonaReportResponse,
     RefreshRequest,
     RefreshResponse,
     ReportRequest,
@@ -66,8 +68,8 @@ ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 
-PERSONA_REPORT_SCHEMA_VERSION = 3
-PERSONA_REPORT_PROMPT_VERSION = 4
+PERSONA_REPORT_SCHEMA_VERSION = 5
+PERSONA_REPORT_PROMPT_VERSION = 5
 PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
@@ -87,55 +89,7 @@ SPOTIFY_CACHE_KEYS = [
 
 
 def persona_report_fingerprint(profile: dict[str, Any]) -> str:
-    compact = {
-        "coverage": profile.get("coverage"),
-        "total_detected_plays": profile.get("total_detected_plays"),
-        "unique_tracks": profile.get("unique_tracks"),
-        "unique_artists": profile.get("unique_artists"),
-        "top_artists": [
-            {
-                "artist": item.get("artist"),
-                "play_count": item.get("play_count"),
-                "unique_songs_played": item.get("unique_songs_played"),
-            }
-            for item in profile.get("top_artists", [])
-            if isinstance(item, dict)
-        ],
-        "top_tracks": [
-            {
-                "title": item.get("title"),
-                "artist": item.get("artist"),
-                "play_count": item.get("play_count"),
-            }
-            for item in profile.get("top_tracks", [])
-            if isinstance(item, dict)
-        ],
-        "favourite_albums": [
-            {
-                "album": item.get("album"),
-                "artist": item.get("artist"),
-                "album_id": item.get("album_id"),
-                "plays": item.get("plays"),
-                "unique_songs": item.get("unique_songs"),
-            }
-            for item in profile.get("favourite_albums", [])
-            if isinstance(item, dict)
-        ],
-        "music_character": profile.get("music_character"),
-        "current_month_character": profile.get("current_month_character"),
-        "identity": profile.get("identity"),
-        "musical_age": profile.get("musical_age"),
-        "top_five": profile.get("top_five"),
-        "scores": [
-            {
-                "key": item.get("key"),
-                "value": item.get("value"),
-                "label": item.get("label"),
-            }
-            for item in profile.get("scores", [])
-            if isinstance(item, dict)
-        ],
-    }
+    compact = {key: value for key, value in profile.items() if key != "languageEvidence"}
     payload = json.dumps(compact, sort_keys=True, ensure_ascii=True, default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 
@@ -144,46 +98,14 @@ def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str)
     model_fingerprint = hashlib.sha256(settings.ollama_model.encode("utf-8")).hexdigest()[:8]
     return (
         f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:"
-        f"calc{MUSICAL_AGE_CALCULATION_VERSION}:prompt{PERSONA_REPORT_PROMPT_VERSION}:"
+        f"calc{MUSICAL_AGE_CALCULATION_VERSION}:classifier{MUSIC_CHARACTER_CLASSIFIER_VERSION}:"
+        f"prompt{PERSONA_REPORT_PROMPT_VERSION}:"
         f"model{model_fingerprint}:{analytics_fingerprint}:{mode}"
     )
 
 
 def persona_report_pointer_key(source: str) -> str:
     return f"persona_report_pointer:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}"
-
-
-def annotate_persona_report_payload(
-    payload: dict[str, Any],
-    *,
-    source: str,
-    mode: str,
-    generated_at: str,
-    analytics_fingerprint: str,
-    report_cache_key: str,
-) -> dict[str, Any]:
-    payload["personaReportSchemaVersion"] = PERSONA_REPORT_SCHEMA_VERSION
-    payload["schemaVersion"] = PERSONA_REPORT_SCHEMA_VERSION
-    payload["source"] = source
-    payload["mode"] = mode
-    payload["generated_at"] = generated_at
-    payload["generatedAt"] = generated_at
-    payload["analyticsFingerprint"] = analytics_fingerprint
-    payload["cacheKey"] = report_cache_key
-    payload.setdefault("generationSource", "fallback" if payload.get("fallback") else "gemma")
-    payload.setdefault("fallbackReason", None if not payload.get("fallback") else "deterministic_fallback")
-    return payload
-
-
-def log_persona_report_payload(payload: dict[str, Any]) -> None:
-    reason = f" reason={payload.get('fallbackReason')}" if payload.get("fallbackReason") else ""
-    print(
-        f"[persona] source={payload.get('generationSource')} model={payload.get('model') or settings.ollama_model} "
-        f"schema={payload.get('schemaVersion') or payload.get('personaReportSchemaVersion')} "
-        f"duration_ms={payload.get('durationMs') or 0}{reason}",
-        flush=True,
-    )
-
 
 def require_cache(key: str) -> Any:
     value = repo.load_json(key)
@@ -880,174 +802,30 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
 
 def report_profile_with_characters(source: str | None = "youtube") -> dict[str, Any]:
     resolved_source = normalise_source(source)
-    if resolved_source == "youtube":
-        normalised = require_cache("normalised")
-        analysis = require_cache("analysis")
-    else:
-        normalised = require_source_cache("normalised", resolved_source)
-        analysis = require_source_cache("analysis", resolved_source)
-    profile = dict(analysis["report_profile"])
-    canonical = build_overview_response(normalised, PERSONA_REPORT_PERIOD, timezone_name=settings.local_timezone)
-    rolling_character = character_payload(normalised, "rolling_year", timezone_name=settings.local_timezone)
-    current_character = character_payload(normalised, "this_month", timezone_name=settings.local_timezone)
-    profile["music_character"] = rolling_character
-    profile["current_month_character"] = current_character
-    profile["current_vs_long_term"] = character_comparison(rolling_character, current_character)
-    profile["plain_language_scores"] = plain_language_scores(profile.get("scores", []))
-    profile["listener_axis"] = listener_axis(profile, rolling_character)
-    profile["album_or_track_behavior"] = album_or_track_behavior(rolling_character)
-    profile["identity"] = canonical["identity"]
-    profile["musical_age"] = canonical["musicalAge"]
-    profile["top_five"] = canonical["topFive"]
-    profile["selected_period"] = canonical["selectedPeriod"]
-    profile["coverage"] = canonical["overview"]["coverage"]
-    profile["taste_interpretation"] = canonical["overview"]["taste_interpretation"]
-    profile["total_detected_plays"] = canonical["overview"]["total_detected_plays"]
-    profile["top_artists"] = report_top_artists(profile.get("top_artists"), canonical["topFive"]["artists"])
-    profile["top_tracks"] = report_top_tracks(profile.get("top_tracks"), canonical["topFive"]["songs"])
-    profile["headline_persona"] = canonical["identity"]["characterTitle"]
-    profile["overview_schema_version"] = OVERVIEW_SCHEMA_VERSION
-    try:
-        profile["favourite_albums"] = albums_payload(normalised, "rolling_year", None, settings.local_timezone, limit=20).get("albums", [])[:20]
-    except Exception:
-        profile["favourite_albums"] = []
-    return profile
+    normalised = require_cache("normalised") if resolved_source == "youtube" else require_source_cache("normalised", resolved_source)
+    return build_persona_report_evidence(normalised, settings.local_timezone)
 
 
-def report_top_artists(existing: Any, canonical: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    lookup = {
-        str(item.get("artist") or "").strip().casefold(): item
-        for item in (existing if isinstance(existing, list) else [])
-        if isinstance(item, dict) and item.get("artist")
-    }
-    result: list[dict[str, Any]] = []
-    for item in canonical:
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        result.append(
-            {
-                **lookup.get(name.casefold(), {}),
-                "artist": name,
-                "play_count": int(item.get("detectedPlays") or 0),
-                "unique_songs_played": int(item.get("uniqueSongs") or 0),
-                "artist_image_url": item.get("imageUrl") or lookup.get(name.casefold(), {}).get("artist_image_url"),
-            }
-        )
-    return result
-
-
-def report_top_tracks(existing: Any, canonical: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    lookup = {
-        (str(item.get("title") or "").strip().casefold(), str(item.get("artist") or "").strip().casefold()): item
-        for item in (existing if isinstance(existing, list) else [])
-        if isinstance(item, dict) and item.get("title")
-    }
-    result: list[dict[str, Any]] = []
-    for item in canonical:
-        title = str(item.get("title") or "").strip()
-        artist = str(item.get("artist") or "").strip()
-        if not title:
-            continue
-        base = lookup.get((title.casefold(), artist.casefold()), {})
-        result.append(
-            {
-                **base,
-                "title": title,
-                "artist": artist,
-                "album": item.get("album") or base.get("album"),
-                "play_count": int(item.get("detectedPlays") or 0),
-                "track_image_url": item.get("imageUrl") or base.get("track_image_url"),
-            }
-        )
-    return result
-
-
-def character_comparison(rolling: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
-    rolling_primary = rolling.get("primary") if isinstance(rolling.get("primary"), dict) else {}
-    current_primary = current.get("primary") if isinstance(current.get("primary"), dict) else {}
-    rolling_id = rolling_primary.get("id")
-    current_id = current_primary.get("id")
-    has_current_sample = bool((current.get("period") or {}).get("start_date")) if isinstance(current.get("period"), dict) else False
-    return {
-        "rolling_year": rolling_primary.get("name"),
-        "current_month": current_primary.get("name"),
-        "has_contrast": bool(has_current_sample and rolling_id and current_id and rolling_id != current_id),
-        "rolling_roast": rolling_primary.get("roast"),
-        "current_roast": current_primary.get("roast"),
-    }
-
-
-def plain_language_scores(scores: list[Any]) -> dict[str, str]:
-    result: dict[str, str] = {}
-    for score in scores:
-        if not isinstance(score, dict):
-            continue
-        key = str(score.get("key") or score.get("name") or "").strip()
-        interpretation = score.get("interpretation") if isinstance(score.get("interpretation"), dict) else {}
-        label = str(score.get("label") or "")
-        plain = str(interpretation.get("plain_english") or "")
-        if key:
-            result[key] = plain or label
-    return result
-
-
-def listener_axis(profile: dict[str, Any], character: dict[str, Any]) -> dict[str, str]:
-    scores = {str(item.get("key") or item.get("name")): item for item in profile.get("scores", []) if isinstance(item, dict)}
-    loyalty_value = float((scores.get("artist_loyalty") or {}).get("value") or 0)
-    discovery_value = float((scores.get("discovery") or {}).get("value") or 0)
-    repeat_value = float((scores.get("repeat") or {}).get("value") or 0)
-    primary = character.get("primary") if isinstance(character.get("primary"), dict) else {}
-    modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
-    artist_or_sound = (
-        "The profile is artist-led: a small set of artists acts as the main anchor."
-        if loyalty_value >= 65 or primary.get("id") == "one_artist_cult_member"
-        else "The profile is sound-led: the larger emotional and sonic world matters more than one artist owning everything."
-    )
-    discovery_or_comfort = (
-        "Discovery is active, but it still seems to chase a familiar emotional shape."
-        if discovery_value >= 55
-        else "Discovery is selective; comfort and fit matter more than constant novelty."
-    )
-    repeat_or_variety = (
-        "Replay is a major behaviour pattern, so songs become part of the identity by surviving repeat listens."
-        if repeat_value >= 55 or modifier.get("id") in {"comfort_loop_specialist", "single_song_prisoner"}
-        else "The profile leaves more room for rotation and variety than pure fixation."
-    )
-    return {
-        "artist_or_sound_led": artist_or_sound,
-        "discovery_or_comfort": discovery_or_comfort,
-        "repeat_or_variety": repeat_or_variety,
-    }
-
-
-def album_or_track_behavior(character: dict[str, Any]) -> str:
-    modifier = character.get("modifier") if isinstance(character.get("modifier"), dict) else {}
-    modifier_id = modifier.get("id")
-    if modifier_id == "album_loyalist":
-        return "The profile has album-depth behaviour: full projects matter, not just isolated singles."
-    if modifier_id == "single_song_prisoner":
-        return "The profile has track-fixation behaviour: a few songs can dominate the phase once they click."
-    return "Album-vs-track behaviour is not the loudest signal, so the character read leans more on sound, replay, and artist patterns."
-
-
-@router.post("/report/generate")
-def generate_report(request: ReportRequest) -> dict[str, Any]:
+@router.post("/report/generate", response_model=PersonaReportResponse)
+def generate_report(request: ReportRequest) -> PersonaReportResponse:
     source = normalise_source(request.source)
     profile = report_profile_with_characters(source)
     analytics_fingerprint = persona_report_fingerprint(profile)
     report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint)
-    report = ollama.generate_report(profile, request.mode)
-    payload = report.model_dump()
+    language = ollama.generate_persona_language(profile["languageEvidence"], request.mode).model_dump()
     generated_at = datetime.now(timezone.utc).isoformat()
-    payload = annotate_persona_report_payload(
-        payload,
+    payload = compose_persona_report(
+        profile,
+        language,
         source=source,
         mode=request.mode,
         generated_at=generated_at,
+        prompt_version=PERSONA_REPORT_PROMPT_VERSION,
+        model=settings.ollama_model,
         analytics_fingerprint=analytics_fingerprint,
-        report_cache_key=report_cache_key,
+        cache_key=report_cache_key,
     )
+    validated = PersonaReportResponse.model_validate(payload)
     repo.save_json(report_cache_key, payload)
     repo.save_json(
         persona_report_pointer_key(source),
@@ -1059,16 +837,17 @@ def generate_report(request: ReportRequest) -> dict[str, Any]:
             "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
             "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
             "musicalAgeCalculationVersion": MUSICAL_AGE_CALCULATION_VERSION,
+            "personalityClassifierVersion": MUSIC_CHARACTER_CLASSIFIER_VERSION,
             "model": settings.ollama_model,
             "analyticsFingerprint": analytics_fingerprint,
             "generatedAt": generated_at,
         },
     )
-    return payload
+    return validated
 
 
-@router.get("/report/latest")
-def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
+@router.get("/report/latest", response_model=PersonaReportResponse)
+def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
     resolved_source = normalise_source(source)
     profile = report_profile_with_characters(resolved_source)
     analytics_fingerprint = persona_report_fingerprint(profile)
@@ -1080,35 +859,36 @@ def latest_report(source: str = Query("youtube")) -> dict[str, Any]:
         and pointer.get("source") == resolved_source
         and pointer.get("promptVersion") == PERSONA_REPORT_PROMPT_VERSION
         and pointer.get("musicalAgeCalculationVersion") == MUSICAL_AGE_CALCULATION_VERSION
+        and pointer.get("personalityClassifierVersion") == MUSIC_CHARACTER_CLASSIFIER_VERSION
         and pointer.get("model") == settings.ollama_model
         and pointer.get("analyticsFingerprint") == analytics_fingerprint
         and pointer.get("cacheKey")
     ):
         cached = repo.load_json(str(pointer["cacheKey"]))
-        if isinstance(cached, dict) and cached.get("personaReportSchemaVersion") == PERSONA_REPORT_SCHEMA_VERSION:
+        if isinstance(cached, dict) and cached.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION:
             payload = dict(cached)
-            if payload.get("generationSource") == "gemma":
-                payload["generationSource"] = "cache-gemma"
-                payload["fallback"] = False
-                payload["fallbackReason"] = None
-            log_persona_report_payload(payload)
-            return payload
+            if (payload.get("generation") or {}).get("source") == "gemma":
+                payload["generation"] = {**payload["generation"], "source": "cache-gemma"}
+                payload["personality"] = {**payload["personality"], "generationSource": "cache-gemma"}
+                payload["summary"] = {**payload["summary"], "generationSource": "cache-gemma"}
+            return PersonaReportResponse.model_validate(payload)
 
     mode = str(pointer.get("mode") or "serious") if isinstance(pointer, dict) else "serious"
-    fallback = ollama.fallback_report(profile, mode, fallback_reason="no_matching_gemma_cache")
-    fallback_payload = fallback.model_dump()
+    language = ollama.fallback_persona_language(profile["languageEvidence"], "no_matching_gemma_cache").model_dump()
     generated_at = datetime.now(timezone.utc).isoformat()
     report_cache_key = persona_report_cache_key(resolved_source, mode, analytics_fingerprint)
-    fallback_payload = annotate_persona_report_payload(
-        fallback_payload,
+    fallback_payload = compose_persona_report(
+        profile,
+        language,
         source=resolved_source,
         mode=mode,
         generated_at=generated_at,
+        prompt_version=PERSONA_REPORT_PROMPT_VERSION,
+        model=settings.ollama_model,
         analytics_fingerprint=analytics_fingerprint,
-        report_cache_key=report_cache_key,
+        cache_key=report_cache_key,
     )
-    log_persona_report_payload(fallback_payload)
-    return fallback_payload
+    return PersonaReportResponse.model_validate(fallback_payload)
 
 
 @router.get("/recommendations")

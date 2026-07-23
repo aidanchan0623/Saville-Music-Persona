@@ -2,14 +2,12 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { PageTitlePanel } from "../components/PageTitlePanel";
-import { OverviewStepper } from "../components/home/OverviewStepper";
 import type {
   AuthStatus,
   MusicSource,
   OverviewPeriodKey,
   OverviewResponse,
   Prerequisites,
-  TasteDnaExplorer,
 } from "../types/api";
 import { resolvePersonaVisualTheme } from "../utils/personaVisualTheme";
 
@@ -21,8 +19,6 @@ interface Props {
   useDemo: boolean;
   onRefresh: () => void;
   onOpenSettings: () => void;
-  onOpenTop10: () => void;
-  onOpenInsights: () => void;
   onOpenReport: () => void;
   source: MusicSource;
   titleAnimationKey: string;
@@ -42,8 +38,6 @@ export function OverviewPage({
   useDemo,
   onRefresh,
   onOpenSettings,
-  onOpenTop10,
-  onOpenInsights,
   onOpenReport,
   source,
   titleAnimationKey,
@@ -51,7 +45,6 @@ export function OverviewPage({
   const [period, setPeriod] = useState<OverviewPeriodKey>("this_month");
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [activeResponse, setActiveResponse] = useState<OverviewResponse | null>(overview);
-  const [currentTaste, setCurrentTaste] = useState<TasteDnaExplorer | null>(null);
   const [periodLoading, setPeriodLoading] = useState(false);
   const [periodError, setPeriodError] = useState<string | null>(null);
 
@@ -86,25 +79,6 @@ export function OverviewPage({
     };
   }, [period, selectedMonth, source, overview?.languageFingerprint]);
 
-  useEffect(() => {
-    if (!activeResponse) {
-      setCurrentTaste(null);
-      return;
-    }
-    let cancelled = false;
-    setCurrentTaste(null);
-    api.tasteDna(period, period === "month" ? selectedMonth : null, source)
-      .then((value) => {
-        if (!cancelled) setCurrentTaste(value);
-      })
-      .catch(() => {
-        if (!cancelled) setCurrentTaste(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeResponse?.languageFingerprint, period, selectedMonth, source]);
-
   if (!activeResponse) {
     return (
       <div className="space-y-6">
@@ -128,7 +102,7 @@ export function OverviewPage({
 
   const data = activeResponse.overview;
   const identity = activeResponse.identity;
-  const visualTheme = resolvePersonaVisualTheme(data, currentTaste);
+  const visualTheme = resolvePersonaVisualTheme(data, null);
   const updatedLabel = data.last_refreshed_at ? formatShortDate(data.last_refreshed_at) : "not refreshed yet";
   const months = activeResponse.selectedPeriod.availableMonths;
 
@@ -192,18 +166,12 @@ export function OverviewPage({
         }
       />
 
-      <OverviewStepper
-        overview={data}
-        identity={identity}
-        musicalAge={activeResponse.musicalAge}
-        topFive={activeResponse.topFive}
-        selectedPeriod={activeResponse.selectedPeriod}
-        currentTaste={currentTaste}
-        visualTheme={visualTheme}
-        onOpenTop10={onOpenTop10}
-        onOpenInsights={onOpenInsights}
-        onOpenReport={onOpenReport}
-      />
+      <section className="overview-coverage-strip" aria-label="Analysis coverage">
+        <div><span>Detected plays</span><strong>{data.total_detected_plays.toLocaleString()}</strong></div>
+        <div><span>Active days</span><strong>{data.coverage.days_represented.toLocaleString()}</strong></div>
+        <div><span>History range</span><strong>{data.coverage.earliest_detected_play || "Not available"}</strong></div>
+        <div><span>Status</span><strong>{data.coverage.history_coverage_status}</strong></div>
+      </section>
     </div>
   );
 }

@@ -638,77 +638,115 @@ export interface AuthStatus {
   last_refreshed_at: string | null;
 }
 
-export interface PersonaTag {
-  tag: string;
-  reason: string;
+export interface PersonaReport {
+  schemaVersion: 5;
+  source: MusicSource;
+  mode: "serious" | "playful" | "roast";
+  period: PersonaReportPeriod;
+  personality: PersonaReportPersonality;
+  listeningWorld: PersonaListeningWorld;
+  musicalAge: PersonaMusicalAge;
+  topFive: PersonaTopFive;
+  summary: PersonaReportSummary;
+  backgroundAlbums: PersonaBackgroundAlbum[];
+  generation: PersonaGeneration;
+  analyticsFingerprint: string;
+  cacheKey: string;
 }
 
-export interface PersonaReportCard {
+export interface PersonaReportPeriod {
+  key: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  timezone: string;
+}
+
+export interface PersonaReportPersonality {
+  id: string;
   title: string;
-  body: string;
+  shortDescription: string;
+  roastDescription: string;
+  confidence: number;
+  evidenceKeys: string[];
+  generationSource: "gemma" | "cache-gemma" | "fallback";
 }
 
-export interface PersonaStoryChapter {
-  headline: string;
-  body: string;
-  pullQuote?: string;
+export interface PersonaGenre {
+  key: string;
+  label: string;
+  percentage: number;
+  detectedPlays: number;
 }
 
-export interface PersonaMainCharacter {
-  artistName: string;
-  role: string;
-  line: string;
+export interface PersonaListeningWorld {
+  detectedMinutes: number;
+  formattedTime: string;
+  durationCoverage: number;
+  genreCoverage: number;
+  genres: PersonaGenre[];
+  interpretation: string;
 }
 
-export interface PersonaPlotTwist {
-  headline: string;
-  body: string;
+export interface PersonaMusicalAge {
+  age: number;
+  likelyMin: number;
+  likelyMax: number;
+  title: string;
+  confidence: number;
+  confidenceLabel: string;
+  explanation: string;
+  strongestFactors: string[];
+  sourcePeriod: PersonaReportPeriod;
 }
 
-export interface PersonaClosing {
+export interface PersonaTopSong {
+  rank: number;
+  albumImageUrl: string | null;
+  trackImageUrl: string | null;
+  title: string;
+  artist: string;
+  album: string | null;
+  detectedPlays: number;
+  detectedMinutes: number;
+  formattedMinutes: string;
+}
+
+export interface PersonaTopArtist {
+  rank: number;
+  artistImageUrl: string | null;
+  name: string;
+  detectedPlays: number;
+  uniqueSongs: number;
+}
+
+export interface PersonaTopFive {
+  songs: PersonaTopSong[];
+  artists: PersonaTopArtist[];
+}
+
+export interface PersonaReportSummary {
   headline: string;
   body: string;
   finalLine: string;
+  generationSource: "gemma" | "cache-gemma" | "fallback";
 }
 
-export interface PersonaReport {
-  personaReportSchemaVersion?: number;
-  schemaVersion?: number;
-  personaName?: string;
-  openingHook?: string;
-  coreSound?: PersonaStoryChapter;
-  comfortLoop?: PersonaStoryChapter;
-  mainCharacters?: PersonaMainCharacter[];
-  plotTwist?: PersonaPlotTwist;
-  closing?: PersonaClosing;
-  fallback?: boolean;
-  headline: string;
-  subheadline?: string;
-  core_identity_paragraph?: string;
-  listener_type_cards?: PersonaReportCard[];
-  taste_world_paragraph?: string;
-  music_movement_paragraph?: string;
-  current_vs_long_term_paragraph?: string;
-  friendly_roast?: string;
-  summary: string;
-  current_era: string;
-  core_identity: string;
-  listening_habits: string;
-  comfort_artists: string;
-  personality_tags: PersonaTag[];
-  report_sections: string[];
-  recommendation_explanations: Record<string, string>[];
-  mode: string;
+export interface PersonaBackgroundAlbum {
+  albumBrowseId: string | null;
+  albumTitle: string;
+  artistName: string;
+  albumImageUrl: string;
+  detectedPlays: number;
+}
+
+export interface PersonaGeneration {
+  source: "gemma" | "cache-gemma" | "fallback";
   model: string;
-  generationSource?: "gemma" | "cache-gemma" | "fallback";
-  fallbackReason?: string | null;
-  generatedAt?: string;
-  durationMs?: number | null;
-  analyticsFingerprint?: string;
-  cacheKey?: string;
-  evidence: Record<string, unknown>;
-  generated_at: string;
-  source?: MusicSource;
+  promptVersion: number;
+  generatedAt: string;
+  fallbackReason: string | null;
+  durationMs: number | null;
 }
 
 export interface Recommendation {
