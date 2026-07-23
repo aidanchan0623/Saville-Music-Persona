@@ -4,7 +4,7 @@ import json
 import re
 import zipfile
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 from io import BytesIO, StringIO
 from typing import Any
@@ -13,6 +13,11 @@ from urllib.parse import parse_qs, urlparse
 
 class TakeoutParseError(ValueError):
     pass
+
+
+TAKEOUT_PARSER_SCHEMA_VERSION = 2
+TAKEOUT_SOURCE = "google_takeout"
+SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
 
 
 class _WatchHistoryHtmlParser(HTMLParser):
@@ -136,15 +141,21 @@ def normalise_takeout_items(items: Any, library_lookup: dict[str, dict[str, Any]
                     artists.append(str(subtitle["name"]).strip())
         video_id = extract_video_id(str(item.get("titleUrl") or ""))
         library_item = library_lookup.get(video_id or "")
+        played, timestamp_invalid, raw_timestamp = normalise_takeout_timestamp(item.get("time"))
+        source_event_id = extract_source_event_id(item)
         result.append(
             {
                 "videoId": video_id,
                 "title": library_item.get("title") or clean_takeout_title(raw_title) if library_item else clean_takeout_title(raw_title),
                 "artists": library_item.get("artists") or [{"name": artist} for artist in artists] if library_item else [{"name": artist} for artist in artists],
                 "album": library_item.get("album") if library_item else None,
-                "played": parse_takeout_time(item.get("time")),
+                "played": played,
                 "titleUrl": item.get("titleUrl"),
-                "source": "google_takeout",
+                "source": TAKEOUT_SOURCE,
+                "sourceFormat": "json",
+                "sourceEventId": source_event_id,
+                "timestampInvalid": timestamp_invalid,
+                **({"rawTimestamp": raw_timestamp} if timestamp_invalid else {}),
             }
         )
     return dedupe_takeout_entries(result)
@@ -187,7 +198,8 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
     video_id = extract_video_id(href)
     channel = str(links[1].get("text") or "").strip() if len(links) > 1 else ""
     library_item = library_lookup.get(video_id or "")
-    played = extract_takeout_html_date(text)
+    raw_played = extract_takeout_html_date_raw(text)
+    played, timestamp_invalid, raw_timestamp = normalise_takeout_timestamp(raw_played)
     artist_names: list[str] = []
     album = None
     if library_item:
@@ -212,7 +224,11 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         "album": album,
         "played": played,
         "titleUrl": href,
-        "source": "google_takeout_html",
+        "source": TAKEOUT_SOURCE,
+        "sourceFormat": "html",
+        "sourceEventId": None,
+        "timestampInvalid": timestamp_invalid,
+        **({"rawTimestamp": raw_timestamp} if timestamp_invalid else {}),
     }
 
 
@@ -237,12 +253,18 @@ def normalise_legacy_html_text(text: str) -> dict[str, Any] | None:
         title = clean_official_video_title(title)
     if not artists or not title.strip():
         return None
+    raw_played = extract_takeout_html_date_raw(text)
+    played, timestamp_invalid, raw_timestamp = normalise_takeout_timestamp(raw_played)
     return {
         "videoId": video_id,
         "title": title.strip()[:240],
         "artists": [{"name": artist} for artist in artists],
-        "played": extract_takeout_html_date(text),
-        "source": "google_takeout_html_legacy",
+        "played": played,
+        "source": TAKEOUT_SOURCE,
+        "sourceFormat": "html_legacy",
+        "sourceEventId": None,
+        "timestampInvalid": timestamp_invalid,
+        **({"rawTimestamp": raw_timestamp} if timestamp_invalid else {}),
     }
 
 
@@ -273,10 +295,15 @@ def normalise_spaces(value: str) -> str:
 
 
 def extract_takeout_html_date(value: str) -> str | None:
+    raw = extract_takeout_html_date_raw(value)
+    return parse_takeout_time(raw)
+
+
+def extract_takeout_html_date_raw(value: str) -> str | None:
     text = normalise_spaces(value)
     match = re.search(r"([A-Z][a-z]{2} \d{1,2}, \d{4}, \d{1,2}:\d{2}:\d{2} [AP]M GMT[+-]\d{2}:\d{2})", text)
     if match:
-        return parse_takeout_time(match.group(1))
+        return match.group(1)
     return None
 
 
@@ -286,24 +313,55 @@ def strip_takeout_html_date(value: str) -> str:
 
 
 def parse_takeout_time(value: Any) -> str | None:
-    if not value:
-        return None
+    played, _, _ = normalise_takeout_timestamp(value)
+    return played
+
+
+def normalise_takeout_timestamp(value: Any) -> tuple[str | None, bool, str | None]:
+    if value is None:
+        return None, True, None
     text = normalise_spaces(str(value))
+    if not text:
+        return None, True, text
+    parsed: datetime | None = None
     try:
-        return datetime.fromisoformat(text.replace("Z", "+00:00")).date().isoformat()
+        parsed = datetime.fromisoformat(re.sub(r"Z$", "+00:00", text, flags=re.I))
     except ValueError:
-        pass
-    try:
-        return datetime.strptime(text, "%b %d, %Y, %I:%M:%S %p GMT%z").date().isoformat()
-    except ValueError:
-        return text
+        try:
+            parsed = datetime.strptime(text, "%b %d, %Y, %I:%M:%S %p GMT%z")
+        except ValueError:
+            return text, True, text
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return text, True, text
+    return parsed.astimezone(timezone.utc).isoformat(), False, None
+
+
+def extract_source_event_id(item: dict[str, Any]) -> str | None:
+    for key in SOURCE_EVENT_ID_KEYS:
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
 
 
 def dedupe_takeout_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    seen: set[tuple[str | None, str, str | None]] = set()
+    seen: set[tuple[str, ...]] = set()
     result: list[dict[str, Any]] = []
     for entry in entries:
-        key = (entry.get("videoId"), entry.get("title", ""), entry.get("played"))
+        source = str(entry.get("source") or TAKEOUT_SOURCE)
+        source_event_id = entry.get("sourceEventId")
+        if source_event_id:
+            key = ("source_event_id", source, str(source_event_id))
+        elif entry.get("timestampInvalid") or not entry.get("played"):
+            # A malformed timestamp has no safe occurrence identity. Keep it instead of
+            # silently merging potentially unrelated plays.
+            result.append(entry)
+            continue
+        elif entry.get("videoId"):
+            key = ("video_timestamp", source, str(entry["videoId"]), str(entry["played"]))
+        else:
+            title = normalise_spaces(str(entry.get("title") or "")).casefold()
+            key = ("title_timestamp", source, title, str(entry["played"]))
         if key in seen:
             continue
         seen.add(key)

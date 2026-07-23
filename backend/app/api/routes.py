@@ -15,7 +15,7 @@ from app.analysis.insights import insights_payload
 from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
-from app.analysis.normalizer import normalise_collection
+from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, normalise_collection
 from app.analysis.overview import (
     OVERVIEW_LANGUAGE_CACHE_VERSION,
     OVERVIEW_SCHEMA_VERSION,
@@ -58,7 +58,7 @@ from app.schemas.responses import (
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import generate_recommendations
 from app.services.spotify_service import SpotifyService
-from app.services.takeout_service import TakeoutParseError, parse_takeout_upload
+from app.services.takeout_service import TAKEOUT_PARSER_SCHEMA_VERSION, TakeoutParseError, parse_takeout_upload
 from app.services.ytmusic_service import YTMusicService
 
 
@@ -74,6 +74,7 @@ PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 INSIGHTS_RESPONSE_CACHE_LIMIT = 24
+TAKEOUT_CACHE_METADATA_KEY = "takeout_history_meta"
 
 SPOTIFY_CACHE_KEYS = [
     "spotify_tokens",
@@ -108,6 +109,8 @@ def persona_report_pointer_key(source: str) -> str:
     return f"persona_report_pointer:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}"
 
 def require_cache(key: str) -> Any:
+    if key in {"normalised", "analysis", "recommendations"}:
+        load_current_takeout_history()
     value = repo.load_json(key)
     if value is None:
         raise HTTPException(status_code=404, detail={"error": "No data yet", "detail": "Refresh music data first or enable demo data.", "code": "no_cached_data"})
@@ -130,6 +133,7 @@ def cache_key(key: str, source: str | None = "youtube") -> str:
 def require_source_cache(key: str, source: str | None = "youtube") -> Any:
     resolved_source = normalise_source(source)
     if resolved_source == "youtube":
+        load_current_takeout_history()
         if key in {"analysis", "normalised"}:
             ensure_youtube_artist_images()
         return require_cache(key)
@@ -144,6 +148,23 @@ def require_source_cache(key: str, source: str | None = "youtube") -> Any:
             },
         )
     return value
+
+
+def load_current_takeout_history() -> list[dict[str, Any]] | None:
+    history = repo.load_json("takeout_history")
+    if not history:
+        return None
+    metadata = repo.load_json(TAKEOUT_CACHE_METADATA_KEY)
+    if not isinstance(metadata, dict) or metadata.get("parser_schema_version") != TAKEOUT_PARSER_SCHEMA_VERSION:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Google Takeout data needs to be re-imported",
+                "detail": "The timestamp parser changed to preserve exact play times. Re-upload the Takeout JSON, HTML, or ZIP so analytics can be rebuilt accurately.",
+                "code": "takeout_parser_schema_outdated",
+            },
+        )
+    return history
 
 
 def ensure_youtube_artist_images() -> None:
@@ -442,7 +463,7 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         warnings.append("Demo data is enabled; no private account data was fetched.")
         live_connected = False
     else:
-        takeout_history = repo.load_json("takeout_history")
+        takeout_history = load_current_takeout_history()
         status = ytmusic.auth_status()
         live_connected = bool(status["connected"])
         if not status["connected"] and not takeout_history:
@@ -454,7 +475,7 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         else:
             raw = {"source": "google_takeout", "history": [], "warnings": []}
             warnings.append(f"Live YouTube Music sync skipped: {status['message']}")
-    takeout_history = repo.load_json("takeout_history")
+    takeout_history = None if request.use_demo else load_current_takeout_history()
     if takeout_history:
         raw["takeout_history"] = takeout_history
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
@@ -494,8 +515,17 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail={"error": "Takeout import failed", "detail": f"Could not parse this Takeout file: {exc}", "code": "takeout_import_failed"}) from exc
     repo.save_json("takeout_history", entries)
+    repo.save_json(
+        TAKEOUT_CACHE_METADATA_KEY,
+        {
+            "parser_schema_version": TAKEOUT_PARSER_SCHEMA_VERSION,
+            "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
+            "imported_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
     raw["takeout_history"] = entries
+    raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
     ytmusic_connected = bool(ytmusic.auth_status()["connected"])
     normalised = normalise_with_duration_cache(
         raw,

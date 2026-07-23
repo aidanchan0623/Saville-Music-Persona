@@ -4,7 +4,7 @@ import hashlib
 import math
 import re
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from app.analysis.duration import annotate_normalised_durations
@@ -23,6 +23,7 @@ from app.analysis.media import (
 
 
 UNKNOWN_ARTIST = "Unknown Artist"
+NORMALISED_DATA_SCHEMA_VERSION = 2
 
 
 GENRE_KEYWORDS: dict[str, set[str]] = {
@@ -141,6 +142,29 @@ def parse_played_date(value: Any, today: date | None = None) -> date | None:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
     except ValueError:
         return None
+
+
+def normalise_played_timestamp(value: Any, parsed_date: date | None = None) -> str | None:
+    if not value:
+        return parsed_date.isoformat() if parsed_date else None
+    if isinstance(value, datetime):
+        if value.tzinfo is not None and value.utcoffset() is not None:
+            return value.astimezone(timezone.utc).isoformat()
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = str(value).strip()
+    if not text:
+        return parsed_date.isoformat() if parsed_date else None
+    try:
+        timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return parsed_date.isoformat() if parsed_date else None
+    if "T" not in text and " " not in text:
+        return parsed_date.isoformat() if parsed_date else text
+    if timestamp.tzinfo is not None and timestamp.utcoffset() is not None:
+        timestamp = timestamp.astimezone(timezone.utc)
+    return timestamp.isoformat()
 
 
 def extract_artist_names(item: dict[str, Any]) -> list[str]:
@@ -495,13 +519,14 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         track = upsert(item, "history")
         track["play_count_in_period"] += 1
         track["history_coverage_status"] = coverage_status
-        played_iso = played_at.isoformat() if played_at else None
+        played_date_iso = played_at.isoformat() if played_at else None
+        played_timestamp = normalise_played_timestamp(item.get("played"), played_at)
         if played_at:
             included_dated_dates.append(played_at)
-            if track["last_played"] is None or played_iso > track["last_played"]:
-                track["last_played"] = played_iso
-            if track["first_played_in_period"] is None or played_iso < track["first_played_in_period"]:
-                track["first_played_in_period"] = played_iso
+            if track["last_played"] is None or played_date_iso > track["last_played"]:
+                track["last_played"] = played_date_iso
+            if track["first_played_in_period"] is None or played_date_iso < track["first_played_in_period"]:
+                track["first_played_in_period"] = played_date_iso
         play_events.append(
             {
                 "track_id": track["track_id"],
@@ -510,9 +535,11 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
                 "title": track["title"],
                 "primary_artist": track["primary_artist"],
                 "artists": track["artists"],
-                "played_at": played_iso,
-                "played_date_raw": item.get("played"),
+                "played_at": played_timestamp,
+                "played_date_raw": item.get("rawTimestamp") or item.get("played"),
                 "source": item.get("event_source") or item.get("source") or "history",
+                "source_event_id": item.get("sourceEventId"),
+                "timestamp_invalid": bool(item.get("timestampInvalid")),
                 "spotify_time_range": item.get("spotify_time_range"),
                 "spotify_rank": item.get("spotify_rank"),
                 "spotify_signal_label": item.get("spotify_signal_label"),
@@ -581,6 +608,7 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         "artist_metadata": artist_metadata,
         "library_playlists": playlists,
         "metadata": {
+            "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
             "track_count": len(tracks),
             "play_count": len(play_events),
             "source": raw.get("source", "ytmusicapi"),

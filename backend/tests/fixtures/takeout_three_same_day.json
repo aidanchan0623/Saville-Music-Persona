@@ -1,0 +1,26 @@
+[
+  {
+    "header": "YouTube Music",
+    "title": "Watched Synthetic Repeat",
+    "titleUrl": "https://www.youtube.com/watch?v=fixture123",
+    "subtitles": [{"name": "Fixture Artist"}],
+    "time": "2026-07-10T08:01:02Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube Music",
+    "title": "Watched Synthetic Repeat",
+    "titleUrl": "https://www.youtube.com/watch?v=fixture123",
+    "subtitles": [{"name": "Fixture Artist"}],
+    "time": "2026-07-10T14:32:18Z",
+    "products": ["YouTube"]
+  },
+  {
+    "header": "YouTube Music",
+    "title": "Watched Synthetic Repeat",
+    "titleUrl": "https://www.youtube.com/watch?v=fixture123",
+    "subtitles": [{"name": "Fixture Artist"}],
+    "time": "2026-07-10T23:59:58Z",
+    "products": ["YouTube"]
+  }
+]
