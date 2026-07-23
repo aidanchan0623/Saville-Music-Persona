@@ -6,18 +6,37 @@ import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
 import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
 import type { Page } from "./components/navigation/navigation";
 import { OverviewPage } from "./pages/OverviewPage";
-import { PatternsPage } from "./pages/PatternsPage";
+import { InsightsPage } from "./pages/InsightsPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
 import { ReportPage } from "./pages/ReportPage";
-import { ScoresPage } from "./pages/ScoresPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, Charts, ListeningMinutes, MusicSource, OverviewResponse, PersonaReport, Prerequisites, Recommendation, ScoreMetric, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, MusicSource, OverviewResponse, PersonaReport, Prerequisites, Recommendation, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
+
+const PAGE_PATHS: Record<Page, string> = {
+  overview: "/",
+  top10: "/top10",
+  insights: "/insights",
+  report: "/report",
+  recommendations: "/recommendations",
+  settings: "/settings",
+};
+
+const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page as Page]));
 
 function getHistoryPage(): Page {
   if (typeof window === "undefined") return "overview";
+  const path = normalisePath(window.location.pathname);
+  if (path === "/scores" || path === "/patterns") return "insights";
+  const routePage = PATH_PAGES.get(path);
+  if (routePage) return routePage;
   const value = window.history.state?.page;
   return NAVIGATION_ITEMS.some((item) => item.id === value) ? value : "overview";
+}
+
+function normalisePath(pathname: string) {
+  if (!pathname || pathname === "/") return "/";
+  return pathname.replace(/\/+$/, "").toLowerCase();
 }
 
 export default function App() {
@@ -33,10 +52,6 @@ export default function App() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [tracks, setTracks] = useState<TopTrack[]>([]);
   const [artists, setArtists] = useState<TopArtist[]>([]);
-  const [scores, setScores] = useState<ScoreMetric[]>([]);
-  const [charts, setCharts] = useState<Charts | null>(null);
-  const [thisMonthMinutes, setThisMonthMinutes] = useState<ListeningMinutes | null>(null);
-  const [rollingYearMinutes, setRollingYearMinutes] = useState<ListeningMinutes | null>(null);
   const [report, setReport] = useState<PersonaReport | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [auth, setAuth] = useState<AuthStatus | null>(null);
@@ -58,17 +73,13 @@ export default function App() {
     setOverview(null);
     setTracks([]);
     setArtists([]);
-    setScores([]);
-    setCharts(null);
-    setThisMonthMinutes(null);
-    setRollingYearMinutes(null);
     setReport(null);
     setRecommendations([]);
   };
 
   const navigate = (next: Page) => {
     if (next !== page) {
-      window.history.pushState({ ...(window.history.state ?? {}), page: next }, "", window.location.href);
+      window.history.pushState({ ...(window.history.state ?? {}), page: next }, "", `${PAGE_PATHS[next]}${window.location.search}`);
       setTitleVisitId((value) => value + 1);
     }
     setPage(next);
@@ -88,17 +99,9 @@ export default function App() {
     setMessage(null);
     setTracks([]);
     setArtists([]);
-    setScores([]);
-    setCharts(null);
-    setThisMonthMinutes(null);
-    setRollingYearMinutes(null);
     setReport(null);
     void api.topTracks(activeSource).then(setIfCurrent(setTracks)).catch(() => { if (isCurrentRequest()) setTracks([]); });
     void api.topArtists(activeSource).then(setIfCurrent(setArtists)).catch(() => { if (isCurrentRequest()) setArtists([]); });
-    void api.scores("rolling_year", null, activeSource).then(setIfCurrent(setScores)).catch(() => { if (isCurrentRequest()) setScores([]); });
-    void api.charts("rolling_year", null, activeSource).then(setIfCurrent(setCharts)).catch(() => { if (isCurrentRequest()) setCharts(null); });
-    void api.listeningMinutes("this_month", null, activeSource).then(setIfCurrent(setThisMonthMinutes)).catch(() => { if (isCurrentRequest()) setThisMonthMinutes(null); });
-    void api.listeningMinutes("rolling_year", null, activeSource).then(setIfCurrent(setRollingYearMinutes)).catch(() => { if (isCurrentRequest()) setRollingYearMinutes(null); });
     void api.latestReport(activeSource).then(setIfCurrent(setReport)).catch(() => { if (isCurrentRequest()) setReport(null); });
     if (activeSource === "youtube") {
       try {
@@ -121,7 +124,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    window.history.replaceState({ ...(window.history.state ?? {}), page }, "", window.location.href);
+    const legacyPath = ["/scores", "/patterns"].includes(normalisePath(window.location.pathname));
+    window.history.replaceState(
+      { ...(window.history.state ?? {}), page },
+      "",
+      legacyPath ? `${PAGE_PATHS.insights}${window.location.search}` : window.location.href,
+    );
     const handlePopState = () => {
       setPage(getHistoryPage());
       setTitleVisitId((value) => value + 1);
@@ -270,9 +278,6 @@ export default function App() {
         return (
           <OverviewPage
             overview={overview}
-            thisMonthMinutes={thisMonthMinutes}
-            rollingYearMinutes={rollingYearMinutes}
-            scores={scores}
             auth={auth}
             prerequisites={prerequisites}
             busy={busy}
@@ -280,8 +285,7 @@ export default function App() {
             onRefresh={refresh}
             onOpenSettings={() => navigate("settings")}
             onOpenTop10={() => navigate("top10")}
-            onOpenScores={() => navigate("scores")}
-            onOpenPatterns={() => navigate("patterns")}
+            onOpenInsights={() => navigate("insights")}
             onOpenReport={() => navigate("report")}
             source={source}
             titleAnimationKey={titleAnimationKey}
@@ -289,10 +293,8 @@ export default function App() {
         );
       case "top10":
         return <Top10Page source={source} titleAnimationKey={titleAnimationKey} />;
-      case "scores":
-        return <ScoresPage scores={scores} source={source} titleAnimationKey={titleAnimationKey} />;
-      case "patterns":
-        return <PatternsPage charts={charts} source={source} titleAnimationKey={titleAnimationKey} />;
+      case "insights":
+        return <InsightsPage source={source} titleAnimationKey={titleAnimationKey} onOpenTop10={() => navigate("top10")} />;
       case "report":
         return <ReportPage report={report} prerequisites={prerequisites} busy={busy} topArtists={artists} topTracks={tracks} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
@@ -323,7 +325,7 @@ export default function App() {
           />
         );
     }
-  }, [page, titleVisitId, overview, thisMonthMinutes, rollingYearMinutes, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, scores, charts, report, recommendations, source]);
+  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source]);
 
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
   const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";

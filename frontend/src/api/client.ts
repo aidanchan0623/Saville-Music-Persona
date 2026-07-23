@@ -1,6 +1,6 @@
 import type {
   AuthStatus,
-  Charts,
+  InsightsResponse,
   ListeningMinutes,
   MusicSource,
   MusicCharacterResponse,
@@ -13,7 +13,6 @@ import type {
   PeriodTopResponse,
   Prerequisites,
   Recommendation,
-  ScoreMetric,
   SpotifyStatus,
   TasteDnaComparison,
   TasteDnaExplorer,
@@ -99,17 +98,16 @@ export const api = {
   },
   topTracks: (source: MusicSource = "youtube") => request<TopTrack[]>(`/analysis/top-tracks?${paramsWithSource(source).toString()}`),
   topArtists: (source: MusicSource = "youtube") => request<TopArtist[]>(`/analysis/top-artists?${paramsWithSource(source).toString()}`),
-  scores: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
-    const params = paramsWithSource(source, { period, month });
-    return request<ScoreMetric[]>(`/analysis/scores?${params.toString()}`);
-  },
-  charts: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
-    const params = paramsWithSource(source, { period, month });
-    return request<Charts>(`/analysis/charts?${params.toString()}`);
-  },
   listeningMinutes: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
     return request<ListeningMinutes>(`/analytics/listening-minutes?${params.toString()}`);
+  },
+  insights: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
+    const params = paramsWithSource(source, { period, month });
+    return request<InsightsResponse>(`/insights?${params.toString()}`).then((value) => {
+      if (value.schemaVersion !== 1) throw new Error("Insights data uses an unsupported schema. Refresh your music data and try again.");
+      return value;
+    });
   },
   periodTop: (period = "this_month", type: "tracks" | "artists" = "tracks", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, type, month });
@@ -134,10 +132,6 @@ export const api = {
   tasteDnaCompare: (base = "rolling_year", compare = "this_month", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { base, compare, month });
     return request<TasteDnaComparison>(`/taste-dna/compare?${params.toString()}`);
-  },
-  scoreInterpretations: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
-    const params = paramsWithSource(source, { period, month });
-    return request<ScoreMetric[]>(`/scores/interpretations?${params.toString()}`);
   },
   musicCharacter: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });

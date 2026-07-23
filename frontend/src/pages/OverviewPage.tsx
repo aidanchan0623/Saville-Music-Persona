@@ -5,21 +5,16 @@ import { PageTitlePanel } from "../components/PageTitlePanel";
 import { OverviewStepper } from "../components/home/OverviewStepper";
 import type {
   AuthStatus,
-  ListeningMinutes,
   MusicSource,
   OverviewPeriodKey,
   OverviewResponse,
   Prerequisites,
-  ScoreMetric,
   TasteDnaExplorer,
 } from "../types/api";
 import { resolvePersonaVisualTheme } from "../utils/personaVisualTheme";
 
 interface Props {
   overview: OverviewResponse | null;
-  thisMonthMinutes: ListeningMinutes | null;
-  rollingYearMinutes: ListeningMinutes | null;
-  scores: ScoreMetric[];
   auth: AuthStatus | null;
   prerequisites: Prerequisites | null;
   busy: boolean;
@@ -27,8 +22,7 @@ interface Props {
   onRefresh: () => void;
   onOpenSettings: () => void;
   onOpenTop10: () => void;
-  onOpenScores: () => void;
-  onOpenPatterns: () => void;
+  onOpenInsights: () => void;
   onOpenReport: () => void;
   source: MusicSource;
   titleAnimationKey: string;
@@ -49,8 +43,7 @@ export function OverviewPage({
   onRefresh,
   onOpenSettings,
   onOpenTop10,
-  onOpenScores,
-  onOpenPatterns,
+  onOpenInsights,
   onOpenReport,
   source,
   titleAnimationKey,
@@ -208,8 +201,7 @@ export function OverviewPage({
         currentTaste={currentTaste}
         visualTheme={visualTheme}
         onOpenTop10={onOpenTop10}
-        onOpenScores={onOpenScores}
-        onOpenPatterns={onOpenPatterns}
+        onOpenInsights={onOpenInsights}
         onOpenReport={onOpenReport}
       />
     </div>

@@ -14,8 +14,7 @@ type OverviewStepperProps = {
   currentTaste: TasteDnaExplorer | null;
   visualTheme: PersonaVisualTheme;
   onOpenTop10: () => void;
-  onOpenScores: () => void;
-  onOpenPatterns: () => void;
+  onOpenInsights: () => void;
   onOpenReport: () => void;
 };
 
@@ -30,8 +29,7 @@ export function OverviewStepper({
   currentTaste,
   visualTheme,
   onOpenTop10,
-  onOpenScores,
-  onOpenPatterns,
+  onOpenInsights,
   onOpenReport,
 }: OverviewStepperProps) {
   return (
@@ -62,8 +60,7 @@ export function OverviewStepper({
           period={selectedPeriod}
           visualTheme={visualTheme}
           onOpenReport={onOpenReport}
-          onOpenScores={onOpenScores}
-          onOpenPatterns={onOpenPatterns}
+          onOpenInsights={onOpenInsights}
         />
       </Step>
     </Stepper>
@@ -226,16 +223,14 @@ function PersonalSummarySection({
   period,
   visualTheme,
   onOpenReport,
-  onOpenScores,
-  onOpenPatterns,
+  onOpenInsights,
 }: {
   overview: Overview;
   identity: MusicIdentity;
   period: OverviewPeriod;
   visualTheme: PersonaVisualTheme;
   onOpenReport: () => void;
-  onOpenScores: () => void;
-  onOpenPatterns: () => void;
+  onOpenInsights: () => void;
 }) {
   return (
     <OverviewSection
@@ -251,8 +246,7 @@ function PersonalSummarySection({
       </div>
       <div className="overview-stepper__actions overview-stepper__actions--wrap">
         <button className="btn-primary" type="button" onClick={onOpenReport}>Read full report</button>
-        <button className="btn-secondary" type="button" onClick={onOpenScores}>View scores</button>
-        <button className="btn-secondary" type="button" onClick={onOpenPatterns}>View patterns</button>
+        <button className="btn-secondary" type="button" onClick={onOpenInsights}>View insights</button>
       </div>
     </OverviewSection>
   );

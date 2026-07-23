@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 
 from app.analysis.duration import annotate_normalised_durations
 from app.analysis.demo_data import demo_raw_collection
+from app.analysis.insights import insights_payload
 from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
 from app.analysis.music_character import character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
@@ -41,6 +42,7 @@ from app.config import settings
 from app.database.repository import JsonRepository
 from app.schemas.responses import (
     AuthStatusResponse,
+    InsightsResponse,
     OverviewAnalysisResponse,
     PlaylistCreateRequest,
     PlaylistCreateResponse,
@@ -68,6 +70,8 @@ PERSONA_REPORT_SCHEMA_VERSION = 3
 PERSONA_REPORT_PROMPT_VERSION = 4
 PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
+INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+INSIGHTS_RESPONSE_CACHE_LIMIT = 24
 
 SPOTIFY_CACHE_KEYS = [
     "spotify_tokens",
@@ -708,6 +712,40 @@ def charts(
 ) -> dict[str, Any]:
     analysis, _, _ = analysis_for_period(period, month, timezone_name, source)
     return analysis["charts"]
+
+
+@router.get("/insights", response_model=InsightsResponse)
+def insights(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> InsightsResponse:
+    normalised = require_source_cache("normalised", source)
+    metadata = normalised.get("metadata") or {}
+    coverage = normalised.get("coverage") or {}
+    cache_key = (
+        source,
+        period,
+        month,
+        timezone_name or settings.local_timezone,
+        normalised.get("refreshed_at"),
+        metadata.get("play_count"),
+        coverage.get("latest_detected_play"),
+    )
+    cached = INSIGHTS_RESPONSE_CACHE.get(cache_key)
+    if cached is not None:
+        return InsightsResponse(**cached)
+    payload = insights_payload(
+        normalised,
+        period,
+        month,
+        timezone_name or settings.local_timezone,
+    )
+    if len(INSIGHTS_RESPONSE_CACHE) >= INSIGHTS_RESPONSE_CACHE_LIMIT:
+        INSIGHTS_RESPONSE_CACHE.clear()
+    INSIGHTS_RESPONSE_CACHE[cache_key] = payload
+    return InsightsResponse(**payload)
 
 
 @router.get("/analytics/listening-minutes")

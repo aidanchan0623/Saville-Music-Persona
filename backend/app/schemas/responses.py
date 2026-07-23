@@ -147,6 +147,115 @@ class OverviewAnalysisResponse(BaseModel):
     languageFingerprint: str
 
 
+class InsightsPeriod(BaseModel):
+    period: str
+    month: str | None = None
+    label: str
+    display_label: str
+    timezone: str
+    start_date: str
+    end_date: str
+    available_months: list[dict[str, str]] = Field(default_factory=list)
+
+
+class InsightsSummary(BaseModel):
+    detectedMinutes: float
+    detectedMinutesFormatted: str
+    activeDays: int
+    averageActiveDayMinutes: float
+    longestDayMinutes: float
+    longestDayDate: str | None = None
+    currentStreakDays: int
+    detectedPlays: int
+
+
+class InsightsProfileAxis(BaseModel):
+    key: str
+    label: str
+    value: float
+    detectedPlays: float
+
+
+class InsightsMusicProfile(BaseModel):
+    coverage: float
+    classifiedPlays: int
+    unclassifiedPlays: int
+    totalPlays: int
+    axes: list[InsightsProfileAxis] = Field(default_factory=list)
+    methodology: str
+
+
+class InsightsScoreInterpretation(BaseModel):
+    status_title: str
+    plain_english: str
+    confidence: str
+    evidence: list[str] = Field(default_factory=list)
+
+
+class InsightsScore(BaseModel):
+    key: str
+    name: str
+    value: float
+    label: str
+    explanation: str
+    formula: str
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    interpretation: InsightsScoreInterpretation | None = None
+
+
+class InsightsRhythmPoint(BaseModel):
+    label: str
+    startDate: str
+    detectedMinutes: float
+    playCount: int
+    durationCoveragePercent: float
+
+
+class InsightsRhythm(BaseModel):
+    weekly: list[InsightsRhythmPoint] = Field(default_factory=list)
+    monthly: list[InsightsRhythmPoint] = Field(default_factory=list)
+
+
+class InsightsArtist(BaseModel):
+    rank: int
+    artist: str
+    imageUrl: str | None = None
+    detectedPlays: int
+    share: float
+
+
+class InsightsSong(BaseModel):
+    rank: int
+    title: str
+    artist: str
+    imageUrl: str | None = None
+    detectedPlays: int
+    share: float
+
+
+class InsightsIntensityDay(BaseModel):
+    date: str
+    week_start: str
+    weekday: str
+    weekday_index: int
+    value: float
+
+
+class InsightsResponse(BaseModel):
+    schemaVersion: Literal[1]
+    period: InsightsPeriod
+    summary: InsightsSummary
+    durationQuality: dict[str, Any]
+    musicProfile: InsightsMusicProfile
+    scores: list[InsightsScore] = Field(default_factory=list)
+    rhythm: InsightsRhythm
+    topArtists: list[InsightsArtist] = Field(default_factory=list)
+    repeatedSongs: list[InsightsSong] = Field(default_factory=list)
+    dailyIntensity: list[InsightsIntensityDay] = Field(default_factory=list)
+    sampleWarning: str | None = None
+    methodology: str
+
+
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
     source: Literal["youtube", "spotify"] = "youtube"

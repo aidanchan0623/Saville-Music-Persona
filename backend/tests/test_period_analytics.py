@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.analysis.duration import annotate_normalised_durations, duration_quality
+from app.analysis.insights import insights_payload
 from app.analysis.media import album_id_key, album_name_artist_key
 from app.analysis.normalizer import normalise_collection
 from app.analysis.periods import (
@@ -67,6 +68,35 @@ def test_daily_minutes_preserve_zero_days_and_duration_coverage() -> None:
     assert by_date["2026-07-03"] == 3.0
     assert payload["duration_quality"]["duration_coverage_percent"] == 75.0
     assert payload["metrics"]["active_listening_days"] == 2
+
+
+def test_insights_reuses_period_rankings_and_preserves_unclassified_plays() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item("bmth", "Heavy One", "Bring Me The Horizon", "2026-07-01", 180),
+                _history_item("bmth", "Heavy One", "Bring Me The Horizon", "2026-07-02", 180),
+                _history_item("wisp", "Haze", "Wisp", "2026-07-03", None),
+                _history_item("unknown", "Unknown Lane", "Unmapped Artist", "2026-07-04", 240),
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    payload = insights_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))
+    artists = top_payload(normalised, "artists", "month", "2026-07", today=date(2026, 7, 7))
+    tracks = top_payload(normalised, "tracks", "month", "2026-07", today=date(2026, 7, 7))
+
+    assert payload["schemaVersion"] == 1
+    assert payload["summary"]["detectedMinutes"] == 10.0
+    assert sum(point["detectedMinutes"] for point in payload["rhythm"]["weekly"]) == 10.0
+    assert sum(point["detectedMinutes"] for point in payload["rhythm"]["monthly"]) == 10.0
+    assert payload["topArtists"][0]["artist"] == artists["items"][0]["artist"]
+    assert payload["repeatedSongs"][0]["title"] == tracks["items"][0]["title"]
+    assert payload["musicProfile"]["classifiedPlays"] == 3
+    assert payload["musicProfile"]["unclassifiedPlays"] == 1
+    assert payload["musicProfile"]["coverage"] == 0.75
+    assert round(sum(axis["value"] for axis in payload["musicProfile"]["axes"]), 1) == 75.0
+    assert payload["rhythm"]["weekly"][0]["playCount"] == 4
 
 
 def test_timezone_day_boundary_uses_configured_local_day() -> None:

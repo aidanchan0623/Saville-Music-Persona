@@ -313,6 +313,72 @@ export interface ListeningMinutes {
   methodology: string;
 }
 
+export interface InsightsProfileAxis {
+  key: string;
+  label: string;
+  value: number;
+  detectedPlays: number;
+}
+
+export interface InsightsRhythmPoint {
+  label: string;
+  startDate: string;
+  detectedMinutes: number;
+  playCount: number;
+  durationCoveragePercent: number;
+}
+
+export interface InsightsRankingArtist {
+  rank: number;
+  artist: string;
+  imageUrl: string | null;
+  detectedPlays: number;
+  share: number;
+}
+
+export interface InsightsRankingSong {
+  rank: number;
+  title: string;
+  artist: string;
+  imageUrl: string | null;
+  detectedPlays: number;
+  share: number;
+}
+
+export interface InsightsResponse {
+  schemaVersion: 1;
+  period: PeriodSpec & { display_label: string };
+  summary: {
+    detectedMinutes: number;
+    detectedMinutesFormatted: string;
+    activeDays: number;
+    averageActiveDayMinutes: number;
+    longestDayMinutes: number;
+    longestDayDate: string | null;
+    currentStreakDays: number;
+    detectedPlays: number;
+  };
+  durationQuality: DurationQuality;
+  musicProfile: {
+    coverage: number;
+    classifiedPlays: number;
+    unclassifiedPlays: number;
+    totalPlays: number;
+    axes: InsightsProfileAxis[];
+    methodology: string;
+  };
+  scores: ScoreMetric[];
+  rhythm: {
+    weekly: InsightsRhythmPoint[];
+    monthly: InsightsRhythmPoint[];
+  };
+  topArtists: InsightsRankingArtist[];
+  repeatedSongs: InsightsRankingSong[];
+  dailyIntensity: { date: string; week_start: string; weekday: string; weekday_index: number; value: number }[];
+  sampleWarning: string | null;
+  methodology: string;
+}
+
 export interface TopMovement {
   direction: "up" | "down" | "new" | "no_change";
   previous_rank: number | null;
@@ -543,17 +609,6 @@ export interface MusicCharacterRewrite {
 export interface ChartPoint {
   name: string;
   value: number;
-}
-
-export interface Charts {
-  release_decades: ChartPoint[];
-  top_genre_clusters: ChartPoint[];
-  top_artists: ChartPoint[];
-  most_repeated_songs: ChartPoint[];
-  artist_concentration: ChartPoint[];
-  playlist_influence: ChartPoint[];
-  coverage_timeline: ChartPoint[];
-  canonical_genres: ChartPoint[];
 }
 
 export interface PrerequisiteItem {

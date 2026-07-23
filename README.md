@@ -11,9 +11,11 @@ Screenshots are intentionally left out until you run the app against your own pr
 - Overview hero and analysis coverage card
 - Detected Listening Time overview
 - Monthly and rolling-year Top 10 songs and artists
-- Transparent score gauges with plain-English interpretations
-- Listening pattern charts with daily, weekly, and monthly detected minutes
-- Interactive Taste DNA Explorer
+- Consolidated Insights dashboard for listening profile, scores, rhythm and rankings
+- Music-family radar profile with explicit genre-classification coverage
+- Compact listening score gauges with transparent formulas
+- Weekly/monthly detected-minutes rhythm toggle
+- Top artists, repeated songs and recent daily intensity
 - Music Character persona report modes
 - Evidence-driven recommendations
 - Connect YouTube Music settings page
