@@ -559,29 +559,31 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     unique_tracks: dict[str, set[str]] = defaultdict(set)
     top_song: dict[str, Counter[str]] = defaultdict(Counter)
     last_played: dict[str, str] = {}
+    active_days: dict[str, set[date]] = defaultdict(set)
     total = len(events)
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
+        keys = [str(event.get("track_id"))]
         if kind == "artists":
-            key = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
-        else:
-            key = str(event.get("track_id"))
-        counts[key] += 1
+            keys = artist_names_for(track, event) or [str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)]
+        weight = 1 / len(keys) if kind == "artists" else 1
         sec = usable_duration_seconds(event) or 0
-        seconds[key] += sec
-        if sec:
-            usable_counts[key] += 1
-        unique_tracks[key].add(str(event.get("track_id")))
+        day = event_local_date(event)
         title = str(track.get("title") or event.get("title") or "Unknown track")
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
-        top_song[key][f"{title} - {artist}"] += 1
-        played = str(event.get("played_at") or "")
-        if played:
-            last_played[key] = max(last_played.get(key, ""), played)
-    ranked = sorted(
-        counts,
-        key=lambda key: (-counts[key], -seconds[key], str(key).lower()),
-    )
+        for key in keys:
+            counts[key] += weight
+            seconds[key] += sec * weight
+            if sec:
+                usable_counts[key] += weight
+            unique_tracks[key].add(str(event.get("track_id")))
+            if day:
+                active_days[key].add(day)
+            top_song[key][f"{title} - {artist}"] += 1
+            played = str(event.get("played_at") or "")
+            if played:
+                last_played[key] = max(last_played.get(key, ""), played)
+    ranked = sorted(counts, key=lambda key: (-counts[key], -len(active_days[key]), str(track_lookup.get(key, {}).get("title") or key).casefold(), str(key).casefold()))
     result = []
     metadata = artist_metadata or {}
     normalised_metadata_lookup = {normalise_match_text(name): meta for name, meta in metadata.items()} if kind == "artists" and metadata else {}
@@ -645,6 +647,8 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "album_art_url": album_art,
                 "album_art_source": album_art_source,
                 "play_count": play_count,
+                "raw_appearance_count": sum(1 for event in events if key in artist_names_for(track_lookup.get(event.get("track_id"), {}), event)) if kind == "artists" else play_count,
+                "active_days": len(active_days[key]),
                 "detected_minutes": round_minutes(seconds[key]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds[key])),
                 "share_of_period": round(play_count / total * 100, 1) if total else 0,

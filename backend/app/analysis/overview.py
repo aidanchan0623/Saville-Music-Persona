@@ -9,6 +9,7 @@ from app.analysis.music_character import character_payload
 from app.analysis.musical_age import apply_musical_age_language, calculate_musical_age
 from app.analysis.overview_identity import build_identity_evidence, compose_identity, validate_identity_language
 from app.analysis.periods import filter_events, normalised_for_events, resolve_period, serialise_spec, top_payload
+from app.analysis.period_profile import build_period_profile
 from app.analysis.scoring import build_analysis
 
 
@@ -26,10 +27,10 @@ def build_overview_response(
     language: dict[str, Any] | None = None,
     generation_source: str = "fallback",
 ) -> dict[str, Any]:
-    selected_spec = resolve_period(normalised, period, month, timezone_name, today)
-    selected_events = filter_events(normalised, selected_spec)
-    selected_normalised = normalised_for_events(normalised, selected_events, selected_spec)
-    selected_analysis = build_analysis(selected_normalised)
+    profile = build_period_profile(normalised, period, month, timezone_name, today)
+    selected_spec = profile["spec"]
+    selected_events = profile["events"]
+    selected_analysis = profile["analysis"]
     overview = dict(selected_analysis["overview"])
     overview["coverage"] = _period_coverage(overview.get("coverage") or {}, selected_events, selected_spec)
 
@@ -53,22 +54,8 @@ def build_overview_response(
     identity = compose_identity(identity_evidence, language_identity, generation_source)
     musical_age = apply_musical_age_language(musical_age, language_age, generation_source)
 
-    tracks = top_payload(
-        normalised,
-        "tracks",
-        selected_spec["period"],
-        selected_spec.get("month"),
-        selected_spec["timezone"],
-        today=selected_spec["today"],
-    )
-    artists = top_payload(
-        normalised,
-        "artists",
-        selected_spec["period"],
-        selected_spec.get("month"),
-        selected_spec["timezone"],
-        today=selected_spec["today"],
-    )
+    tracks = {"items": profile["top_tracks"]}
+    artists = {"items": profile["top_artists"]}
     period_payload = _overview_period(selected_spec)
     top_five = {
         "period": period_payload,
@@ -78,6 +65,8 @@ def build_overview_response(
 
     overview["headline_persona"] = identity["characterTitle"]
     overview["selected_period"] = period_payload
+    overview["canonical_figures"] = profile["figures"]
+    overview["genre_shares"] = profile["genre_shares"]["items"]
     return {
         "schemaVersion": OVERVIEW_SCHEMA_VERSION,
         "source": normalised.get("metadata", {}).get("source") or "youtube",

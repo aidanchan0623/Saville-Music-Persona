@@ -708,6 +708,7 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         "metadata": {
             "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
             "listening_event_schema_version": LISTENING_EVENT_SCHEMA_VERSION,
+            "parser_schema_version": raw.get("takeout_parser_schema_version"),
             "track_count": len(tracks),
             "play_count": len(play_events),
             "source": raw.get("source", "ytmusicapi"),

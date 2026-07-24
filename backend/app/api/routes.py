@@ -17,6 +17,7 @@ from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_im
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, normalise_collection
+from app.analysis.period_profile import ANALYTICS_VERSION, GENRE_MAP_VERSION, build_period_profile
 from app.models.listening_event import LISTENING_EVENT_SCHEMA_VERSION
 from app.analysis.overview import (
     OVERVIEW_LANGUAGE_CACHE_VERSION,
@@ -108,6 +109,7 @@ def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str)
     model_fingerprint = hashlib.sha256(settings.ollama_model.encode("utf-8")).hexdigest()[:8]
     return (
         f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:"
+        f"analytics{ANALYTICS_VERSION}:genre{GENRE_MAP_VERSION}:"
         f"calc{MUSICAL_AGE_CALCULATION_VERSION}:classifier{MUSIC_CHARACTER_CLASSIFIER_VERSION}:"
         f"prompt{PERSONA_REPORT_PROMPT_VERSION}:"
         f"model{model_fingerprint}:{analytics_fingerprint}:{mode}"
@@ -754,6 +756,30 @@ def coverage(source: str = Query("youtube")) -> dict[str, Any]:
     return require_source_cache("analysis", source)["coverage"]
 
 
+@router.get("/analytics/diagnostics")
+def analytics_diagnostics(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> dict[str, Any]:
+    """Developer-safe reconciliation; it exposes counts and versions, never events."""
+    normalised = require_source_cache("normalised", source)
+    profile = build_period_profile(normalised, period, month, timezone_name or settings.local_timezone)
+    metadata = normalised.get("metadata") or {}
+    return {
+        "parserVersion": metadata.get("parser_schema_version"),
+        "eventSchemaVersion": metadata.get("listening_event_schema_version"),
+        "importBatchId": next((event.get("import_batch_id") for event in normalised.get("listening_events") or [] if event.get("import_batch_id")), None),
+        "dataFingerprint": profile["dataFingerprint"],
+        "analyticsVersion": ANALYTICS_VERSION,
+        "genreMapVersion": GENRE_MAP_VERSION,
+        "cache": {"status": "miss", "reason": "period profiles are computed from canonical local events"},
+        "import": profile["reconciliation"],
+        "profile": {**profile["period"], **profile["figures"]},
+    }
+
+
 @router.get("/analysis/overview", response_model=OverviewAnalysisResponse)
 def overview(
     period: str = Query("this_month"),
@@ -879,6 +905,8 @@ def insights(
         normalised.get("refreshed_at"),
         metadata.get("play_count"),
         coverage.get("latest_detected_play"),
+        ANALYTICS_VERSION,
+        GENRE_MAP_VERSION,
     )
     cached = INSIGHTS_RESPONSE_CACHE.get(cache_key)
     if cached is not None:
@@ -934,7 +962,15 @@ def period_top(
     source: str = Query("youtube"),
 ) -> dict[str, Any]:
     kind = "artists" if type == "artists" else "tracks"
-    return top_payload(require_source_cache("normalised", source), kind, period, month, timezone_name or settings.local_timezone)
+    profile = build_period_profile(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
+    items = profile["top_artists"] if kind == "artists" else profile["top_tracks"]
+    return {
+        "period": profile["period"],
+        "items": [{**item, "rank": index} for index, item in enumerate(items, 1)],
+        "canonicalFigures": profile["figures"],
+        "genreShares": profile["genre_shares"]["items"],
+        "dataFingerprint": profile["dataFingerprint"],
+    }
 
 
 @router.get("/top/artist-songs")

@@ -17,6 +17,7 @@ from app.analysis.periods import (
     tracks_by_id,
 )
 from app.analysis.scoring import build_analysis
+from app.analysis.period_profile import build_period_profile
 from app.analysis.taste_model import profile_for_artist
 
 
@@ -57,13 +58,13 @@ def insights_payload(
     timezone_name: str | None = None,
     today: date | None = None,
 ) -> dict[str, Any]:
-    spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = filter_events(normalised, spec)
-    period_normalised = normalised_for_events(normalised, events, spec)
-    analysis = build_analysis(period_normalised)
-    minutes = listening_minutes_payload(normalised, period, month, timezone_name, today)
-    artist_top = top_payload(normalised, "artists", period, month, timezone_name, today)
-    track_top = top_payload(normalised, "tracks", period, month, timezone_name, today)
+    profile = build_period_profile(normalised, period, month, timezone_name, today)
+    spec = profile["spec"]
+    events = profile["events"]
+    analysis = profile["analysis"]
+    minutes = profile["minutes"]
+    artist_top = {"items": profile["top_artists"]}
+    track_top = {"items": profile["top_tracks"]}
     music_events = [event for event in events if event.get("is_music_candidate") is not False]
     scores = compact_scores(analysis.get("scores") or [], spec, len(music_events))
 
@@ -84,6 +85,8 @@ def insights_payload(
             "detectedPlays": len(music_events),
         },
         "durationQuality": minutes["duration_quality"],
+        "canonicalFigures": profile["figures"],
+        "genreShares": profile["genre_shares"]["items"],
         "musicProfile": music_profile(music_events, tracks_by_id(normalised)),
         "scores": scores,
         "rhythm": rhythm_payload(minutes, music_events, spec),
