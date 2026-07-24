@@ -669,6 +669,14 @@ def process_takeout_import(
         analysis = build_analysis(normalised)
         if not analysis.get("top_tracks") or not analysis.get("coverage"):
             raise ValueError("analysis profile is incomplete")
+        overview_profile = build_overview_response(
+            normalised,
+            "this_month",
+            None,
+            settings.local_timezone,
+        )
+        if overview_profile.get("schemaVersion") != OVERVIEW_SCHEMA_VERSION or not overview_profile.get("identity"):
+            raise ValueError("overview profile is incomplete")
     except Exception:  # noqa: BLE001
         coordinator.fail(
             job_id,

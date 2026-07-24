@@ -4,6 +4,7 @@ import calendar
 from collections import Counter, defaultdict
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone, tzinfo
+from functools import lru_cache
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -41,6 +42,7 @@ COMMON_TIMEZONES = {
 }
 
 
+@lru_cache(maxsize=32)
 def safe_timezone(name: str | None, default: str = "Asia/Kuala_Lumpur") -> tzinfo:
     key = name or default
     try:
@@ -63,18 +65,23 @@ def event_local_date(event: dict[str, Any], timezone_name: str | None = None) ->
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     if isinstance(value, datetime):
-        dt = value
-    else:
-        text = str(value).strip()
-        if not text:
-            return None
+        if value.tzinfo is None:
+            return value.date()
+        return value.astimezone(safe_timezone(timezone_name)).date()
+    return _event_local_date_from_text(str(value).strip(), timezone_name)
+
+
+@lru_cache(maxsize=200_000)
+def _event_local_date_from_text(text: str, timezone_name: str | None) -> date | None:
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
         try:
-            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+            return datetime.strptime(text[:10], "%Y-%m-%d").date()
         except ValueError:
-            try:
-                return datetime.strptime(text[:10], "%Y-%m-%d").date()
-            except ValueError:
-                return None
+            return None
     if dt.tzinfo is None:
         return dt.date()
     return dt.astimezone(safe_timezone(timezone_name)).date()
@@ -98,6 +105,12 @@ def month_bounds(month: str, today: date) -> tuple[date, date]:
 
 
 def available_months(normalised: dict[str, Any], timezone_name: str | None = None) -> list[dict[str, str]]:
+    timezone_key = timezone_name or "Asia/Kuala_Lumpur"
+    metadata = normalised.setdefault("metadata", {})
+    cached_by_timezone = metadata.setdefault("available_months_by_timezone", {})
+    cached = cached_by_timezone.get(timezone_key)
+    if isinstance(cached, list):
+        return cached
     months = sorted(
         {
             day.strftime("%Y-%m")
@@ -106,7 +119,9 @@ def available_months(normalised: dict[str, Any], timezone_name: str | None = Non
             if day is not None
         }
     )
-    return [{"value": month, "label": datetime.strptime(month, "%Y-%m").strftime("%B %Y")} for month in months]
+    result = [{"value": month, "label": datetime.strptime(month, "%Y-%m").strftime("%B %Y")} for month in months]
+    cached_by_timezone[timezone_key] = result
+    return result
 
 
 def resolve_period(
