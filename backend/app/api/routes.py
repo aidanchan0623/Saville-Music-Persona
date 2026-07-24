@@ -4,6 +4,7 @@ import shutil
 import hashlib
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -53,12 +54,18 @@ from app.schemas.responses import (
     RefreshRequest,
     RefreshResponse,
     ReportRequest,
-    TakeoutImportResponse,
+    TakeoutImportQueuedResponse,
+    TakeoutImportStatusResponse,
 )
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import generate_recommendations
 from app.services.spotify_service import SpotifyService
-from app.services.takeout_service import TAKEOUT_PARSER_SCHEMA_VERSION, TakeoutParseError, parse_takeout_upload
+from app.services.takeout_import_jobs import (
+    TakeoutImportAlreadyRunning,
+    TakeoutImportCoordinator,
+    TakeoutImportTimedOut,
+)
+from app.services.takeout_service import TAKEOUT_PARSER_SCHEMA_VERSION, TakeoutParseError, parse_takeout_file
 from app.services.ytmusic_service import YTMusicService
 
 
@@ -67,6 +74,7 @@ repo = JsonRepository(settings.db_path)
 ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
+takeout_imports = TakeoutImportCoordinator(repo, settings.takeout_import_timeout_seconds)
 
 PERSONA_REPORT_SCHEMA_VERSION = 5
 PERSONA_REPORT_PROMPT_VERSION = 5
@@ -110,7 +118,7 @@ def persona_report_pointer_key(source: str) -> str:
 
 def require_cache(key: str) -> Any:
     if key in {"normalised", "analysis", "recommendations"}:
-        load_current_takeout_history()
+        validate_takeout_cache_schema()
     value = repo.load_json(key)
     if value is None:
         raise HTTPException(status_code=404, detail={"error": "No data yet", "detail": "Refresh music data first or enable demo data.", "code": "no_cached_data"})
@@ -133,9 +141,6 @@ def cache_key(key: str, source: str | None = "youtube") -> str:
 def require_source_cache(key: str, source: str | None = "youtube") -> Any:
     resolved_source = normalise_source(source)
     if resolved_source == "youtube":
-        load_current_takeout_history()
-        if key in {"analysis", "normalised"}:
-            ensure_youtube_artist_images()
         return require_cache(key)
     value = repo.load_json(cache_key(key, resolved_source))
     if value is None:
@@ -151,9 +156,14 @@ def require_source_cache(key: str, source: str | None = "youtube") -> Any:
 
 
 def load_current_takeout_history() -> list[dict[str, Any]] | None:
+    validate_takeout_cache_schema()
     history = repo.load_json("takeout_history")
-    if not history:
-        return None
+    return history if isinstance(history, list) and history else None
+
+
+def validate_takeout_cache_schema() -> None:
+    if repo.updated_at("takeout_history") is None:
+        return
     metadata = repo.load_json(TAKEOUT_CACHE_METADATA_KEY)
     if not isinstance(metadata, dict) or metadata.get("parser_schema_version") != TAKEOUT_PARSER_SCHEMA_VERSION:
         raise HTTPException(
@@ -164,7 +174,6 @@ def load_current_takeout_history() -> list[dict[str, Any]] | None:
                 "code": "takeout_parser_schema_outdated",
             },
         )
-    return history
 
 
 def ensure_youtube_artist_images() -> None:
@@ -504,53 +513,219 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     )
 
 
-@router.post("/data/import-takeout", response_model=TakeoutImportResponse)
-async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportResponse:
+@router.post("/data/import-takeout", response_model=TakeoutImportQueuedResponse, status_code=202)
+async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportQueuedResponse:
     settings.ensure_local_dirs()
-    content = await file.read()
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".zip", ".json", ".html", ".htm"}:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Unsupported Takeout file",
+                "detail": "Upload a Google Takeout watch-history JSON, HTML, or ZIP file.",
+                "code": "takeout_file_type_invalid",
+            },
+        )
     try:
-        entries = parse_takeout_upload(file.filename or "takeout", content)
-    except TakeoutParseError as exc:
-        raise HTTPException(status_code=400, detail={"error": "Takeout import failed", "detail": str(exc), "code": "takeout_import_failed"}) from exc
+        job_id = takeout_imports.reserve(suffix)
+    except TakeoutImportAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Takeout import already running", "detail": str(exc), "code": "takeout_import_in_progress"},
+        ) from exc
+
+    import_dir = settings.private_dir / "takeout-imports"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = import_dir / f"{job_id}{suffix}"
+    file_size = 0
+    try:
+        with upload_path.open("wb") as destination:
+            while chunk := await file.read(1024 * 1024):
+                file_size += len(chunk)
+                if file_size > settings.takeout_max_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "error": "Takeout upload is too large",
+                            "detail": f"The upload exceeds the configured {settings.takeout_max_upload_bytes // (1024 * 1024)} MB limit.",
+                            "code": "takeout_upload_too_large",
+                        },
+                    )
+                destination.write(chunk)
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Takeout file is empty", "detail": "Choose a non-empty Takeout export.", "code": "takeout_upload_empty"},
+            )
+        takeout_imports.queue(job_id, upload_path, file_size, process_takeout_import)
+    except HTTPException:
+        upload_path.unlink(missing_ok=True)
+        takeout_imports.release_reservation(job_id)
+        raise
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=400, detail={"error": "Takeout import failed", "detail": f"Could not parse this Takeout file: {exc}", "code": "takeout_import_failed"}) from exc
-    repo.save_json("takeout_history", entries)
-    repo.save_json(
-        TAKEOUT_CACHE_METADATA_KEY,
-        {
-            "parser_schema_version": TAKEOUT_PARSER_SCHEMA_VERSION,
-            "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
-            "imported_at": datetime.now(timezone.utc).isoformat(),
-        },
+        upload_path.unlink(missing_ok=True)
+        takeout_imports.release_reservation(job_id)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Takeout upload failed", "detail": "The file could not be stored locally.", "code": "takeout_upload_failed"},
+        ) from exc
+    finally:
+        await file.close()
+    takeout_imports.log(job_id, "response_returned", status="queued")
+    return TakeoutImportQueuedResponse(jobId=job_id, status="queued")
+
+
+@router.get("/data/import-takeout/{job_id}", response_model=TakeoutImportStatusResponse)
+def takeout_import_status(job_id: str) -> TakeoutImportStatusResponse:
+    job = takeout_imports.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "Takeout import job not found",
+                "detail": "The backend may have restarted before the upload was queued. Retry the import.",
+                "code": "takeout_import_job_not_found",
+            },
+        )
+    return TakeoutImportStatusResponse.model_validate(job)
+
+
+def process_takeout_import(
+    job_id: str,
+    upload_path: Path,
+    coordinator: TakeoutImportCoordinator,
+    deadline: float,
+) -> None:
+    coordinator.stage(job_id, "parsing", "Opening and parsing the Takeout export.")
+    try:
+        parsed = parse_takeout_file(
+            upload_path,
+            on_event=lambda event, fields: coordinator.log(job_id, event, **fields),
+            check_timeout=lambda: coordinator.check_timeout(deadline),
+        )
+    except TakeoutParseError as exc:
+        coordinator.fail(job_id, str(exc), "takeout_parse_failed", "parsing")
+        return
+    coordinator.check_timeout(deadline)
+    coordinator.log(
+        job_id,
+        "deduplication_completed",
+        rawEventCount=parsed.raw_event_count,
+        acceptedEventCount=len(parsed.entries),
     )
-    raw = repo.load_json("raw") or {"source": "takeout_import", "history": []}
-    raw["takeout_history"] = entries
+    if not parsed.entries:
+        coordinator.fail(
+            job_id,
+            "No usable YouTube Music play events were found. Check that the export contains watch history.",
+            "takeout_no_accepted_events",
+            "parsing",
+        )
+        return
+
+    coordinator.stage(
+        job_id,
+        "normalizing",
+        "Canonical events are ready. Building the local listening dataset.",
+        importedCount=len(parsed.entries),
+    )
+    previous_raw = repo.load_json("raw")
+    if not isinstance(previous_raw, dict) or previous_raw.get("source") == "demo":
+        raw: dict[str, Any] = {"source": "google_takeout", "history": [], "warnings": []}
+    else:
+        raw = dict(previous_raw)
+        raw["source"] = "google_takeout"
+    raw["takeout_history"] = parsed.entries
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
-    ytmusic_connected = bool(ytmusic.auth_status()["connected"])
-    normalised = normalise_with_duration_cache(
-        raw,
-        warnings := ["Google Takeout history imported and merged with local metadata."],
-        allow_enrichment=False,
-        allow_artist_image_enrichment=ytmusic_connected,
-        allow_album_image_enrichment=True,
+    for key in ("artist_image_cache_v2", "album_image_cache_v1"):
+        cached = repo.load_json(key)
+        if cached:
+            raw[key] = cached
+    try:
+        normalised = normalise_collection(raw)
+        normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "Canonical event normalization failed. Your previous profile was preserved.",
+            "takeout_normalization_failed",
+            "normalizing",
+        )
+        return
+    coordinator.check_timeout(deadline)
+    if not normalised.get("play_events") or not normalised.get("tracks"):
+        coordinator.fail(
+            job_id,
+            "The export contained no events usable for analysis. Your previous profile was preserved.",
+            "takeout_profile_empty",
+            "normalizing",
+        )
+        return
+
+    coordinator.stage(job_id, "rebuilding", "Rebuilding Overview and listening profiles from local events.")
+    coordinator.log(job_id, "profile_rebuild_started", playCount=len(normalised["play_events"]))
+    try:
+        refreshed_at = datetime.now(timezone.utc).isoformat()
+        normalised["refreshed_at"] = refreshed_at
+        analysis = build_analysis(normalised)
+        if not analysis.get("top_tracks") or not analysis.get("coverage"):
+            raise ValueError("analysis profile is incomplete")
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "Analytics rebuild failed. Your previous profile was preserved and remains usable.",
+            "takeout_analytics_rebuild_failed",
+            "rebuilding",
+        )
+        return
+    coordinator.check_timeout(deadline)
+    coordinator.log(
+        job_id,
+        "profile_rebuild_completed",
+        trackCount=normalised["metadata"]["track_count"],
+        playCount=normalised["metadata"]["play_count"],
     )
-    refreshed_at = datetime.now(timezone.utc).isoformat()
-    normalised["refreshed_at"] = refreshed_at
-    normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
-    analysis = build_analysis(normalised)
-    repo.save_json("raw", raw)
-    repo.save_json("normalised", normalised)
-    repo.save_json("analysis", analysis)
-    repo.save_json(
-        "last_refresh_meta",
-        {"refreshed_at": refreshed_at, "use_demo": False, "warnings": warnings},
-    )
-    dated = sorted(entry["played"] for entry in entries if entry.get("played"))
-    return TakeoutImportResponse(
-        imported_count=len(entries),
-        earliest_play=dated[0] if dated else None,
-        latest_play=dated[-1] if dated else None,
-        message="Google Takeout history imported. Dashboard analysis was rebuilt with the longest available history source.",
+
+    unknown_tracks = sum(1 for track in normalised.get("tracks", []) if track.get("primary_artist") == "Unknown Artist")
+    warnings = ["Google Takeout history imported and rebuilt from canonical local events."]
+    if unknown_tracks:
+        warnings.append(f"{unknown_tracks} track(s) have partial artist metadata; play counts are still included.")
+    metadata = {
+        "parser_schema_version": TAKEOUT_PARSER_SCHEMA_VERSION,
+        "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
+        "imported_at": refreshed_at,
+    }
+    coordinator.stage(job_id, "saving", "Saving the new profile and invalidating dependent caches.")
+    coordinator.log(job_id, "cache_invalidation_started", cacheGroups=["persona_report", "overview_language", "recommendations"])
+    try:
+        repo.save_json_batch(
+            {
+                "takeout_history": parsed.entries,
+                TAKEOUT_CACHE_METADATA_KEY: metadata,
+                "raw": raw,
+                "normalised": normalised,
+                "analysis": analysis,
+                "last_refresh_meta": {"refreshed_at": refreshed_at, "use_demo": False, "warnings": warnings},
+            },
+            delete_keys=["latest_report", "recommendations"],
+            delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
+        )
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "The rebuilt profile could not be saved. Your previous profile was preserved.",
+            "takeout_persistence_failed",
+            "saving",
+        )
+        return
+    coordinator.log(job_id, "cache_invalidated", cacheGroups=["persona_report", "overview_language", "recommendations"])
+    coordinator.log(job_id, "persistence_completed", acceptedEventCount=len(parsed.entries))
+    coordinator.stage(
+        job_id,
+        "complete",
+        "Google Takeout history imported. Overview is ready.",
+        importedCount=len(parsed.entries),
+        trackCount=normalised["metadata"]["track_count"],
+        playCount=normalised["metadata"]["play_count"],
     )
 
 

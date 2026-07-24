@@ -4,10 +4,12 @@ import json
 import re
 import zipfile
 import csv
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from io import BytesIO, StringIO
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 
@@ -18,6 +20,18 @@ class TakeoutParseError(ValueError):
 TAKEOUT_PARSER_SCHEMA_VERSION = 2
 TAKEOUT_SOURCE = "google_takeout"
 SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
+DEFAULT_MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024
+DEFAULT_MAX_ARCHIVE_TOTAL_BYTES = 1024 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class TakeoutParseResult:
+    entries: list[dict[str, Any]]
+    raw_event_count: int
+    history_file_count: int
+
+
+ParseEventCallback = Callable[[str, dict[str, Any]], None]
 
 
 class _WatchHistoryHtmlParser(HTMLParser):
@@ -70,6 +84,82 @@ def parse_takeout_upload(filename: str, content: bytes) -> list[dict[str, Any]]:
     raise TakeoutParseError("Unsupported file type. Upload a Google Takeout watch-history JSON, HTML, or ZIP file.")
 
 
+def parse_takeout_file(
+    path: Path,
+    *,
+    on_event: ParseEventCallback | None = None,
+    check_timeout: Callable[[], None] | None = None,
+    max_archive_entry_bytes: int = DEFAULT_MAX_ARCHIVE_ENTRY_BYTES,
+    max_archive_total_bytes: int = DEFAULT_MAX_ARCHIVE_TOTAL_BYTES,
+) -> TakeoutParseResult:
+    emit = on_event or (lambda _event, _fields: None)
+    check = check_timeout or (lambda: None)
+    lower = path.name.lower()
+    emit("parse_started", {"fileType": path.suffix.lower()})
+    try:
+        if lower.endswith(".zip"):
+            with zipfile.ZipFile(path) as archive:
+                emit("archive_opened", {"entryCount": len(archive.infolist())})
+                total_size = sum(info.file_size for info in archive.infolist())
+                if total_size > max_archive_total_bytes:
+                    raise TakeoutParseError("Takeout archive expands beyond the allowed size.")
+                library_lookup = parse_takeout_music_library(
+                    archive,
+                    max_entry_bytes=max_archive_entry_bytes,
+                )
+                history_infos = [
+                    info
+                    for info in archive.infolist()
+                    if re.search(r"(watch-history|watch history|historial).*\.(json|html?)$", info.filename, flags=re.I)
+                    and "youtube" in info.filename.lower()
+                ]
+                if not history_infos:
+                    raise TakeoutParseError("No YouTube watch-history JSON or HTML file was found inside the ZIP.")
+                emit("history_file_found", {"count": len(history_infos)})
+                entries: list[dict[str, Any]] = []
+                raw_count = 0
+                for info in history_infos:
+                    check()
+                    payload = read_archive_entry(archive, info, max_archive_entry_bytes)
+                    if info.filename.lower().endswith(".json"):
+                        items = json.loads(payload.decode("utf-8-sig"))
+                        raw_count += len(items) if isinstance(items, list) else 0
+                        entries.extend(normalise_takeout_items(items, library_lookup))
+                    else:
+                        html = payload.decode("utf-8-sig", errors="replace")
+                        parsed, block_count = parse_takeout_html_with_count(html, library_lookup)
+                        raw_count += block_count
+                        entries.extend(parsed)
+                accepted = dedupe_takeout_entries(entries)
+                emit("deduplication_completed", {"rawEventCount": raw_count, "acceptedEventCount": len(accepted)})
+                result = TakeoutParseResult(accepted, raw_count, len(history_infos))
+        elif lower.endswith(".json"):
+            check()
+            items = json.loads(path.read_text(encoding="utf-8-sig"))
+            raw_count = len(items) if isinstance(items, list) else 0
+            entries = normalise_takeout_items(items)
+            result = TakeoutParseResult(entries, raw_count, 1)
+        elif lower.endswith(".html") or lower.endswith(".htm"):
+            check()
+            entries, raw_count = parse_takeout_html_with_count(path.read_text(encoding="utf-8-sig", errors="replace"))
+            result = TakeoutParseResult(entries, raw_count, 1)
+        else:
+            raise TakeoutParseError("Unsupported file type. Upload a Google Takeout watch-history JSON, HTML, or ZIP file.")
+    except zipfile.BadZipFile as exc:
+        raise TakeoutParseError("The uploaded ZIP is invalid or corrupted.") from exc
+    except json.JSONDecodeError as exc:
+        raise TakeoutParseError("The Takeout JSON is invalid or truncated.") from exc
+    emit(
+        "parse_completed",
+        {
+            "rawEventCount": result.raw_event_count,
+            "acceptedEventCount": len(result.entries),
+            "historyFileCount": result.history_file_count,
+        },
+    )
+    return result
+
+
 def parse_takeout_zip(content: bytes) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     with zipfile.ZipFile(BytesIO(content)) as archive:
@@ -91,7 +181,21 @@ def parse_takeout_zip(content: bytes) -> list[dict[str, Any]]:
     return dedupe_takeout_entries(entries)
 
 
-def parse_takeout_music_library(archive: zipfile.ZipFile) -> dict[str, dict[str, Any]]:
+def read_archive_entry(archive: zipfile.ZipFile, info: zipfile.ZipInfo, max_entry_bytes: int) -> bytes:
+    if info.file_size > max_entry_bytes:
+        raise TakeoutParseError("A Takeout history file expands beyond the allowed size.")
+    with archive.open(info) as source:
+        payload = source.read(max_entry_bytes + 1)
+    if len(payload) > max_entry_bytes:
+        raise TakeoutParseError("A Takeout history file expands beyond the allowed size.")
+    return payload
+
+
+def parse_takeout_music_library(
+    archive: zipfile.ZipFile,
+    *,
+    max_entry_bytes: int = DEFAULT_MAX_ARCHIVE_ENTRY_BYTES,
+) -> dict[str, dict[str, Any]]:
     lookup: dict[str, dict[str, Any]] = {}
     names = [
         name
@@ -99,7 +203,8 @@ def parse_takeout_music_library(archive: zipfile.ZipFile) -> dict[str, dict[str,
         if name.lower().endswith("music library songs.csv") and "youtube" in name.lower()
     ]
     for name in names:
-        text = archive.read(name).decode("utf-8-sig", errors="replace")
+        info = archive.getinfo(name)
+        text = read_archive_entry(archive, info, max_entry_bytes).decode("utf-8-sig", errors="replace")
         for row in csv.DictReader(StringIO(text)):
             video_id = clean_video_id(row.get("Video ID"))
             if not video_id:
@@ -162,6 +267,14 @@ def normalise_takeout_items(items: Any, library_lookup: dict[str, dict[str, Any]
 
 
 def parse_takeout_html(html: str, library_lookup: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    entries, _ = parse_takeout_html_with_count(html, library_lookup)
+    return entries
+
+
+def parse_takeout_html_with_count(
+    html: str,
+    library_lookup: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     library_lookup = library_lookup or {}
     parser = _WatchHistoryHtmlParser()
     parser.feed(html)
@@ -170,7 +283,7 @@ def parse_takeout_html(html: str, library_lookup: dict[str, dict[str, Any]] | No
         entry = normalise_takeout_html_block(block, library_lookup)
         if entry:
             entries.append(entry)
-    return dedupe_takeout_entries(entries)
+    return dedupe_takeout_entries(entries), len(parser.blocks)
 
 
 def clean_takeout_title(title: str) -> str:

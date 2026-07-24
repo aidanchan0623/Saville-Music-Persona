@@ -1,5 +1,23 @@
 export type MusicSource = "youtube" | "spotify";
 
+export type TakeoutImportStage = "queued" | "parsing" | "normalizing" | "rebuilding" | "saving" | "complete" | "failed";
+
+export interface TakeoutImportQueued {
+  jobId: string;
+  status: "queued";
+}
+
+export interface TakeoutImportStatus {
+  jobId: string;
+  status: TakeoutImportStage;
+  progress: number;
+  message: string;
+  errorCode: string | null;
+  importedCount: number | null;
+  trackCount: number | null;
+  playCount: number | null;
+}
+
 export interface SpotifyStatus {
   configured: boolean;
   connected: boolean;

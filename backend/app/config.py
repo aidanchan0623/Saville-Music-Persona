@@ -34,6 +34,8 @@ class Settings:
         self.ollama_generate_timeout_seconds = float(os.getenv("OLLAMA_GENERATE_TIMEOUT_SECONDS", "240"))
         self.local_timezone = os.getenv("SMP_LOCAL_TIMEZONE", "Asia/Kuala_Lumpur")
         self.duration_enrichment_limit = int(os.getenv("SMP_DURATION_ENRICHMENT_LIMIT", "150"))
+        self.takeout_max_upload_bytes = int(os.getenv("SMP_TAKEOUT_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))
+        self.takeout_import_timeout_seconds = int(os.getenv("SMP_TAKEOUT_IMPORT_TIMEOUT_SECONDS", "600"))
         auth_default = self.private_dir / "oauth.json"
         self.ytmusic_auth_file = Path(os.getenv("YTMUSIC_AUTH_FILE", auth_default))
         if not self.ytmusic_auth_file.is_absolute():

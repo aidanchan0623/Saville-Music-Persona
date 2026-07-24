@@ -46,12 +46,50 @@ class JsonRepository:
             )
         return updated_at
 
+    def save_json_batch(
+        self,
+        values: dict[str, Any],
+        *,
+        delete_keys: list[str] | None = None,
+        delete_prefixes: list[str] | None = None,
+    ) -> str:
+        """Commit related cache values and invalidations in one transaction."""
+        updated_at = datetime.now(timezone.utc).isoformat()
+        rows = [
+            (key, json.dumps(value, ensure_ascii=True, default=str), updated_at)
+            for key, value in values.items()
+        ]
+        with self.connect() as conn:
+            if delete_keys:
+                conn.executemany("DELETE FROM json_cache WHERE key = ?", [(key,) for key in delete_keys])
+            for prefix in delete_prefixes or []:
+                conn.execute("DELETE FROM json_cache WHERE key LIKE ?", (f"{prefix}%",))
+            conn.executemany(
+                """
+                INSERT INTO json_cache(key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = excluded.updated_at
+                """,
+                rows,
+            )
+        return updated_at
+
     def load_json(self, key: str) -> Any | None:
         with self.connect() as conn:
             row = conn.execute("SELECT value FROM json_cache WHERE key = ?", (key,)).fetchone()
         if not row:
             return None
         return json.loads(row["value"])
+
+    def load_json_prefix(self, prefix: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM json_cache WHERE key LIKE ? ORDER BY updated_at DESC",
+                (f"{prefix}%",),
+            ).fetchall()
+        return {row["key"]: json.loads(row["value"]) for row in rows}
 
     def delete_json(self, key: str) -> None:
         with self.connect() as conn:

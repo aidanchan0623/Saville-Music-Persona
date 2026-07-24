@@ -1,6 +1,7 @@
 import { Menu, Music2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
+import { pollTakeoutImport, runExclusiveOperation } from "./api/takeoutImport";
 import { GlowPanel } from "./components/GlowPanel";
 import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
 import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
@@ -60,6 +61,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const loadAnalysisTokenRef = useRef(0);
+  const operationInFlightRef = useRef(false);
+  const importAbortControllerRef = useRef<AbortController | null>(null);
+  const lastTakeoutFileRef = useRef<File | null>(null);
+  const skipNextSourceLoadRef = useRef(false);
+  const [canRetryTakeout, setCanRetryTakeout] = useState(false);
 
   const loadStatus = async () => {
     const [nextPrerequisites, nextAuth, nextSpotifyStatus] = await Promise.all([api.prerequisites(), api.authStatus(), api.spotifyStatus()]);
@@ -142,6 +148,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (skipNextSourceLoadRef.current) {
+      skipNextSourceLoadRef.current = false;
+      return;
+    }
     void loadAnalysis(source).catch((error) => {
       clearAnalysis();
       setMessage(
@@ -154,18 +164,22 @@ export default function App() {
     });
   }, [source]);
 
+  useEffect(() => () => importAbortControllerRef.current?.abort(), []);
+
   const refresh = async () => {
-    setBusy(true);
-    setMessage(source === "spotify" ? "Refreshing local Spotify data..." : useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
-    try {
-      const response = source === "spotify" ? await api.spotifyRefresh() : await api.refresh(useDemo);
-      await loadStatus();
-      await loadAnalysis(source);
-      setMessage(`Refreshed ${response.track_count} tracks and ${response.play_count} detected plays.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Refresh failed.");
-    } finally {
-      setBusy(false);
+    const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
+      setMessage(source === "spotify" ? "Refreshing local Spotify data..." : useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
+      try {
+        const response = source === "spotify" ? await api.spotifyRefresh() : await api.refresh(useDemo);
+        await loadStatus();
+        await loadAnalysis(source);
+        setMessage(`Refreshed ${response.track_count} tracks and ${response.play_count} detected plays.`);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Refresh failed.");
+      }
+    });
+    if (!started) {
+      setMessage("Another data operation is already running. Wait for it to finish before refreshing again.");
     }
   };
 
@@ -203,19 +217,47 @@ export default function App() {
   };
 
   const importTakeout = async (file: File) => {
-    setBusy(true);
-    setMessage(`Importing ${file.name} from Google Takeout...`);
-    try {
-      const result = await api.importTakeout(file);
-      setSource("youtube");
-      await loadAnalysis("youtube");
-      setMessage(`${result.message} Imported ${result.imported_count} history entries.`);
-      navigate("overview");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Takeout import failed.");
-    } finally {
-      setBusy(false);
+    lastTakeoutFileRef.current = file;
+    setCanRetryTakeout(false);
+    const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
+      const controller = new AbortController();
+      importAbortControllerRef.current = controller;
+      setMessage(`Uploading ${file.name} from Google Takeout...`);
+      try {
+        const queued = await api.importTakeout(file, controller.signal);
+        const result = await pollTakeoutImport(
+          (signal) => api.takeoutImportStatus(queued.jobId, signal),
+          {
+            signal: controller.signal,
+            onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+          },
+        );
+        await loadStatus();
+        await loadAnalysis("youtube");
+        if (source !== "youtube") {
+          skipNextSourceLoadRef.current = true;
+          setSource("youtube");
+        }
+        setCanRetryTakeout(false);
+        setMessage(`${result.message} Imported ${result.importedCount ?? 0} history entries.`);
+        navigate("overview");
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCanRetryTakeout(true);
+          setMessage(error instanceof Error ? error.message : "Takeout import failed. Retry with the same file.");
+        }
+      } finally {
+        if (importAbortControllerRef.current === controller) importAbortControllerRef.current = null;
+      }
+    });
+    if (!started) {
+      setMessage("A Takeout import or refresh is already running. Wait for it to finish before starting another.");
     }
+  };
+
+  const retryTakeout = () => {
+    const file = lastTakeoutFileRef.current;
+    if (file) void importTakeout(file);
   };
 
   const createPlaylist = async () => {
@@ -327,8 +369,17 @@ export default function App() {
     }
   }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source]);
 
-  const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || useDemo);
-  const youtubeLabel = useDemo ? "Demo data" : auth?.connected ? "YouTube connected" : auth?.cached_data_available ? "YouTube data loaded" : "YouTube offline";
+  const youtubeAnalysisReady = overview?.source === "youtube";
+  const youtubeReady = Boolean(auth?.connected || youtubeAnalysisReady || (useDemo && overview));
+  const youtubeLabel = useDemo
+    ? youtubeAnalysisReady ? "Demo data" : "Demo data loading"
+    : auth?.connected
+      ? "YouTube connected"
+      : auth?.cached_data_available && youtubeAnalysisReady
+        ? "YouTube data loaded"
+        : auth?.cached_data_available
+          ? "YouTube data pending"
+          : "YouTube offline";
   const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
 
   return (
@@ -387,8 +438,11 @@ export default function App() {
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
           <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
           {message ? (
-            <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="px-4 py-3 text-sm text-mist">
-              {message}
+            <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-mist">
+              <span>{message}</span>
+              {canRetryTakeout && lastTakeoutFileRef.current ? (
+                <button type="button" className="btn-secondary" disabled={busy} onClick={retryTakeout}>Retry</button>
+              ) : null}
             </GlowPanel>
           ) : null}
           {activePage}

@@ -52,11 +52,23 @@ class RefreshResponse(BaseModel):
     play_count: int
 
 
-class TakeoutImportResponse(BaseModel):
-    imported_count: int
-    earliest_play: str | None = None
-    latest_play: str | None = None
+class TakeoutImportQueuedResponse(BaseModel):
+    jobId: str
+    status: str
+
+
+class TakeoutImportStatusResponse(BaseModel):
+    jobId: str
+    status: str
+    progress: int
     message: str
+    errorCode: str | None = None
+    importedCount: int | None = None
+    trackCount: int | None = None
+    playCount: int | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    finishedAt: str | None = None
 
 
 class OverviewPeriod(BaseModel):

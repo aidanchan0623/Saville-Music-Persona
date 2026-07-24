@@ -18,6 +18,8 @@ import type {
   TasteDnaExplorer,
   TopArtist,
   TopTrack,
+  TakeoutImportQueued,
+  TakeoutImportStatus,
 } from "../types/api";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -76,10 +78,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ use_demo: useDemo }),
     }),
-  importTakeout: async (file: File) => {
+  importTakeout: async (file: File, signal?: AbortSignal) => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch(`${API_BASE}/data/import-takeout`, { method: "POST", body: form });
+    const response = await fetch(`${API_BASE}/data/import-takeout`, { method: "POST", body: form, signal });
     if (!response.ok) {
       let message = `${response.status} ${response.statusText}`;
       try {
@@ -90,8 +92,10 @@ export const api = {
       }
       throw new Error(message);
     }
-    return response.json() as Promise<{ imported_count: number; earliest_play: string | null; latest_play: string | null; message: string }>;
+    return response.json() as Promise<TakeoutImportQueued>;
   },
+  takeoutImportStatus: (jobId: string, signal?: AbortSignal) =>
+    request<TakeoutImportStatus>(`/data/import-takeout/${encodeURIComponent(jobId)}`, { signal }),
   overview: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
     return request<OverviewResponse>(`/analysis/overview?${params.toString()}`).then(requireOverviewSchema);
