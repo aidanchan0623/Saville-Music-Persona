@@ -25,6 +25,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
     liked_songs: list[dict[str, Any]] = []
     playlist_tracks: dict[str, list[dict[str, Any]]] = {}
     library_artists: dict[str, dict[str, Any]] = {}
+    platform_top_tracks: list[dict[str, Any]] = []
 
     for period, tracks in top_tracks.items():
         if not isinstance(tracks, list):
@@ -34,7 +35,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
             if not adapted:
                 continue
             library_songs.setdefault(adapted["source_track_id"], adapted)
-            history.append({**adapted, "played": signal_date(str(period), rank, anchor), "event_source": "spotify_top_track_signal"})
+            platform_top_tracks.append({**adapted, "event_source": "spotify_top_track_signal"})
 
     for play in recent_plays:
         track = play.get("track") if isinstance(play, dict) else None
@@ -97,6 +98,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
             if isinstance(playlist, dict)
         ],
         "playlist_tracks": playlist_tracks,
+        "platform_top_tracks": platform_top_tracks,
         "spotify_top_items": {"tracks": top_tracks, "artists": top_artists},
         "warnings": [SPOTIFY_LIMITATION_NOTE],
     }

@@ -207,6 +207,17 @@ def filter_events(normalised: dict[str, Any], spec: dict[str, Any]) -> list[dict
     return result
 
 
+def filter_excluded_play_events(normalised: dict[str, Any], spec: dict[str, Any]) -> list[dict[str, Any]]:
+    start: date = spec["start_date"]
+    end: date = spec["end_date"]
+    timezone_name = spec.get("timezone")
+    return [
+        event
+        for event in normalised.get("excluded_play_events") or []
+        if (day := event_local_date(event, timezone_name)) is not None and start <= day <= end
+    ]
+
+
 def tracks_by_id(normalised: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {track["track_id"]: track for track in normalised.get("tracks") or [] if track.get("track_id")}
 
@@ -314,7 +325,7 @@ def listening_minutes_payload(
         cursor -= timedelta(days=1)
     weekly = aggregate_by_week(daily_seconds)
     monthly = aggregate_by_month(daily_seconds)
-    quality = duration_quality(events)
+    quality = duration_quality([*events, *filter_excluded_play_events(normalised, spec)])
     selected_days = max(len(daily_seconds), 1)
     active_minute_day_count = max(len(active_minute_days), 1)
     this_month_spec = resolve_period(normalised, "this_month", timezone_name=spec["timezone"], today=today_day)

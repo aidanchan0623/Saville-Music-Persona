@@ -17,6 +17,7 @@ from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_im
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, normalise_collection
+from app.models.listening_event import LISTENING_EVENT_SCHEMA_VERSION
 from app.analysis.overview import (
     OVERVIEW_LANGUAGE_CACHE_VERSION,
     OVERVIEW_SCHEMA_VERSION,
@@ -165,13 +166,18 @@ def validate_takeout_cache_schema() -> None:
     if repo.updated_at("takeout_history") is None:
         return
     metadata = repo.load_json(TAKEOUT_CACHE_METADATA_KEY)
-    if not isinstance(metadata, dict) or metadata.get("parser_schema_version") != TAKEOUT_PARSER_SCHEMA_VERSION:
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("parser_schema_version") != TAKEOUT_PARSER_SCHEMA_VERSION
+        or metadata.get("event_schema_version") != LISTENING_EVENT_SCHEMA_VERSION
+        or metadata.get("data_schema_version") != NORMALISED_DATA_SCHEMA_VERSION
+    ):
         raise HTTPException(
             status_code=409,
             detail={
                 "error": "Google Takeout data needs to be re-imported",
-                "detail": "The timestamp parser changed to preserve exact play times. Re-upload the Takeout JSON, HTML, or ZIP so analytics can be rebuilt accurately.",
-                "code": "takeout_parser_schema_outdated",
+                "detail": "The listening-event schema changed. Re-upload the Takeout JSON, HTML, or ZIP so analytics can be rebuilt accurately.",
+                "code": "takeout_event_schema_outdated",
             },
         )
 
@@ -487,6 +493,7 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
     takeout_history = None if request.use_demo else load_current_takeout_history()
     if takeout_history:
         raw["takeout_history"] = takeout_history
+        raw["takeout_import_batch_id"] = (repo.load_json(TAKEOUT_CACHE_METADATA_KEY) or {}).get("import_batch_id")
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
     normalised = normalise_with_duration_cache(
         raw,
@@ -636,6 +643,8 @@ def process_takeout_import(
         raw["source"] = "google_takeout"
     raw["takeout_history"] = parsed.entries
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
+    raw["takeout_import_batch_id"] = job_id
+    raw["takeout_import_diagnostics"] = parsed.diagnostics
     for key in ("artist_image_cache_v2", "album_image_cache_v1"):
         cached = repo.load_json(key)
         if cached:
@@ -699,8 +708,11 @@ def process_takeout_import(
         warnings.append(f"{unknown_tracks} track(s) have partial artist metadata; play counts are still included.")
     metadata = {
         "parser_schema_version": TAKEOUT_PARSER_SCHEMA_VERSION,
+        "event_schema_version": LISTENING_EVENT_SCHEMA_VERSION,
         "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
         "imported_at": refreshed_at,
+        "import_batch_id": job_id,
+        "diagnostics": normalised.get("import_diagnostics") or parsed.diagnostics,
     }
     coordinator.stage(job_id, "saving", "Saving the new profile and invalidating dependent caches.")
     coordinator.log(job_id, "cache_invalidation_started", cacheGroups=["persona_report", "overview_language", "recommendations"])

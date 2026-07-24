@@ -17,7 +17,7 @@ class TakeoutParseError(ValueError):
     pass
 
 
-TAKEOUT_PARSER_SCHEMA_VERSION = 2
+TAKEOUT_PARSER_SCHEMA_VERSION = 3
 TAKEOUT_SOURCE = "google_takeout"
 SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
 DEFAULT_MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024
@@ -29,6 +29,7 @@ class TakeoutParseResult:
     entries: list[dict[str, Any]]
     raw_event_count: int
     history_file_count: int
+    diagnostics: dict[str, Any]
 
 
 ParseEventCallback = Callable[[str, dict[str, Any]], None]
@@ -40,15 +41,16 @@ class _WatchHistoryHtmlParser(HTMLParser):
         self._in_block = False
         self._current_href: str | None = None
         self._current_link_text: list[str] = []
-        self._current_text: list[str] = []
+        self._current_text_nodes: list[str] = []
         self._current_links: list[dict[str, str]] = []
         self.blocks: list[dict[str, Any]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = dict(attrs)
-        if tag == "div" and attr_map.get("class") == "content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1":
+        classes = set((attr_map.get("class") or "").split())
+        if tag == "div" and {"content-cell", "mdl-cell", "mdl-cell--6-col", "mdl-typography--body-1"}.issubset(classes):
             self._in_block = True
-            self._current_text = []
+            self._current_text_nodes = []
             self._current_links = []
         elif self._in_block and tag == "a":
             self._current_href = attr_map.get("href") or ""
@@ -61,14 +63,14 @@ class _WatchHistoryHtmlParser(HTMLParser):
             self._current_href = None
             self._current_link_text = []
         if tag == "div" and self._in_block:
-            text = " ".join(part.strip() for part in self._current_text if part.strip())
-            if text:
-                self.blocks.append({"text": text, "links": self._current_links})
+            if self._current_links or self._current_text_nodes:
+                self.blocks.append({"text_nodes": self._current_text_nodes, "links": self._current_links})
             self._in_block = False
 
     def handle_data(self, data: str) -> None:
         if self._in_block:
-            self._current_text.append(data)
+            if self._current_href is None and data.strip():
+                self._current_text_nodes.append(data)
             if self._current_href is not None:
                 self._current_link_text.append(data)
 
@@ -132,17 +134,18 @@ def parse_takeout_file(
                         entries.extend(parsed)
                 accepted = dedupe_takeout_entries(entries)
                 emit("deduplication_completed", {"rawEventCount": raw_count, "acceptedEventCount": len(accepted)})
-                result = TakeoutParseResult(accepted, raw_count, len(history_infos))
+                result = TakeoutParseResult(accepted, raw_count, len(history_infos), takeout_diagnostics(raw_count, entries, accepted))
         elif lower.endswith(".json"):
             check()
             items = json.loads(path.read_text(encoding="utf-8-sig"))
             raw_count = len(items) if isinstance(items, list) else 0
-            entries = normalise_takeout_items(items)
-            result = TakeoutParseResult(entries, raw_count, 1)
+            entries_before_dedupe = normalise_takeout_items(items, deduplicate=False)
+            entries = dedupe_takeout_entries(entries_before_dedupe)
+            result = TakeoutParseResult(entries, raw_count, 1, takeout_diagnostics(raw_count, entries_before_dedupe, entries))
         elif lower.endswith(".html") or lower.endswith(".htm"):
             check()
             entries, raw_count = parse_takeout_html_with_count(path.read_text(encoding="utf-8-sig", errors="replace"))
-            result = TakeoutParseResult(entries, raw_count, 1)
+            result = TakeoutParseResult(entries, raw_count, 1, takeout_diagnostics(raw_count, entries, entries))
         else:
             raise TakeoutParseError("Unsupported file type. Upload a Google Takeout watch-history JSON, HTML, or ZIP file.")
     except zipfile.BadZipFile as exc:
@@ -155,6 +158,7 @@ def parse_takeout_file(
             "rawEventCount": result.raw_event_count,
             "acceptedEventCount": len(result.entries),
             "historyFileCount": result.history_file_count,
+            "diagnostics": result.diagnostics,
         },
     )
     return result
@@ -223,7 +227,12 @@ def parse_takeout_music_library(
     return lookup
 
 
-def normalise_takeout_items(items: Any, library_lookup: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+def normalise_takeout_items(
+    items: Any,
+    library_lookup: dict[str, dict[str, Any]] | None = None,
+    *,
+    deduplicate: bool = True,
+) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         raise TakeoutParseError("Takeout JSON was not a list of history entries.")
     library_lookup = library_lookup or {}
@@ -259,11 +268,12 @@ def normalise_takeout_items(items: Any, library_lookup: dict[str, dict[str, Any]
                 "source": TAKEOUT_SOURCE,
                 "sourceFormat": "json",
                 "sourceEventId": source_event_id,
+                "parserSchemaVersion": TAKEOUT_PARSER_SCHEMA_VERSION,
                 "timestampInvalid": timestamp_invalid,
                 **({"rawTimestamp": raw_timestamp} if timestamp_invalid else {}),
             }
         )
-    return dedupe_takeout_entries(result)
+    return dedupe_takeout_entries(result) if deduplicate else result
 
 
 def parse_takeout_html(html: str, library_lookup: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
@@ -299,7 +309,8 @@ def clean_channel_artist(channel: str) -> str:
 
 
 def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
-    text = str(block.get("text") or "")
+    text_nodes = [normalise_spaces(str(value)) for value in block.get("text_nodes", []) if normalise_spaces(str(value))]
+    text = " ".join(text_nodes)
     links = [link for link in block.get("links", []) if isinstance(link, dict)]
     if "Viewed Ads" in text or "YouTube Homepage" in text:
         return None
@@ -311,7 +322,7 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
     video_id = extract_video_id(href)
     channel = str(links[1].get("text") or "").strip() if len(links) > 1 else ""
     library_item = library_lookup.get(video_id or "")
-    raw_played = extract_takeout_html_date_raw(text)
+    raw_played = next((extract_takeout_html_date_raw(node) for node in text_nodes if extract_takeout_html_date_raw(node)), None)
     played, timestamp_invalid, raw_timestamp = normalise_takeout_timestamp(raw_played)
     artist_names: list[str] = []
     album = None
@@ -340,6 +351,7 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         "source": TAKEOUT_SOURCE,
         "sourceFormat": "html",
         "sourceEventId": None,
+        "parserSchemaVersion": TAKEOUT_PARSER_SCHEMA_VERSION,
         "timestampInvalid": timestamp_invalid,
         **({"rawTimestamp": raw_timestamp} if timestamp_invalid else {}),
     }
@@ -474,9 +486,31 @@ def dedupe_takeout_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]
             key = ("video_timestamp", source, str(entry["videoId"]), str(entry["played"]))
         else:
             title = normalise_spaces(str(entry.get("title") or "")).casefold()
-            key = ("title_timestamp", source, title, str(entry["played"]))
+            artists = entry.get("artists") or []
+            artist = ""
+            if artists and isinstance(artists[0], dict):
+                artist = normalise_spaces(str(artists[0].get("name") or "")).casefold()
+            key = ("title_artist_timestamp", source, title, artist, str(entry["played"]))
         if key in seen:
             continue
         seen.add(key)
         result.append(entry)
     return result
+
+
+def takeout_diagnostics(raw_count: int, entries_before_dedupe: list[dict[str, Any]], accepted: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(accepted)
+    return {
+        "raw_events": raw_count,
+        "accepted_music_plays": total,
+        "duplicates": max(0, len(entries_before_dedupe) - total),
+        "invalid_timestamps": sum(1 for entry in accepted if entry.get("timestampInvalid")),
+        "missing_ids": sum(1 for entry in accepted if not entry.get("videoId")),
+        "unknown_classifications": sum(1 for entry in accepted if not entry.get("artists")),
+        "coverage": {
+            "timestamps_percent": round(sum(1 for entry in accepted if not entry.get("timestampInvalid")) / total * 100, 1) if total else 0.0,
+            "duration_percent": 0.0,
+            "genre_percent": 0.0,
+            "release_year_percent": 0.0,
+        },
+    }

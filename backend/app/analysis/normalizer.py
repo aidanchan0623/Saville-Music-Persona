@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from app.analysis.duration import annotate_normalised_durations
+from app.analysis.duration import annotate_normalised_durations, content_type_for
 from app.analysis.media import (
     album_cache_lookup,
     album_thumbnail_candidates,
@@ -20,10 +20,16 @@ from app.analysis.media import (
     track_image_source,
     track_image_url,
 )
+from app.models.listening_event import (
+    LISTENING_EVENT_SCHEMA_VERSION,
+    ListeningEvent,
+    event_id_for,
+    event_identity,
+)
 
 
 UNKNOWN_ARTIST = "Unknown Artist"
-NORMALISED_DATA_SCHEMA_VERSION = 2
+NORMALISED_DATA_SCHEMA_VERSION = 3
 
 
 GENRE_KEYWORDS: dict[str, set[str]] = {
@@ -165,6 +171,82 @@ def normalise_played_timestamp(value: Any, parsed_date: date | None = None) -> s
     if timestamp.tzinfo is not None and timestamp.utcoffset() is not None:
         timestamp = timestamp.astimezone(timezone.utc)
     return timestamp.isoformat()
+
+
+def timestamp_status_for(item: dict[str, Any], timestamp: str | None) -> str:
+    if item.get("timestampInvalid"):
+        return "invalid"
+    if not timestamp:
+        return "missing"
+    if "T" not in timestamp:
+        return "date_only"
+    try:
+        parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError:
+        return "invalid"
+    return "valid" if parsed.tzinfo is not None and parsed.utcoffset() is not None else "invalid"
+
+
+def classify_music(track: dict[str, Any]) -> str:
+    _, is_music_candidate, _ = content_type_for(track.get("title"), track.get("duration_seconds"))
+    if not is_music_candidate:
+        return "non_music"
+    if not track.get("title") or track.get("primary_artist") == UNKNOWN_ARTIST:
+        return "unknown"
+    if track.get("video_id") or track.get("source_track_id"):
+        return "confirmed_music"
+    return "probable_music"
+
+
+def canonical_event_for_item(
+    item: dict[str, Any],
+    track: dict[str, Any],
+    *,
+    evidence_type: str,
+    import_batch_id: str | None,
+    sequence: int,
+) -> dict[str, Any]:
+    raw_timestamp = item.get("rawTimestamp") or item.get("played")
+    parsed_date = parse_played_date(item.get("played"))
+    timestamp_utc = normalise_played_timestamp(item.get("played"), parsed_date)
+    timestamp_status = timestamp_status_for(item, timestamp_utc)
+    source = str(item.get("event_source") or item.get("source") or "ytmusic")
+    source_event_id = item.get("sourceEventId") or item.get("source_event_id")
+    identity = event_identity(
+        source=source,
+        source_event_id=str(source_event_id) if source_event_id else None,
+        stable_track_id=track.get("source_track_id") or track.get("video_id"),
+        title=track["title"],
+        artist=track["primary_artist"],
+        timestamp_utc=timestamp_utc,
+        timestamp_status=timestamp_status,
+    )
+    event = ListeningEvent(
+        event_id=event_id_for(identity[1] if identity else None, import_batch_id, sequence),
+        source=source,
+        evidence_type=evidence_type,
+        timestamp_utc=timestamp_utc,
+        raw_timestamp=str(raw_timestamp) if raw_timestamp is not None else None,
+        timestamp_status=timestamp_status,
+        track_id=track.get("track_id"),
+        video_id=track.get("video_id"),
+        title=track["title"],
+        artist=track["primary_artist"],
+        artists=list(track["artists"]),
+        album=track.get("album"),
+        duration_seconds=track.get("duration_seconds"),
+        duration_source=None,
+        music_classification=classify_music(track),
+        import_batch_id=import_batch_id,
+        parser_schema_version=item.get("parserSchemaVersion") or item.get("parser_schema_version"),
+        source_event_id=str(source_event_id) if source_event_id else None,
+    ).to_dict()
+    if identity:
+        event["dedupe_key"] = identity[1]
+    event["genre_clusters"] = list(track.get("genre_clusters") or [])
+    event["release_year"] = track.get("release_year")
+    event["source_track_id"] = track.get("source_track_id")
+    return event
 
 
 def extract_artist_names(item: dict[str, Any]) -> list[str]:
@@ -482,6 +564,10 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     anchor = today or date.today()
     tracks: dict[str, dict[str, Any]] = {}
     play_events: list[dict[str, Any]] = []
+    excluded_play_events: list[dict[str, Any]] = []
+    listening_events: list[dict[str, Any]] = []
+    seen_event_keys: set[str] = set()
+    import_batch_id = raw.get("takeout_import_batch_id") or raw.get("import_batch_id") or f"{raw.get('source', 'ytmusicapi')}:unspecified"
     ytmusic_history = extract_tracks(raw.get("history"))
     takeout_history = extract_tracks(raw.get("takeout_history"))
     history = takeout_history if takeout_history else ytmusic_history
@@ -501,6 +587,22 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         tracks[normalised["track_id"]] = normalised
         return normalised
 
+    def add_event(item: dict[str, Any], track: dict[str, Any], evidence_type: str) -> dict[str, Any] | None:
+        event = canonical_event_for_item(
+            item,
+            track,
+            evidence_type=evidence_type,
+            import_batch_id=str(import_batch_id) if import_batch_id else None,
+            sequence=len(listening_events),
+        )
+        dedupe_key = event.get("dedupe_key")
+        if dedupe_key and dedupe_key in seen_event_keys:
+            return None
+        if dedupe_key:
+            seen_event_keys.add(dedupe_key)
+        listening_events.append(event)
+        return event
+
     if takeout_history:
         for item in ytmusic_history:
             upsert(item, "history_metadata")
@@ -517,39 +619,27 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         if not include:
             continue
         track = upsert(item, "history")
-        track["play_count_in_period"] += 1
+        event = add_event(item, track, "play_event")
+        if event is None:
+            continue
         track["history_coverage_status"] = coverage_status
         played_date_iso = played_at.isoformat() if played_at else None
-        played_timestamp = normalise_played_timestamp(item.get("played"), played_at)
         if played_at:
             included_dated_dates.append(played_at)
             if track["last_played"] is None or played_date_iso > track["last_played"]:
                 track["last_played"] = played_date_iso
             if track["first_played_in_period"] is None or played_date_iso < track["first_played_in_period"]:
                 track["first_played_in_period"] = played_date_iso
-        play_events.append(
-            {
-                "track_id": track["track_id"],
-                "video_id": track.get("video_id"),
-                "source_track_id": track.get("source_track_id"),
-                "title": track["title"],
-                "primary_artist": track["primary_artist"],
-                "artists": track["artists"],
-                "played_at": played_timestamp,
-                "played_date_raw": item.get("rawTimestamp") or item.get("played"),
-                "source": item.get("event_source") or item.get("source") or "history",
-                "source_event_id": item.get("sourceEventId"),
-                "timestamp_invalid": bool(item.get("timestampInvalid")),
-                "spotify_time_range": item.get("spotify_time_range"),
-                "spotify_rank": item.get("spotify_rank"),
-                "spotify_signal_label": item.get("spotify_signal_label"),
-            }
-        )
+        if event["music_classification"] in {"confirmed_music", "probable_music"}:
+            track["play_count_in_period"] += 1
+            play_events.append(event)
+        else:
+            excluded_play_events.append(event)
 
     for item in extract_tracks(raw.get("liked_songs")):
-        upsert(item, "liked")
+        add_event(item, upsert(item, "liked"), "liked_item")
     for item in extract_tracks(raw.get("library_songs")):
-        upsert(item, "library")
+        add_event(item, upsert(item, "library"), "library_item")
 
     playlists = raw.get("library_playlists") or []
     playlist_titles = {
@@ -561,7 +651,13 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     if isinstance(playlist_tracks, dict):
         for playlist_id, items in playlist_tracks.items():
             for item in extract_tracks(items):
-                upsert(item, "playlist", str(playlist_id), playlist_titles.get(str(playlist_id), ""))
+                add_event(
+                    item,
+                    upsert(item, "playlist", str(playlist_id), playlist_titles.get(str(playlist_id), "")),
+                    "playlist_item",
+                )
+    for item in extract_tracks(raw.get("platform_top_tracks")):
+        add_event(item, upsert(item, "platform_top"), "platform_top_item")
 
     earliest_included = min(included_dated_dates) if included_dated_dates else None
     latest_included = max(included_dated_dates) if included_dated_dates else None
@@ -604,14 +700,48 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     payload = {
         "tracks": list(tracks.values()),
         "play_events": play_events,
+        "excluded_play_events": excluded_play_events,
+        "listening_events": listening_events,
         "coverage": coverage,
         "artist_metadata": artist_metadata,
         "library_playlists": playlists,
         "metadata": {
             "data_schema_version": NORMALISED_DATA_SCHEMA_VERSION,
+            "listening_event_schema_version": LISTENING_EVENT_SCHEMA_VERSION,
             "track_count": len(tracks),
             "play_count": len(play_events),
             "source": raw.get("source", "ytmusicapi"),
         },
     }
+    diagnostics = listening_event_diagnostics(listening_events, play_events)
+    parser_diagnostics = raw.get("takeout_import_diagnostics")
+    if isinstance(parser_diagnostics, dict):
+        diagnostics.update({
+            key: parser_diagnostics[key]
+            for key in ("raw_events", "duplicates", "invalid_timestamps", "missing_ids")
+            if key in parser_diagnostics
+        })
+    payload["import_diagnostics"] = diagnostics
     return annotate_normalised_durations(payload)
+
+
+def listening_event_diagnostics(events: list[dict[str, Any]], play_events: list[dict[str, Any]]) -> dict[str, Any]:
+    total = len(events)
+    valid_timestamps = sum(1 for event in events if event.get("timestamp_status") == "valid")
+    with_duration = sum(1 for event in events if event.get("duration_seconds"))
+    with_genre = sum(1 for event in events if event.get("genre_clusters"))
+    with_release_year = sum(1 for event in events if event.get("release_year"))
+    return {
+        "raw_events": total,
+        "accepted_music_plays": len(play_events),
+        "duplicates": max(0, total - len({event.get("event_id") for event in events})),
+        "invalid_timestamps": sum(1 for event in events if event.get("timestamp_status") in {"invalid", "missing"}),
+        "missing_ids": sum(1 for event in events if not event.get("video_id") and not event.get("source_track_id")),
+        "unknown_classifications": sum(1 for event in events if event.get("music_classification") == "unknown"),
+        "coverage": {
+            "timestamps_percent": round(valid_timestamps / total * 100, 1) if total else 0.0,
+            "duration_percent": round(with_duration / total * 100, 1) if total else 0.0,
+            "genre_percent": round(with_genre / total * 100, 1) if total else 0.0,
+            "release_year_percent": round(with_release_year / total * 100, 1) if total else 0.0,
+        },
+    }

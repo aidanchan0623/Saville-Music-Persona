@@ -132,7 +132,11 @@ def annotate_normalised_durations(normalised: dict[str, Any], duration_cache: di
         track_lookup[track.get("track_id")] = track
 
     imported_at = normalised.get("refreshed_at") or datetime.now(timezone.utc).isoformat()
-    for index, event in enumerate(normalised.get("play_events") or []):
+    all_events = [
+        *[event for event in normalised.get("play_events") or [] if isinstance(event, dict)],
+        *[event for event in normalised.get("excluded_play_events") or [] if isinstance(event, dict)],
+    ]
+    for index, event in enumerate(all_events):
         if not isinstance(event, dict):
             continue
         track = track_lookup.get(event.get("track_id"), {})

@@ -196,3 +196,19 @@ def test_malformed_timestamp_is_preserved_and_not_unsafely_deduplicated() -> Non
     assert entries[0]["played"] == "not-a-real-timestamp"
     assert entries[0]["rawTimestamp"] == "not-a-real-timestamp"
     assert entries[0]["timestampInvalid"] is True
+
+
+def test_html_parser_tolerates_class_order_and_keeps_timestamp_out_of_link_text() -> None:
+    entries = parse_takeout_html(
+        """
+        <div class="mdl-typography--body-1 content-cell extra mdl-cell--6-col mdl-cell">
+          Watched <a href="https://www.youtube.com/watch?v=struct123">Structured Song</a>
+          <a href="https://www.youtube.com/channel/example">Structured Artist - Topic</a>
+          Jul 10, 2026, 10:32:18 PM GMT+08:00
+        </div>
+        """
+    )
+    assert entries[0]["title"] == "Structured Song"
+    assert entries[0]["artists"][0]["name"] == "Structured Artist"
+    assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"
+    assert entries[0]["parserSchemaVersion"] == 3
