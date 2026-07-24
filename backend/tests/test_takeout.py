@@ -212,3 +212,14 @@ def test_html_parser_tolerates_class_order_and_keeps_timestamp_out_of_link_text(
     assert entries[0]["artists"][0]["name"] == "Structured Artist"
     assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"
     assert entries[0]["parserSchemaVersion"] == 3
+
+
+def test_html_parser_accepts_narrow_nonbreaking_timestamp_whitespace() -> None:
+    entries = parse_takeout_html(
+        """<div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+        Watched <a href="https://www.youtube.com/watch?v=whitespace1">Whitespace Song</a><br>
+        <a href="https://www.youtube.com/channel/example">Whitespace Artist - Topic</a><br>
+        Jul 10, 2026, 10:32:18 PM GMT+08:00</div>"""
+    )
+    assert entries[0]["videoId"] == "whitespace1"
+    assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"

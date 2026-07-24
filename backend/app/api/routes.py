@@ -168,12 +168,8 @@ def validate_takeout_cache_schema() -> None:
     if repo.updated_at("takeout_history") is None:
         return
     metadata = repo.load_json(TAKEOUT_CACHE_METADATA_KEY)
-    if (
-        not isinstance(metadata, dict)
-        or metadata.get("parser_schema_version") != TAKEOUT_PARSER_SCHEMA_VERSION
-        or metadata.get("event_schema_version") != LISTENING_EVENT_SCHEMA_VERSION
-        or metadata.get("data_schema_version") != NORMALISED_DATA_SCHEMA_VERSION
-    ):
+    status = takeout_reimport_status(metadata)
+    if status["requiresReimport"]:
         raise HTTPException(
             status_code=409,
             detail={
@@ -182,6 +178,27 @@ def validate_takeout_cache_schema() -> None:
                 "code": "takeout_event_schema_outdated",
             },
         )
+
+
+def takeout_reimport_status(metadata: Any) -> dict[str, Any]:
+    stored = metadata if isinstance(metadata, dict) else {}
+    parser = stored.get("parser_schema_version")
+    event = stored.get("event_schema_version")
+    data = stored.get("data_schema_version")
+    required = (
+        parser != TAKEOUT_PARSER_SCHEMA_VERSION
+        or event != LISTENING_EVENT_SCHEMA_VERSION
+        or data != NORMALISED_DATA_SCHEMA_VERSION
+    )
+    return {
+        "requiresReimport": required,
+        "storedParserVersion": parser,
+        "currentParserVersion": TAKEOUT_PARSER_SCHEMA_VERSION,
+        "storedEventSchemaVersion": event,
+        "currentEventSchemaVersion": LISTENING_EVENT_SCHEMA_VERSION,
+        "storedDataSchemaVersion": data,
+        "currentDataSchemaVersion": NORMALISED_DATA_SCHEMA_VERSION,
+    }
 
 
 def ensure_youtube_artist_images() -> None:
@@ -764,6 +781,9 @@ def analytics_diagnostics(
     source: str = Query("youtube"),
 ) -> dict[str, Any]:
     """Developer-safe reconciliation; it exposes counts and versions, never events."""
+    reimport = takeout_reimport_status(repo.load_json(TAKEOUT_CACHE_METADATA_KEY)) if normalise_source(source) == "youtube" else {"requiresReimport": False}
+    if reimport["requiresReimport"]:
+        return {"cache": {"status": "stale"}, "reimport": reimport}
     normalised = require_source_cache("normalised", source)
     profile = build_period_profile(normalised, period, month, timezone_name or settings.local_timezone)
     metadata = normalised.get("metadata") or {}
@@ -775,6 +795,7 @@ def analytics_diagnostics(
         "analyticsVersion": ANALYTICS_VERSION,
         "genreMapVersion": GENRE_MAP_VERSION,
         "cache": {"status": "miss", "reason": "period profiles are computed from canonical local events"},
+        "reimport": reimport,
         "import": profile["reconciliation"],
         "profile": {**profile["period"], **profile["figures"]},
     }
@@ -850,12 +871,14 @@ def overview(
 
 @router.get("/analysis/top-tracks")
 def top_tracks(source: str = Query("youtube")) -> list[dict[str, Any]]:
-    return require_source_cache("analysis", source)["top_tracks"]
+    profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
+    return [{**item, "rank": index} for index, item in enumerate(profile["top_tracks"], 1)]
 
 
 @router.get("/analysis/top-artists")
 def top_artists(source: str = Query("youtube")) -> list[dict[str, Any]]:
-    return require_source_cache("analysis", source)["top_artists"]
+    profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
+    return [{**item, "rank": index} for index, item in enumerate(profile["top_artists"], 1)]
 
 
 @router.get("/analysis/scores")
