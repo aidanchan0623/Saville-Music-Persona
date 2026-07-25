@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Callable
 import unicodedata
 
+import httpx
+
 from app.analysis.duration import extract_duration_seconds
 from app.analysis.media import (
     album_cache_failure,
@@ -313,44 +315,82 @@ class YTMusicService:
         raw["album_image_cache_v1"] = album_cache
         return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
 
-    def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 150) -> dict[str, Any]:
+    def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 1000) -> dict[str, Any]:
         if limit <= 0:
-            return {"attempted": 0, "added": 0, "failed": 0}
-        yt = self.client()
-        attempted = 0
+            return {"attempted": 0, "added": 0, "failed": 0, "api_batches": 0, "fallback_attempted": 0, "remaining": 0}
+        all_targets = _duration_targets(normalised, duration_cache, limit)
+        if not all_targets:
+            return {"attempted": 0, "added": 0, "failed": 0, "api_batches": 0, "fallback_attempted": 0, "remaining": 0}
+        # Public InnerTube calls are one-at-a-time. Keep each local job short and resumable when no official batch API key exists.
+        targets = all_targets if self.settings.youtube_data_api_key else all_targets[:100]
+        remaining = len(all_targets) - len(targets)
+
+        now = datetime.now(timezone.utc)
         added = 0
-        failed = 0
-        for track in normalised.get("tracks") or []:
-            if attempted >= limit:
-                break
-            if track.get("duration_seconds"):
-                continue
-            video_id = track.get("video_id")
-            if not video_id or video_id in duration_cache:
-                continue
-            attempted += 1
+        api_batches = 0
+        unresolved = list(targets)
+        if self.settings.youtube_data_api_key:
+            unresolved = []
+            for batch in _chunks(targets, 50):
+                api_batches += 1
+                try:
+                    response = httpx.get(
+                        "https://www.googleapis.com/youtube/v3/videos",
+                        params={
+                            "part": "contentDetails",
+                            "id": ",".join(batch),
+                            "key": self.settings.youtube_data_api_key,
+                            "fields": "items(id,contentDetails(duration))",
+                        },
+                        timeout=10.0,
+                    )
+                    response.raise_for_status()
+                    payload = response.json()
+                    items = payload.get("items") if isinstance(payload, dict) else []
+                    durations = {
+                        str(item.get("id")): _parse_iso8601_duration(item.get("contentDetails", {}).get("duration"))
+                        for item in items or []
+                        if isinstance(item, dict) and isinstance(item.get("contentDetails"), dict)
+                    }
+                    for video_id in batch:
+                        seconds = durations.get(video_id)
+                        if seconds:
+                            _set_duration_cache_success(duration_cache, video_id, seconds, "youtube_data_api.videos.list", now)
+                            added += 1
+                        else:
+                            unresolved.append(video_id)
+                except (httpx.HTTPError, ValueError, TypeError):
+                    # A public YTMusic lookup can still resolve individual IDs when the API key is misconfigured or quota-limited.
+                    unresolved.extend(batch)
+
+        fallback_attempted = 0
+        if unresolved:
             try:
-                payload = yt.get_song(str(video_id))
-                seconds = duration_from_ytmusic_payload(payload)
+                yt = self.public_client()
             except Exception:
-                seconds = None
-            if seconds:
-                duration_cache[str(video_id)] = {
-                    "duration_seconds": seconds,
-                    "duration_source": "ytmusicapi.get_song",
-                    "duration_confidence": "high",
-                    "fetched_at": datetime.now(timezone.utc).isoformat(),
-                }
-                added += 1
-            else:
-                duration_cache[str(video_id)] = {
-                    "duration_seconds": None,
-                    "duration_source": "ytmusicapi.get_song",
-                    "duration_confidence": "missing",
-                    "fetched_at": datetime.now(timezone.utc).isoformat(),
-                }
-                failed += 1
-        return {"attempted": attempted, "added": added, "failed": failed}
+                yt = None
+            for video_id in unresolved:
+                fallback_attempted += 1
+                try:
+                    payload = yt.get_song(video_id) if yt is not None else None
+                    seconds = duration_from_ytmusic_payload(payload) if isinstance(payload, dict) else None
+                except Exception:
+                    seconds = None
+                if seconds:
+                    _set_duration_cache_success(duration_cache, video_id, seconds, "ytmusicapi.public.get_song", now)
+                    added += 1
+                else:
+                    _set_duration_cache_retry(duration_cache, video_id, "ytmusicapi.public.get_song", now)
+
+        failed = len(targets) - added
+        return {
+            "attempted": len(targets),
+            "added": added,
+            "failed": failed,
+            "api_batches": api_batches,
+            "fallback_attempted": fallback_attempted,
+            "remaining": remaining,
+        }
 
     def search_candidates(self, analysis: dict[str, Any], limit_per_seed: int = 8) -> list[dict[str, Any]]:
         yt = self.client()
@@ -802,3 +842,82 @@ def artist_cache_failure_entry(artist: str, artist_id: Any, reason: str) -> dict
         "failure_reason": reason,
         "retry_after": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
     }
+
+
+def _duration_targets(normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int) -> list[str]:
+    plays = Counter(
+        str(event.get("video_id"))
+        for event in normalised.get("play_events") or []
+        if isinstance(event, dict) and event.get("video_id")
+    )
+    now = datetime.now(timezone.utc)
+    candidates: list[tuple[int, str]] = []
+    for track in normalised.get("tracks") or []:
+        if not isinstance(track, dict) or extract_duration_seconds(track.get("duration_seconds")):
+            continue
+        video_id = str(track.get("video_id") or "").strip()
+        if not video_id or not _duration_cache_needs_refresh(duration_cache.get(video_id), now):
+            continue
+        candidates.append((plays.get(video_id, 0), video_id))
+    candidates.sort(key=lambda candidate: (-candidate[0], candidate[1]))
+    return [video_id for _, video_id in candidates[:limit]]
+
+
+def _duration_cache_needs_refresh(entry: Any, now: datetime) -> bool:
+    if not isinstance(entry, dict):
+        return True
+    if extract_duration_seconds(entry.get("duration_seconds")):
+        expires_at = _parse_cache_timestamp(entry.get("expires_at"))
+        return expires_at is not None and expires_at <= now
+    retry_at = _parse_cache_timestamp(entry.get("next_retry_at"))
+    return retry_at is None or retry_at <= now
+
+
+def _parse_cache_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _set_duration_cache_success(cache: dict[str, Any], video_id: str, seconds: int, source: str, now: datetime) -> None:
+    cache[video_id] = {
+        "duration_seconds": seconds,
+        "duration_source": source,
+        "duration_confidence": "high",
+        "status": "resolved",
+        "fetched_at": now.isoformat(),
+        "expires_at": (now + timedelta(days=30)).isoformat(),
+        "next_retry_at": None,
+        "schema_version": 2,
+    }
+
+
+def _set_duration_cache_retry(cache: dict[str, Any], video_id: str, source: str, now: datetime) -> None:
+    cache[video_id] = {
+        "duration_seconds": None,
+        "duration_source": source,
+        "duration_confidence": "missing",
+        "status": "transient_error",
+        "fetched_at": now.isoformat(),
+        "next_retry_at": (now + timedelta(hours=6)).isoformat(),
+        "schema_version": 2,
+    }
+
+
+def _parse_iso8601_duration(value: Any) -> int | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?)?", value)
+    if not match:
+        return None
+    units = {name: int(match.group(name) or 0) for name in ("days", "hours", "minutes", "seconds")}
+    total = units["days"] * 86400 + units["hours"] * 3600 + units["minutes"] * 60 + units["seconds"]
+    return total or None
+
+
+def _chunks(values: list[str], size: int) -> list[list[str]]:
+    return [values[index : index + size] for index in range(0, len(values), size)]

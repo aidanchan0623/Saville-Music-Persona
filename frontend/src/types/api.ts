@@ -18,6 +18,19 @@ export interface TakeoutImportStatus {
   playCount: number | null;
 }
 
+export type DurationEnrichmentStage = "idle" | "queued" | "resolving" | "rebuilding" | "complete" | "failed";
+
+export interface DurationEnrichmentStatus {
+  jobId: string | null;
+  status: DurationEnrichmentStage;
+  progress: number;
+  message: string;
+  errorCode: string | null;
+  attempted: number | null;
+  added: number | null;
+  failed: number | null;
+}
+
 export interface SpotifyStatus {
   configured: boolean;
   connected: boolean;

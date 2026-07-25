@@ -63,6 +63,7 @@ export default function App() {
   const loadAnalysisTokenRef = useRef(0);
   const operationInFlightRef = useRef(false);
   const importAbortControllerRef = useRef<AbortController | null>(null);
+  const durationAbortControllerRef = useRef<AbortController | null>(null);
   const lastTakeoutFileRef = useRef<File | null>(null);
   const skipNextSourceLoadRef = useRef(false);
   const [canRetryTakeout, setCanRetryTakeout] = useState(false);
@@ -164,7 +165,10 @@ export default function App() {
     });
   }, [source]);
 
-  useEffect(() => () => importAbortControllerRef.current?.abort(), []);
+  useEffect(() => () => {
+    importAbortControllerRef.current?.abort();
+    durationAbortControllerRef.current?.abort();
+  }, []);
 
   const refresh = async () => {
     const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
@@ -241,6 +245,7 @@ export default function App() {
         setCanRetryTakeout(false);
         setMessage(`${result.message} Imported ${result.importedCount ?? 0} history entries.`);
         navigate("overview");
+        void enrichDurationsInBackground();
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setCanRetryTakeout(true);
@@ -259,6 +264,37 @@ export default function App() {
     const file = lastTakeoutFileRef.current;
     if (file) void importTakeout(file);
   };
+
+  const enrichDurationsInBackground = async () => {
+    durationAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    durationAbortControllerRef.current = controller;
+    try {
+      const queued = await api.startDurationEnrichment();
+      if (queued.status === "complete" || queued.status === "idle") return;
+      const result = await pollTakeoutImport(
+        (signal) => api.durationEnrichmentStatus(signal),
+        {
+          signal: controller.signal,
+          intervalMs: 1500,
+          timeoutMs: 6 * 60 * 1000,
+          onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+        },
+      );
+      await loadAnalysis("youtube");
+      setMessage(result.message);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setMessage(error instanceof Error ? error.message : "Track duration enrichment could not finish. Your existing analysis is still available.");
+      }
+    } finally {
+      if (durationAbortControllerRef.current === controller) durationAbortControllerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (overview && source === "youtube" && !useDemo) void enrichDurationsInBackground();
+  }, [overview, source, useDemo]);
 
   const createPlaylist = async () => {
     if (source === "spotify") {

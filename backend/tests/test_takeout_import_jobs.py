@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -17,6 +18,7 @@ from app.services.takeout_import_jobs import (
     TakeoutImportCoordinator,
     TakeoutImportTimedOut,
 )
+from app.services.duration_enrichment_jobs import DurationEnrichmentCoordinator
 from app.services.takeout_service import TakeoutParseError, parse_takeout_file
 
 
@@ -152,6 +154,49 @@ def test_backend_restart_marks_incomplete_job_failed(tmp_path: Path) -> None:
     recovered = repository.load_json("takeout_import_job:old-job")
     assert recovered["status"] == "failed"
     assert recovered["errorCode"] == "backend_restarted"
+
+
+def test_duration_enrichment_rebuilds_cached_profile_without_reimport(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository = JsonRepository(tmp_path / "duration.db")
+    normalised = {
+        "tracks": [{"track_id": "video:track", "video_id": "track", "title": "Track", "artists": ["Artist"], "primary_artist": "Artist", "duration_seconds": None}],
+        "play_events": [{"track_id": "video:track", "video_id": "track", "title": "Track", "artists": ["Artist"], "primary_artist": "Artist", "played_at": "2026-07-10T14:00:00+00:00"}],
+        "excluded_play_events": [],
+        "metadata": {"track_count": 1, "play_count": 1},
+        "coverage": {},
+    }
+    repository.save_json("normalised", normalised)
+    repository.save_json("analysis", {"top_tracks": [{"title": "Old"}], "coverage": {}})
+    monkeypatch.setattr(routes, "repo", repository)
+    monkeypatch.setattr(
+        routes.ytmusic,
+        "enrich_duration_cache",
+        lambda _normalised, cache, _limit: cache.update({"track": {"duration_seconds": 200, "duration_source": "test", "duration_confidence": "high"}}) or {"attempted": 1, "added": 1, "failed": 0, "api_batches": 0, "fallback_attempted": 0},
+    )
+    coordinator = DurationEnrichmentCoordinator(repository, timeout_seconds=30)
+
+    routes.process_duration_enrichment(coordinator, time.monotonic() + 30)
+
+    assert coordinator.status()["status"] == "complete"
+    assert repository.load_json("normalised")["play_events"][0]["duration_seconds"] == 200
+    assert "coverage" in repository.load_json("analysis")
+
+
+def test_duration_enrichment_queues_the_next_safe_batch(tmp_path: Path) -> None:
+    coordinator = DurationEnrichmentCoordinator(JsonRepository(tmp_path / "continuation.db"), timeout_seconds=30)
+    completed = threading.Event()
+    calls: list[int] = []
+
+    def processor(active: DurationEnrichmentCoordinator, _deadline: float) -> None:
+        calls.append(len(calls) + 1)
+        active.stage("complete", "done", continueQueued=len(calls) == 1)
+        if len(calls) == 2:
+            completed.set()
+
+    coordinator.start(processor)
+
+    assert completed.wait(timeout=2)
+    assert calls == [1, 2]
 
 
 def test_timeout_check_raises_safe_timeout(tmp_path: Path) -> None:

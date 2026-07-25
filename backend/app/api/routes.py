@@ -55,9 +55,14 @@ from app.schemas.responses import (
     PersonaReportResponse,
     RefreshRequest,
     RefreshResponse,
+    DurationEnrichmentStatusResponse,
     ReportRequest,
     TakeoutImportQueuedResponse,
     TakeoutImportStatusResponse,
+)
+from app.services.duration_enrichment_jobs import (
+    DurationEnrichmentAlreadyRunning,
+    DurationEnrichmentCoordinator,
 )
 from app.services.ollama_service import OllamaService
 from app.services.recommendations import generate_recommendations
@@ -77,6 +82,7 @@ ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 takeout_imports = TakeoutImportCoordinator(repo, settings.takeout_import_timeout_seconds)
+duration_enrichment = DurationEnrichmentCoordinator(repo, settings.duration_enrichment_timeout_seconds)
 
 PERSONA_REPORT_SCHEMA_VERSION = 5
 PERSONA_REPORT_PROMPT_VERSION = 5
@@ -654,6 +660,8 @@ def process_takeout_import(
         "Canonical events are ready. Building the local listening dataset.",
         importedCount=len(parsed.entries),
     )
+
+
     previous_raw = repo.load_json("raw")
     if not isinstance(previous_raw, dict) or previous_raw.get("source") == "demo":
         raw: dict[str, Any] = {"source": "google_takeout", "history": [], "warnings": []}
@@ -766,6 +774,64 @@ def process_takeout_import(
         trackCount=normalised["metadata"]["track_count"],
         playCount=normalised["metadata"]["play_count"],
     )
+
+
+def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, deadline: float) -> None:
+    """Resolve exact video durations without making Takeout imports wait on upstream metadata."""
+    cached_normalised = repo.load_json("normalised")
+    if not isinstance(cached_normalised, dict) or not cached_normalised.get("tracks"):
+        coordinator.fail("No listening profile is available to enrich yet. Import or refresh YouTube data first.", "duration_profile_missing")
+        return
+
+    coordinator.stage("resolving", "Resolving missing track durations from exact YouTube video IDs.")
+    duration_cache = repo.load_json("duration_cache") or {}
+    if not isinstance(duration_cache, dict):
+        duration_cache = {}
+    stats = ytmusic.enrich_duration_cache(cached_normalised, duration_cache, settings.duration_enrichment_limit)
+    coordinator.check_timeout(deadline)
+    if not stats.get("attempted"):
+        coordinator.stage("complete", "Track duration coverage is already up to date.", **stats)
+        return
+
+    coordinator.stage("rebuilding", "Applying resolved durations and rebuilding listening totals.", **stats)
+    rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
+    rebuilt_analysis = build_analysis(rebuilt_normalised)
+    if "coverage" not in rebuilt_analysis:
+        raise ValueError("duration rebuild produced an incomplete analysis")
+    coordinator.check_timeout(deadline)
+    repo.save_json_batch(
+        {"duration_cache": duration_cache, "normalised": rebuilt_normalised, "analysis": rebuilt_analysis},
+        delete_keys=["latest_report", "recommendations"],
+        delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
+    )
+    INSIGHTS_RESPONSE_CACHE.clear()
+    remaining_note = f" {stats['remaining']} more track(s) remain queued for the next local batch." if stats.get("remaining") else ""
+    coordinator.stage(
+        "complete",
+        f"Resolved {stats['added']} track duration(s). Listening totals are updated.{remaining_note}",
+        continueQueued=bool(stats.get("remaining")),
+        **stats,
+    )
+
+
+@router.post("/data/duration-enrichment", response_model=DurationEnrichmentStatusResponse, status_code=202)
+def start_duration_enrichment() -> DurationEnrichmentStatusResponse:
+    try:
+        job = duration_enrichment.start(process_duration_enrichment)
+    except DurationEnrichmentAlreadyRunning as exc:
+        existing = duration_enrichment.status()
+        if existing:
+            return DurationEnrichmentStatusResponse.model_validate(existing)
+        raise HTTPException(status_code=409, detail={"error": "Duration enrichment is already running", "code": "duration_enrichment_in_progress"}) from exc
+    return DurationEnrichmentStatusResponse.model_validate(job)
+
+
+@router.get("/data/duration-enrichment", response_model=DurationEnrichmentStatusResponse)
+def duration_enrichment_status() -> DurationEnrichmentStatusResponse:
+    job = duration_enrichment.status()
+    if not job:
+        return DurationEnrichmentStatusResponse(status="idle", progress=0, message="No track duration enrichment is running.")
+    return DurationEnrichmentStatusResponse.model_validate(job)
 
 
 @router.get("/data/coverage")

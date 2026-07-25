@@ -71,6 +71,20 @@ class TakeoutImportStatusResponse(BaseModel):
     finishedAt: str | None = None
 
 
+class DurationEnrichmentStatusResponse(BaseModel):
+    jobId: str | None = None
+    status: str
+    progress: int
+    message: str
+    errorCode: str | None = None
+    attempted: int | None = None
+    added: int | None = None
+    failed: int | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    finishedAt: str | None = None
+
+
 class OverviewPeriod(BaseModel):
     key: str
     month: str | None = None

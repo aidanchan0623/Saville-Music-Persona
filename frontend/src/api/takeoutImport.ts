@@ -1,5 +1,3 @@
-import type { TakeoutImportStatus } from "../types/api";
-
 export interface MutableFlag {
   current: boolean;
 }
@@ -21,17 +19,23 @@ export async function runExclusiveOperation(
   }
 }
 
-interface PollOptions {
+interface PollableJob {
+  status: string;
+  message: string;
+  errorCode: string | null;
+}
+
+interface PollOptions<T extends PollableJob> {
   signal: AbortSignal;
   timeoutMs?: number;
   intervalMs?: number;
-  onStatus?: (status: TakeoutImportStatus) => void;
+  onStatus?: (status: T) => void;
 }
 
-export async function pollTakeoutImport(
-  getStatus: (signal: AbortSignal) => Promise<TakeoutImportStatus>,
-  { signal, timeoutMs = 10 * 60 * 1000, intervalMs = 1000, onStatus }: PollOptions,
-): Promise<TakeoutImportStatus> {
+export async function pollTakeoutImport<T extends PollableJob>(
+  getStatus: (signal: AbortSignal) => Promise<T>,
+  { signal, timeoutMs = 10 * 60 * 1000, intervalMs = 1000, onStatus }: PollOptions<T>,
+): Promise<T> {
   const startedAt = Date.now();
   let networkFailures = 0;
   while (Date.now() - startedAt < timeoutMs) {
@@ -49,12 +53,12 @@ export async function pollTakeoutImport(
       if (error instanceof Error && /\([a-z_]+\)$/.test(error.message)) throw error;
       networkFailures += 1;
       if (networkFailures >= 3) {
-        throw new Error("Lost contact with the backend while importing. Check that it is running, then retry.");
+        throw new Error("Lost contact with the backend while processing local music data. Check that it is running, then retry.");
       }
     }
     await abortableDelay(intervalMs, signal);
   }
-  throw new Error("Takeout import timed out. The previous profile is still available; retry after checking the backend.");
+  throw new Error("Local music processing timed out. Your previous profile is still available; retry after checking the backend.");
 }
 
 function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {

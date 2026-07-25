@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  DurationEnrichmentStatus,
   InsightsResponse,
   ListeningMinutes,
   MusicSource,
@@ -96,6 +97,8 @@ export const api = {
   },
   takeoutImportStatus: (jobId: string, signal?: AbortSignal) =>
     request<TakeoutImportStatus>(`/data/import-takeout/${encodeURIComponent(jobId)}`, { signal }),
+  startDurationEnrichment: () => request<DurationEnrichmentStatus>("/data/duration-enrichment", { method: "POST", body: "{}" }),
+  durationEnrichmentStatus: (signal?: AbortSignal) => request<DurationEnrichmentStatus>("/data/duration-enrichment", { signal }),
   overview: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
     return request<OverviewResponse>(`/analysis/overview?${params.toString()}`).then(requireOverviewSchema);

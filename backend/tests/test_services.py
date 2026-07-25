@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.config import Settings
 from app.analysis.thumbnails import best_thumbnail_url
 from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
@@ -36,6 +38,58 @@ def test_verbose_youtube_account_menu_error_is_sanitized() -> None:
     message = friendly_auth_error(KeyError("Unable to find 'header' on {'multiPageMenuRenderer': {'secret': 'value'}}"), is_browser=True)
     assert "account menu" in message
     assert "secret" not in message
+
+
+def test_duration_enrichment_uses_public_client_and_retries_legacy_negative_cache() -> None:
+    fake = FakeYTMusic(song_pages={"played-often": {"videoDetails": {"lengthSeconds": "242"}}})
+    service = fake_service(fake)
+    service.public_client = lambda: fake  # type: ignore[method-assign]
+    cache: dict[str, object] = {"played-often": {"duration_seconds": None, "duration_source": "ytmusicapi.get_song"}}
+    normalised = {
+        "tracks": [{"video_id": "played-often", "duration_seconds": None}],
+        "play_events": [{"video_id": "played-often"}] * 9,
+    }
+
+    stats = service.enrich_duration_cache(normalised, cache, limit=10)
+
+    assert stats["added"] == 1
+    assert fake.get_song_calls == ["played-often"]
+    assert cache["played-often"]["duration_seconds"] == 242  # type: ignore[index]
+    assert cache["played-often"]["status"] == "resolved"  # type: ignore[index]
+
+
+def test_duration_enrichment_batches_exact_video_ids_through_official_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = Settings()
+    settings.youtube_data_api_key = "local-test-key"
+    service = YTMusicService(settings)
+    calls: list[dict[str, object]] = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {"items": [{"id": "first", "contentDetails": {"duration": "PT3M42S"}}, {"id": "second", "contentDetails": {"duration": "PT1H2M3S"}}]}
+
+    def fake_get(_url: str, **kwargs: object) -> Response:
+        calls.append(kwargs)
+        return Response()
+
+    monkeypatch.setattr("app.services.ytmusic_service.httpx.get", fake_get)
+    service.public_client = lambda: (_ for _ in ()).throw(AssertionError("public fallback should not run"))  # type: ignore[method-assign]
+    cache: dict[str, object] = {}
+    normalised = {
+        "tracks": [{"video_id": "first", "duration_seconds": None}, {"video_id": "second", "duration_seconds": None}],
+        "play_events": [{"video_id": "first"}] * 4 + [{"video_id": "second"}],
+    }
+
+    stats = service.enrich_duration_cache(normalised, cache, limit=10)
+
+    assert stats["api_batches"] == 1
+    assert stats["added"] == 2
+    assert calls[0]["params"]["id"] == "first,second"  # type: ignore[index]
+    assert cache["first"]["duration_seconds"] == 222  # type: ignore[index]
+    assert cache["second"]["duration_seconds"] == 3723  # type: ignore[index]
 
 
 def test_artist_image_enrichment_uses_existing_artist_id() -> None:
@@ -235,15 +289,18 @@ class FakeYTMusic:
         search_results: dict[str, list[dict[str, object]]] | None = None,
         artist_pages: dict[str, dict[str, object]] | None = None,
         album_pages: dict[str, dict[str, object]] | None = None,
+        song_pages: dict[str, dict[str, object]] | None = None,
         raise_search: bool = False,
     ) -> None:
         self.search_results = search_results or {}
         self.artist_pages = artist_pages or {}
         self.album_pages = album_pages or {}
+        self.song_pages = song_pages or {}
         self.raise_search = raise_search
         self.search_calls: list[tuple[str, str | None, int | None]] = []
         self.get_artist_calls: list[str] = []
         self.get_album_calls: list[str] = []
+        self.get_song_calls: list[str] = []
 
     def search(self, query: str, filter: str | None = None, limit: int | None = None) -> list[dict[str, object]]:
         self.search_calls.append((query, filter, limit))
@@ -263,6 +320,13 @@ class FakeYTMusic:
         payload = self.album_pages.get(browse_id)
         if payload is None:
             raise RuntimeError("album page failed")
+        return payload
+
+    def get_song(self, video_id: str) -> dict[str, object]:
+        self.get_song_calls.append(video_id)
+        payload = self.song_pages.get(video_id)
+        if payload is None:
+            raise RuntimeError("song page failed")
         return payload
 
 
