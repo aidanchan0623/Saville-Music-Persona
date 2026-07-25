@@ -136,7 +136,7 @@ class TopFiveArtist(BaseModel):
     rank: int
     name: str
     imageUrl: str | None = None
-    detectedPlays: float
+    detectedPlays: int
     uniqueSongs: int
 
 
@@ -179,6 +179,7 @@ class InsightsSummary(BaseModel):
     longestDayDate: str | None = None
     currentStreakDays: int
     detectedPlays: int
+    durationCoveragePercent: float
 
 
 class InsightsProfileAxis(BaseModel):
@@ -232,7 +233,7 @@ class InsightsArtist(BaseModel):
     rank: int
     artist: str
     imageUrl: str | None = None
-    detectedPlays: float
+    detectedPlays: int
     share: float
 
 

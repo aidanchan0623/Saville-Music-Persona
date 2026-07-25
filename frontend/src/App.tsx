@@ -370,16 +370,14 @@ export default function App() {
   }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source]);
 
   const youtubeAnalysisReady = overview?.source === "youtube";
-  const youtubeReady = Boolean(auth?.connected || youtubeAnalysisReady || (useDemo && overview));
+  const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || youtubeAnalysisReady || (useDemo && overview));
   const youtubeLabel = useDemo
     ? youtubeAnalysisReady ? "Demo data" : "Demo data loading"
     : auth?.connected
       ? "YouTube connected"
-      : auth?.cached_data_available && youtubeAnalysisReady
+      : auth?.cached_data_available
         ? "YouTube data loaded"
-        : auth?.cached_data_available
-          ? "YouTube data pending"
-          : "YouTube offline";
+        : "YouTube offline";
   const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
 
   return (

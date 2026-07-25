@@ -117,21 +117,25 @@ function PeriodButton({ active, onClick, children }: { active: boolean; onClick:
 }
 
 function CompactMetrics({ data }: { data: InsightsResponse }) {
+  const durationCoverage = Math.round(data.summary.durationCoveragePercent);
   const metrics = [
-    { label: "Selected total", value: data.summary.detectedMinutesFormatted, note: `${data.summary.detectedPlays.toLocaleString()} detected plays` },
+    { label: "Selected total", value: data.summary.detectedMinutesFormatted, note: `${data.summary.detectedPlays.toLocaleString()} detected plays / ${durationCoverage}% duration coverage` },
     { label: "Active days", value: data.summary.activeDays.toLocaleString(), note: "At least one detected music play" },
     { label: "Average active day", value: formatMinutes(data.summary.averageActiveDayMinutes), note: "Days with usable duration" },
     { label: "Longest day", value: formatMinutes(data.summary.longestDayMinutes), note: data.summary.longestDayDate ? formatDate(data.summary.longestDayDate) : "No detected minutes" },
   ];
   return (
-    <section className="insights-metrics" aria-label="Selected period summary">
-      {metrics.map((metric) => (
-        <div key={metric.label}>
-          <p>{metric.label}</p>
-          <strong>{metric.value}</strong>
-          <span>{metric.note}</span>
-        </div>
-      ))}
+    <section aria-label="Selected period summary">
+      <div className="insights-metrics">
+        {metrics.map((metric) => (
+          <div key={metric.label}>
+            <p>{metric.label}</p>
+            <strong>{metric.value}</strong>
+            <span>{metric.note}</span>
+          </div>
+        ))}
+      </div>
+      {durationCoverage < 75 ? <p className="insights-coverage-warning">Partial duration coverage - listening time excludes unresolved plays.</p> : null}
     </section>
   );
 }

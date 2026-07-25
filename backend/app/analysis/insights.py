@@ -83,6 +83,7 @@ def insights_payload(
             "longestDayDate": (minutes["metrics"]["longest_detected_listening_day"] or {}).get("date"),
             "currentStreakDays": minutes["metrics"]["current_listening_streak_days"],
             "detectedPlays": len(music_events),
+            "durationCoveragePercent": minutes["duration_quality"]["duration_coverage_percent"],
         },
         "durationQuality": minutes["duration_quality"],
         "canonicalFigures": profile["figures"],
@@ -200,7 +201,7 @@ def compact_artist(item: dict[str, Any]) -> dict[str, Any]:
         "rank": item.get("rank"),
         "artist": item.get("artist") or UNKNOWN_ARTIST,
         "imageUrl": item.get("artist_image_url") or item.get("thumbnail"),
-        "detectedPlays": item.get("play_count", 0),
+        "detectedPlays": int(item.get("play_count", 0)),
         "share": item.get("share_of_period", 0),
     }
 

@@ -52,7 +52,7 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
         setArtists(nextArtists);
         setAlbums(nextAlbums);
         const availableMonths = nextTracks.period.available_months.length ? nextTracks.period.available_months : nextAlbums.period.available_months;
-        if (!selectedMonth && availableMonths.length) {
+        if (period === "month" && !selectedMonth && availableMonths.length) {
           setSelectedMonth(availableMonths[availableMonths.length - 1].value);
         }
       })
@@ -234,7 +234,7 @@ function RankingStorySection({
   onViewSongs?: (artist: string) => void;
   source: MusicSource;
 }) {
-  const items = response?.items ?? [];
+  const items = (response?.items ?? []).slice(0, 10);
   const { activeId, registerItem } = useActiveRanking(items, kind);
   const activeItem = useMemo(() => items.find((item) => rankingItemId(item, kind) === activeId) ?? items[0] ?? null, [activeId, items, kind]);
   const label = kind === "artists" ? "Top Artists" : "Top Songs";
@@ -324,6 +324,7 @@ function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: {
               {detectedMinutesLabel(activeItem) ? ` / ${detectedMinutesLabel(activeItem)}` : ""} / {activeItem.share_of_period}% share
             </div>
           ) : null}
+          {activeItem && durationCoverageNotice(activeItem) ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{durationCoverageNotice(activeItem)}</p> : null}
         </div>
       </div>
       <GradualBlur
@@ -397,6 +398,7 @@ function RankingStoryCard({
               {isArtist ? <span className="text-xs text-mist/75">{item.share_of_period}% share</span> : null}
               <Movement movement={item.movement} />
             </div>
+            {durationCoverageNotice(item) ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{durationCoverageNotice(item)}</p> : null}
             {isArtist && onViewSongs ? (
               <button
                 aria-label={`View songs by ${item.artist}`}
@@ -700,6 +702,12 @@ function spotifyEvidenceLabel(item: PeriodTopItem, source: MusicSource, artistLi
 function detectedMinutesLabel(item: PeriodTopItem) {
   if (!item.detected_minutes || item.detected_minutes <= 0) return null;
   return item.detected_minutes_formatted || `${Math.round(item.detected_minutes)} min detected`;
+}
+
+function durationCoverageNotice(item: PeriodTopItem) {
+  const coverage = Math.round(item.duration_coverage_percent);
+  if (coverage >= 75) return `${coverage}% duration coverage`;
+  return `Partial duration coverage (${coverage}%) - listening time excludes unresolved plays.`;
 }
 
 function initials(value: string) {

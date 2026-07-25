@@ -20,7 +20,7 @@ from app.analysis.periods import (
 from app.analysis.scoring import build_analysis
 
 
-ANALYTICS_VERSION = 2
+ANALYTICS_VERSION = 3
 GENRE_MAP_VERSION = 1
 
 

@@ -63,12 +63,33 @@ def extract_duration_seconds(value: Any) -> int | None:
     return seconds if seconds > 0 else None
 
 
+def extract_duration_milliseconds(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        milliseconds = int(value)
+    elif isinstance(value, str) and value.strip().isdigit():
+        milliseconds = int(value.strip())
+    else:
+        return None
+    if milliseconds <= 0:
+        return None
+    return max(1, round(milliseconds / 1000))
+
+
 def duration_from_item(item: dict[str, Any]) -> int | None:
     for key in ("duration_seconds", "durationSeconds", "lengthSeconds", "length_seconds"):
         seconds = extract_duration_seconds(item.get(key))
         if seconds:
             return seconds
-    return extract_duration_seconds(item.get("duration"))
+    seconds = extract_duration_seconds(item.get("duration"))
+    if seconds:
+        return seconds
+    for key in ("duration_ms", "durationMs", "lengthMilliseconds", "length_ms"):
+        seconds = extract_duration_milliseconds(item.get(key))
+        if seconds:
+            return seconds
+    return None
 
 
 def duration_from_cache(video_id: str | None, duration_cache: dict[str, Any] | None) -> tuple[int | None, str | None, str | None]:

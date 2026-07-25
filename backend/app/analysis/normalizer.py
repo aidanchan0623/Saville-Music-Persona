@@ -7,7 +7,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from app.analysis.duration import annotate_normalised_durations, content_type_for
+from app.analysis.duration import annotate_normalised_durations, content_type_for, duration_from_item
 from app.analysis.media import (
     album_cache_lookup,
     album_thumbnail_candidates,
@@ -353,7 +353,7 @@ def normalise_track_item(
         or parse_release_year(item.get("releaseDate"))
         or parse_release_year((item.get("album") or {}).get("year") if isinstance(item.get("album"), dict) else None)
     )
-    duration = item.get("duration_seconds") or parse_duration_seconds(item.get("duration"))
+    duration = duration_from_item(item)
     genres, moods = infer_keywords(item, playlist_title)
     incoming_source_types = [str(value) for value in item.get("source_types") or [] if value]
     source_types = [source_type]

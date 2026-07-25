@@ -538,6 +538,12 @@ def artist_names_for(track: dict[str, Any], event: dict[str, Any] | None = None)
     return deduped or [UNKNOWN_ARTIST]
 
 
+def primary_artist_for(track: dict[str, Any], event: dict[str, Any] | None = None) -> str:
+    value = track.get("primary_artist") or (event or {}).get("primary_artist") or UNKNOWN_ARTIST
+    name = str(value).strip()
+    return name or UNKNOWN_ARTIST
+
+
 def album_name_is_usable(album: Any) -> bool:
     text = normalise_match_text(album)
     return bool(text and text not in GENERIC_ALBUM_NAMES)
@@ -568,12 +574,12 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         track = track_lookup.get(event.get("track_id"), {})
         keys = [str(event.get("track_id"))]
         if kind == "artists":
-            keys = artist_names_for(track, event) or [str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)]
-        weight = 1 / len(keys) if kind == "artists" else 1
+            keys = [primary_artist_for(track, event)]
+        weight = 1
         sec = usable_duration_seconds(event) or 0
         day = event_local_date(event)
         title = str(track.get("title") or event.get("title") or "Unknown track")
-        artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
+        artist = primary_artist_for(track, event)
         for key in keys:
             counts[key] += weight
             raw_appearance_counts[key] += 1
@@ -652,6 +658,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "album_art_source": album_art_source,
                 "play_count": play_count,
                 "raw_appearance_count": raw_appearance_counts[key] if kind == "artists" else play_count,
+                "detected_seconds": int(seconds[key]),
                 "active_days": len(active_days[key]),
                 "detected_minutes": round_minutes(seconds[key]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds[key])),

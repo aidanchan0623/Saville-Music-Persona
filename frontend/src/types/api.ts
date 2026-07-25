@@ -375,6 +375,7 @@ export interface InsightsResponse {
     longestDayDate: string | null;
     currentStreakDays: number;
     detectedPlays: number;
+    durationCoveragePercent: number;
   };
   durationQuality: DurationQuality;
   musicProfile: {
@@ -423,6 +424,7 @@ export interface PeriodTopItem {
   album_art_url?: string | null;
   album_art_source?: string | null;
   play_count: number;
+  detected_seconds?: number;
   detected_minutes: number;
   detected_minutes_formatted: string;
   share_of_period: number;
@@ -445,6 +447,7 @@ export interface PeriodTopResponse {
   duration_quality: DurationQuality;
   sample_warning: string | null;
   items: PeriodTopItem[];
+  totalAvailableResults?: number;
   methodology: string;
   classification_rules: string[];
 }

@@ -872,13 +872,13 @@ def overview(
 @router.get("/analysis/top-tracks")
 def top_tracks(source: str = Query("youtube")) -> list[dict[str, Any]]:
     profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
-    return [{**item, "rank": index} for index, item in enumerate(profile["top_tracks"], 1)]
+    return [{**item, "rank": index} for index, item in enumerate(profile["top_tracks"][:10], 1)]
 
 
 @router.get("/analysis/top-artists")
 def top_artists(source: str = Query("youtube")) -> list[dict[str, Any]]:
     profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
-    return [{**item, "rank": index} for index, item in enumerate(profile["top_artists"], 1)]
+    return [{**item, "rank": index} for index, item in enumerate(profile["top_artists"][:10], 1)]
 
 
 @router.get("/analysis/scores")
@@ -986,10 +986,19 @@ def period_top(
 ) -> dict[str, Any]:
     kind = "artists" if type == "artists" else "tracks"
     profile = build_period_profile(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
-    items = profile["top_artists"] if kind == "artists" else profile["top_tracks"]
+    ranked_items = profile["top_artists"] if kind == "artists" else profile["top_tracks"]
+    items = ranked_items[:10]
     return {
         "period": profile["period"],
+        "type": kind,
+        "total_play_count": profile["figures"]["accepted_play_count"],
+        "ranked_music_play_count": profile["figures"]["accepted_play_count"],
+        "duration_quality": profile["minutes"]["duration_quality"],
+        "sample_warning": None,
         "items": [{**item, "rank": index} for index, item in enumerate(items, 1)],
+        "totalAvailableResults": len(ranked_items),
+        "methodology": "Top lists are ranked by canonical primary-artist and track play events. Detected listening minutes use only events with usable duration metadata.",
+        "classification_rules": [],
         "canonicalFigures": profile["figures"],
         "genreShares": profile["genre_shares"]["items"],
         "dataFingerprint": profile["dataFingerprint"],

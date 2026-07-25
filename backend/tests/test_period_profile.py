@@ -23,5 +23,5 @@ def test_golden_reconciliation_and_cross_page_facts() -> None:
     assert profile["figures"]["accepted_play_count"] == 3
     assert profile["figures"]["detected_minutes"] == 6.0
     assert profile["top_artists"][0]["artist"] == "Artist A"
-    assert profile["top_artists"][0]["play_count"] == 1.0
+    assert profile["top_artists"][0]["play_count"] == 2
     assert round(sum(item["value"] for item in profile["genre_shares"]["items"]), 1) == 100.0

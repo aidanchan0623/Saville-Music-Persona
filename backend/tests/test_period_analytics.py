@@ -14,9 +14,12 @@ from app.analysis.periods import (
     classification_label,
     listening_minutes_payload,
     movement_payload,
+    rank_items,
     resolve_period,
+    seconds_for_events,
     taste_dna_comparison_payload,
     top_payload,
+    tracks_by_id,
 )
 from app.analysis.score_interpretations import interpret_score
 
@@ -358,7 +361,7 @@ def test_taste_dna_comparison_detects_growing_cluster_with_enough_data() -> None
     assert comparison["claims"]["growing_cluster"] is not None
 
 
-def test_artist_ranking_counts_raw_appearances_in_one_pass(monkeypatch) -> None:
+def test_artist_ranking_uses_primary_attribution_without_collaborator_rescans(monkeypatch) -> None:
     normalised = normalise_collection(
         {
             "history": [
@@ -380,8 +383,103 @@ def test_artist_ranking_counts_raw_appearances_in_one_pass(monkeypatch) -> None:
     monkeypatch.setattr(periods, "artist_names_for", counted_artist_names)
     ranked = periods.rank_items(events, periods.tracks_by_id(normalised), "artists")
 
-    assert calls == len(events)
+    assert calls == 0
     assert ranked[0]["raw_appearance_count"] == len(events)
+
+
+def test_repeated_track_uses_every_event_duration_for_minutes() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item("repeat", "Repeat Song", "Repeat Artist", f"2026-07-02T10:{index:02d}:00+00:00", 240)
+                for index in range(10)
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    minutes = listening_minutes_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))
+    track = top_payload(normalised, "tracks", "month", "2026-07", today=date(2026, 7, 7))["items"][0]
+
+    assert track["play_count"] == 10
+    assert track["detected_seconds"] == 2400
+    assert track["detected_minutes"] == 40.0
+    assert minutes["metrics"]["selected_period_total_minutes"] == 40.0
+
+
+def test_same_day_repeats_and_missing_duration_coverage_reconcile() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item("same", "Same Day", "Artist A", "2026-07-02T10:00:00+00:00", 180),
+                _history_item("same", "Same Day", "Artist A", "2026-07-02T11:00:00+00:00", 180),
+                _history_item("missing", "Missing Duration", "Artist B", "2026-07-02T12:00:00+00:00", None),
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    events = normalised["play_events"]
+    tracks = rank_items(events, tracks_by_id(normalised), "tracks")
+    minutes = listening_minutes_payload(normalised, "month", "2026-07", today=date(2026, 7, 7))
+
+    assert tracks[0]["play_count"] == 2
+    assert tracks[0]["detected_seconds"] == 360
+    assert tracks[0]["duration_coverage_percent"] == 100.0
+    missing = next(item for item in tracks if item["track_id"] == "video:missing")
+    assert missing["play_count"] == 1
+    assert missing["detected_seconds"] == 0
+    assert missing["duration_coverage_percent"] == 0.0
+    assert seconds_for_events(events) == sum(item["detected_seconds"] for item in tracks)
+    assert minutes["metrics"]["selected_period_total_minutes"] == 6.0
+    assert minutes["duration_quality"]["duration_coverage_percent"] == 66.7
+
+
+def test_artist_metrics_use_primary_artist_events_without_fractional_plays() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item(f"duet-{index}", f"Duet {index}", ["Lead Artist", "Guest Artist"], f"2026-07-02T10:{index:02d}:00+00:00", 180)
+                for index in range(3)
+            ]
+            + [_history_item("guest-solo", "Guest Solo", "Guest Artist", "2026-07-03T10:00:00+00:00", 240)]
+        },
+        today=date(2026, 7, 7),
+    )
+    artists = rank_items(normalised["play_events"], tracks_by_id(normalised), "artists")
+    by_name = {item["artist"]: item for item in artists}
+
+    assert by_name["Lead Artist"]["play_count"] == 3
+    assert by_name["Lead Artist"]["detected_seconds"] == 540
+    assert by_name["Guest Artist"]["play_count"] == 1
+    assert by_name["Guest Artist"]["detected_seconds"] == 240
+    assert all(isinstance(item["play_count"], int) for item in artists)
+    assert all("weighted_play_score" not in item for item in artists)
+
+
+def test_duration_milliseconds_are_normalised_once() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {
+                    "videoId": "milliseconds",
+                    "title": "Milliseconds Song",
+                    "artists": [{"name": "Artist A"}],
+                    "played": "2026-07-02T10:00:00+00:00",
+                    "duration_ms": 240000,
+                },
+                {
+                    "videoId": "seconds",
+                    "title": "Seconds Song",
+                    "artists": [{"name": "Artist B"}],
+                    "played": "2026-07-02T11:00:00+00:00",
+                    "duration_seconds": 240,
+                },
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    durations = {track["video_id"]: track["duration_seconds"] for track in normalised["tracks"]}
+
+    assert durations == {"milliseconds": 240, "seconds": 240}
 
 
 def artist_cache_v2(artist: str, artist_id: str, url: str) -> dict[str, object]:
