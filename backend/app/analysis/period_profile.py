@@ -38,8 +38,17 @@ def build_period_profile(
     analysis = build_analysis(period_normalised)
     lookup = tracks_by_id(normalised)
     minutes = listening_minutes_payload(normalised, period, month, timezone_name, today)
-    tracks = rank_items(events, lookup, "tracks")
-    artists = rank_items(events, lookup, "artists", normalised.get("artist_metadata") or {})
+    tracks = [
+        {**item, "rank": rank}
+        for rank, item in enumerate(rank_items(events, lookup, "tracks"), 1)
+    ]
+    artists = [
+        {**item, "rank": rank}
+        for rank, item in enumerate(
+            rank_items(events, lookup, "artists", normalised.get("artist_metadata") or {}),
+            1,
+        )
+    ]
     genres = genre_shares(events, lookup)
     raw_diagnostics = normalised.get("import_diagnostics") or {}
     duration = duration_quality(events)

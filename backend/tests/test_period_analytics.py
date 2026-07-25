@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from app.analysis import periods
 from app.analysis.duration import annotate_normalised_durations, duration_quality
 from app.analysis.insights import insights_payload
 from app.analysis.media import album_id_key, album_name_artist_key
@@ -355,6 +356,32 @@ def test_taste_dna_comparison_detects_growing_cluster_with_enough_data() -> None
     comparison = taste_dna_comparison_payload(normalised, today=date(2026, 7, 7))
     assert comparison["sample_warning"] is None
     assert comparison["claims"]["growing_cluster"] is not None
+
+
+def test_artist_ranking_counts_raw_appearances_in_one_pass(monkeypatch) -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                _history_item(f"duet-{index}", f"Duet {index}", ["Lead Artist", "Guest Artist"], "2026-07-02", 180)
+                for index in range(20)
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+    events = normalised["play_events"]
+    original = periods.artist_names_for
+    calls = 0
+
+    def counted_artist_names(track: dict, event: dict | None = None) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return original(track, event)
+
+    monkeypatch.setattr(periods, "artist_names_for", counted_artist_names)
+    ranked = periods.rank_items(events, periods.tracks_by_id(normalised), "artists")
+
+    assert calls == len(events)
+    assert ranked[0]["raw_appearance_count"] == len(events)
 
 
 def artist_cache_v2(artist: str, artist_id: str, url: str) -> dict[str, object]:

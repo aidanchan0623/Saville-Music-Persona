@@ -136,7 +136,7 @@ class TopFiveArtist(BaseModel):
     rank: int
     name: str
     imageUrl: str | None = None
-    detectedPlays: int
+    detectedPlays: float
     uniqueSongs: int
 
 
@@ -232,7 +232,7 @@ class InsightsArtist(BaseModel):
     rank: int
     artist: str
     imageUrl: str | None = None
-    detectedPlays: int
+    detectedPlays: float
     share: float
 
 
@@ -340,7 +340,7 @@ class ReportTopArtist(StrictReportModel):
     rank: int = Field(ge=1, le=5)
     artistImageUrl: str | None = None
     name: str
-    detectedPlays: int = Field(ge=0)
+    detectedPlays: float = Field(ge=0)
     uniqueSongs: int = Field(ge=0)
 
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import calendar
 from collections import Counter, defaultdict
-from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from functools import lru_cache
 from typing import Any
@@ -241,7 +240,10 @@ def normalised_for_events(normalised: dict[str, Any], events: list[dict[str, Any
         item["last_played"] = last_played.get(track_id)
         item["first_played_in_period"] = first_played.get(track_id)
         tracks.append(item)
-    payload = deepcopy(normalised)
+    # Analytics only mutates the period-specific tracks and coverage below. A full
+    # deep copy also clones every historical event and cache record, which makes a
+    # 40k-row Takeout profile take many seconds before aggregation even begins.
+    payload = dict(normalised)
     payload["tracks"] = tracks
     payload["play_events"] = list(events)
     payload["coverage"] = {
@@ -554,6 +556,7 @@ def album_group_for_track(track: dict[str, Any], event: dict[str, Any] | None = 
 
 def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], kind: str, artist_metadata: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     counts: Counter[str] = Counter()
+    raw_appearance_counts: Counter[str] = Counter()
     seconds: Counter[str] = Counter()
     usable_counts: Counter[str] = Counter()
     unique_tracks: dict[str, set[str]] = defaultdict(set)
@@ -573,6 +576,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         for key in keys:
             counts[key] += weight
+            raw_appearance_counts[key] += 1
             seconds[key] += sec * weight
             if sec:
                 usable_counts[key] += weight
@@ -647,7 +651,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 "album_art_url": album_art,
                 "album_art_source": album_art_source,
                 "play_count": play_count,
-                "raw_appearance_count": sum(1 for event in events if key in artist_names_for(track_lookup.get(event.get("track_id"), {}), event)) if kind == "artists" else play_count,
+                "raw_appearance_count": raw_appearance_counts[key] if kind == "artists" else play_count,
                 "active_days": len(active_days[key]),
                 "detected_minutes": round_minutes(seconds[key]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds[key])),
