@@ -10,7 +10,7 @@ function Test-LocalPort([int]$Port) {
 
 if (-not (Test-Path $Python)) { throw "Backend virtual environment is missing. Run scripts\\setup_windows.ps1 first." }
 if (-not (Test-LocalPort 8000)) {
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location '$Root'; & '$Python' -m uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000"
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location '$Root'; & '$Python' -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000"
 }
 if (-not (Test-LocalPort 5173)) {
     Start-Process powershell.exe -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Set-Location '$Root'; & '$Npm' --prefix frontend run dev"
