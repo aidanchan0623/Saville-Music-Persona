@@ -35,6 +35,7 @@ from app.analysis.periods import (
     listening_minutes_payload,
     normalised_for_events,
     resolve_period,
+    serialise_spec,
     taste_dna_comparison_payload,
     taste_dna_payload,
     top_payload,
@@ -59,6 +60,16 @@ from app.schemas.responses import (
     ReportRequest,
     TakeoutImportQueuedResponse,
     TakeoutImportStatusResponse,
+)
+from app.schemas.contracts import (
+    API_SCHEMA_VERSION,
+    AnalyticsEnvelope,
+    ContractDataQuality,
+    ContractPeriod,
+    ContractProvenance,
+    ContractWarning,
+    RecommendationsContractData,
+    Top10ContractData,
 )
 from app.services.duration_enrichment_jobs import (
     DurationEnrichmentAlreadyRunning,
@@ -90,6 +101,8 @@ PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 INSIGHTS_RESPONSE_CACHE_LIMIT = 24
+PERIOD_PROFILE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+PERIOD_PROFILE_CACHE_LIMIT = 32
 TAKEOUT_CACHE_METADATA_KEY = "takeout_history_meta"
 
 SPOTIFY_CACHE_KEYS = [
@@ -333,6 +346,75 @@ def analysis_for_period(period: str, month: str | None, timezone_name: str | Non
     events = filter_events(normalised, spec)
     period_normalised = normalised_for_events(normalised, events, spec)
     return build_analysis(period_normalised), spec, len(events)
+
+
+def canonical_period_profile(source: str, period: str, month: str | None, timezone_name: str | None) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Cache one canonical PeriodProfile for all contract projections in a request cycle."""
+    resolved_source = normalise_source(source)
+    normalised = require_source_cache("normalised", resolved_source)
+    metadata = normalised.get("metadata") or {}
+    cache_identity = (
+        resolved_source,
+        period,
+        month,
+        timezone_name or settings.local_timezone,
+        normalised.get("refreshed_at"),
+        metadata.get("data_schema_version"),
+        metadata.get("play_count"),
+        ANALYTICS_VERSION,
+        GENRE_MAP_VERSION,
+    )
+    profile = PERIOD_PROFILE_CACHE.get(cache_identity)
+    if profile is None:
+        profile = build_period_profile(normalised, period, month, timezone_name or settings.local_timezone)
+        if len(PERIOD_PROFILE_CACHE) >= PERIOD_PROFILE_CACHE_LIMIT:
+            PERIOD_PROFILE_CACHE.clear()
+        PERIOD_PROFILE_CACHE[cache_identity] = profile
+    return profile, normalised
+
+
+def analytics_envelope(source: str, profile: dict[str, Any], normalised: dict[str, Any], data: Any) -> AnalyticsEnvelope[Any]:
+    figures = profile["figures"]
+    metadata = normalised.get("metadata") or {}
+    import_meta = repo.load_json(TAKEOUT_CACHE_METADATA_KEY) if source == "youtube" else {}
+    reimport = takeout_reimport_status(import_meta) if source == "youtube" else {"requiresReimport": False}
+    warnings: list[ContractWarning] = []
+    if figures["duration_coverage"] < 100:
+        warnings.append(ContractWarning(code="LOW_DURATION_COVERAGE", severity="warning", message="Detected listening time excludes plays without known duration.", affectedFields=["detectedMinutes"]))
+    if figures["genre_coverage"] < 50:
+        warnings.append(ContractWarning(code="LOW_GENRE_COVERAGE", severity="warning", message="Genre-based insights use only classified listening events.", affectedFields=["genreShares", "musicProfile"]))
+    if figures["release_year_coverage"] < 50:
+        warnings.append(ContractWarning(code="LOW_RELEASE_YEAR_COVERAGE", severity="info", message="Release-year metadata is incomplete.", affectedFields=["musicalAge"]))
+    if reimport["requiresReimport"]:
+        status = "stale_import"
+        warnings.append(ContractWarning(code="TAKEOUT_REIMPORT_REQUIRED", severity="error", message="This Takeout import uses an incompatible parser or event schema. Re-import it before relying on analytics.", affectedFields=[]))
+    elif figures["accepted_play_count"] == 0:
+        status = "insufficient_data"
+        warnings.append(ContractWarning(code="PROFILE_INSUFFICIENT_DATA", severity="warning", message="No accepted plays are available for this period.", affectedFields=[]))
+    else:
+        status = "partial" if warnings else "complete"
+    period = profile["period"]
+    return AnalyticsEnvelope[Any](
+        status=status,
+        source=source,
+        period=ContractPeriod(type=period["period"], month=period.get("month"), start=period["start_date"], end=period["end_date"], timezone=period["timezone"], label=period["label"]),
+        provenance=ContractProvenance(
+            importBatchId=(import_meta or {}).get("import_batch_id") if isinstance(import_meta, dict) else None,
+            dataFingerprint=profile["dataFingerprint"],
+            parserVersion=metadata.get("parser_schema_version"),
+            eventSchemaVersion=int(metadata.get("listening_event_schema_version") or LISTENING_EVENT_SCHEMA_VERSION),
+            analyticsVersion=ANALYTICS_VERSION,
+        ),
+        dataQuality=ContractDataQuality(
+            acceptedPlayCount=figures["accepted_play_count"],
+            timestampCoverage=figures["timestamp_coverage"],
+            durationCoverage=figures["duration_coverage"],
+            genreCoverage=figures["genre_coverage"],
+            releaseYearCoverage=figures["release_year_coverage"],
+        ),
+        warnings=warnings,
+        data=data,
+    )
 
 
 def rebuild_spotify_cache() -> dict[str, Any]:
@@ -935,6 +1017,19 @@ def overview(
     return payload
 
 
+@router.get("/v1/analysis/overview", response_model=AnalyticsEnvelope[OverviewAnalysisResponse])
+def contract_overview(
+    period: str = Query("this_month"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> AnalyticsEnvelope[OverviewAnalysisResponse]:
+    resolved_source = normalise_source(source)
+    profile, normalised = canonical_period_profile(resolved_source, period, month, timezone_name)
+    payload = OverviewAnalysisResponse.model_validate(overview(period, month, timezone_name, resolved_source))
+    return analytics_envelope(resolved_source, profile, normalised, payload)
+
+
 @router.get("/analysis/top-tracks")
 def top_tracks(source: str = Query("youtube")) -> list[dict[str, Any]]:
     profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
@@ -1012,6 +1107,19 @@ def insights(
     return InsightsResponse(**payload)
 
 
+@router.get("/v1/insights", response_model=AnalyticsEnvelope[InsightsResponse])
+def contract_insights(
+    period: str = Query("rolling_year"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> AnalyticsEnvelope[InsightsResponse]:
+    resolved_source = normalise_source(source)
+    profile, normalised = canonical_period_profile(resolved_source, period, month, timezone_name)
+    payload = InsightsResponse.model_validate(insights(period, month, timezone_name, resolved_source))
+    return analytics_envelope(resolved_source, profile, normalised, payload)
+
+
 @router.get("/analytics/listening-minutes")
 def listening_minutes(
     period: str = Query("rolling_year"),
@@ -1069,6 +1177,20 @@ def period_top(
         "genreShares": profile["genre_shares"]["items"],
         "dataFingerprint": profile["dataFingerprint"],
     }
+
+
+@router.get("/v1/top", response_model=AnalyticsEnvelope[dict[str, Any]])
+def contract_period_top(
+    period: str = Query("this_month"),
+    type: str = Query("tracks"),
+    month: str | None = Query(None),
+    timezone_name: str | None = Query(None, alias="timezone"),
+    source: str = Query("youtube"),
+) -> AnalyticsEnvelope[dict[str, Any]]:
+    resolved_source = normalise_source(source)
+    profile, normalised = canonical_period_profile(resolved_source, period, month, timezone_name)
+    data = period_top(period, type, month, timezone_name, resolved_source)
+    return analytics_envelope(resolved_source, profile, normalised, data)
 
 
 @router.get("/top/artist-songs")
@@ -1250,9 +1372,22 @@ def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
     return PersonaReportResponse.model_validate(fallback_payload)
 
 
+@router.get("/v1/report/latest", response_model=AnalyticsEnvelope[PersonaReportResponse])
+def contract_latest_report(source: str = Query("youtube")) -> AnalyticsEnvelope[PersonaReportResponse]:
+    resolved_source = normalise_source(source)
+    profile, normalised = canonical_period_profile(resolved_source, PERSONA_REPORT_PERIOD, None, settings.local_timezone)
+    return analytics_envelope(resolved_source, profile, normalised, latest_report(resolved_source))
+
+
 @router.get("/recommendations")
 def latest_recommendations() -> list[dict[str, Any]]:
     return require_cache("recommendations")
+
+
+@router.get("/v1/recommendations", response_model=AnalyticsEnvelope[RecommendationsContractData])
+def contract_latest_recommendations() -> AnalyticsEnvelope[RecommendationsContractData]:
+    profile, normalised = canonical_period_profile("youtube", "rolling_year", None, settings.local_timezone)
+    return analytics_envelope("youtube", profile, normalised, RecommendationsContractData(items=latest_recommendations()))
 
 
 def _cache_age_seconds(payload: dict[str, Any]) -> float:

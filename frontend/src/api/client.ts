@@ -1,4 +1,5 @@
 import type {
+  AnalyticsEnvelope,
   AuthStatus,
   DurationEnrichmentStatus,
   InsightsResponse,
@@ -54,6 +55,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function analyticsRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const envelope = await request<AnalyticsEnvelope<T>>(path, init);
+  if (envelope.apiSchemaVersion !== 1) throw new Error("This analytics response uses an unsupported contract version. Refresh or re-import your data.");
+  if (envelope.status === "stale_import") throw new Error("Your Takeout import needs to be re-imported before analytics can be used.");
+  if (envelope.status === "failed") throw new Error(envelope.warnings[0]?.message ?? "Analytics could not be prepared.");
+  return envelope.data;
+}
+
 function requireOverviewSchema(value: OverviewResponse) {
   if (value.schemaVersion !== 3 || !value.identity || !value.musicalAge || !value.topFive) {
     throw new Error("Saved Overview data uses an older schema. Refresh your music data to rebuild it.");
@@ -101,7 +110,7 @@ export const api = {
   durationEnrichmentStatus: (signal?: AbortSignal) => request<DurationEnrichmentStatus>("/data/duration-enrichment", { signal }),
   overview: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
-    return request<OverviewResponse>(`/analysis/overview?${params.toString()}`).then(requireOverviewSchema);
+    return analyticsRequest<OverviewResponse>(`/v1/analysis/overview?${params.toString()}`).then(requireOverviewSchema);
   },
   topTracks: (source: MusicSource = "youtube") => request<TopTrack[]>(`/analysis/top-tracks?${paramsWithSource(source).toString()}`),
   topArtists: (source: MusicSource = "youtube") => request<TopArtist[]>(`/analysis/top-artists?${paramsWithSource(source).toString()}`),
@@ -111,14 +120,14 @@ export const api = {
   },
   insights: (period = "rolling_year", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
-    return request<InsightsResponse>(`/insights?${params.toString()}`).then((value) => {
+    return analyticsRequest<InsightsResponse>(`/v1/insights?${params.toString()}`).then((value) => {
       if (value.schemaVersion !== 1) throw new Error("Insights data uses an unsupported schema. Refresh your music data and try again.");
       return value;
     });
   },
   periodTop: (period = "this_month", type: "tracks" | "artists" = "tracks", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, type, month });
-    return request<PeriodTopResponse>(`/top?${params.toString()}`);
+    return analyticsRequest<PeriodTopResponse>(`/v1/top?${params.toString()}`);
   },
   topAlbums: (period = "this_month", month?: string | null, source: MusicSource = "youtube", limit?: number) => {
     const params = paramsWithSource(source, { period, month, limit: limit ? String(limit) : undefined });
@@ -149,10 +158,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ period, month, mode, source }),
     }),
-  latestReport: (source: MusicSource = "youtube") => request<PersonaReport>(`/report/latest?${paramsWithSource(source).toString()}`),
+  latestReport: (source: MusicSource = "youtube") => analyticsRequest<PersonaReport>(`/v1/report/latest?${paramsWithSource(source).toString()}`),
   generateReport: (mode: "serious" | "playful" | "roast", source: MusicSource = "youtube") =>
     request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source, period: "rolling_year" }) }),
-  recommendations: () => request<Recommendation[]>("/recommendations"),
+  recommendations: () => analyticsRequest<{ items: Recommendation[] }>("/v1/recommendations").then((data) => data.items),
   generateRecommendations: () => request<Recommendation[]>("/recommendations/generate", { method: "POST", body: "{}" }),
   createPlaylist: (title: string) =>
     request<{ playlist_id: string; title: string; added_count: number; message: string }>("/recommendations/create-playlist", {

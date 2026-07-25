@@ -1,5 +1,25 @@
 export type MusicSource = "youtube" | "spotify";
 
+export type AnalyticsContractStatus = "complete" | "partial" | "insufficient_data" | "stale_import" | "processing" | "failed";
+
+export interface AnalyticsContractWarning {
+  code: string;
+  severity: "info" | "warning" | "error";
+  message: string;
+  affectedFields: string[];
+}
+
+export interface AnalyticsEnvelope<T> {
+  apiSchemaVersion: 1;
+  status: AnalyticsContractStatus;
+  source: MusicSource;
+  period: { type: string; month: string | null; start: string; end: string; timezone: string; label: string };
+  provenance: { importBatchId: string | null; dataFingerprint: string; parserVersion: number | null; eventSchemaVersion: number; analyticsVersion: number };
+  dataQuality: { acceptedPlayCount: number; timestampCoverage: number; durationCoverage: number; genreCoverage: number; releaseYearCoverage: number };
+  warnings: AnalyticsContractWarning[];
+  data: T;
+}
+
 export type TakeoutImportStage = "queued" | "parsing" | "normalizing" | "rebuilding" | "saving" | "complete" | "failed";
 
 export interface TakeoutImportQueued {
