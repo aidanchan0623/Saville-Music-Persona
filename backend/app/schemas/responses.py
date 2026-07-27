@@ -344,7 +344,7 @@ class ReportPersonality(StrictReportModel):
     shortDescription: str
     roastDescription: str
     confidence: float = Field(ge=0, le=1)
-    evidenceKeys: list[str]
+    habits: list[str] = Field(max_length=3)
     generationSource: Literal["gemma", "cache-gemma", "fallback"]
 
 
@@ -372,7 +372,10 @@ class ReportMusicalAge(StrictReportModel):
     confidence: float = Field(ge=0, le=1)
     confidenceLabel: str
     explanation: str
-    strongestFactors: list[str]
+    typicalRange: list[int]
+    weightedMedianReleaseYear: int
+    dominantDecade: str
+    releaseYearCoverage: float
     sourcePeriod: ReportPeriod
 
 
@@ -437,7 +440,6 @@ class ReportPersonalityExplainer(StrictReportModel):
     name: str
     category: str
     profile: str
-    triggerRules: list[str]
 
 
 class ReportExplainers(StrictReportModel):
@@ -446,7 +448,7 @@ class ReportExplainers(StrictReportModel):
 
 
 class PersonaReportResponse(StrictReportModel):
-    schemaVersion: Literal[6] = 6
+    schemaVersion: Literal[7] = 7
     source: Literal["youtube", "spotify"]
     mode: Literal["serious", "playful", "roast"]
     period: ReportPeriod

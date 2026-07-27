@@ -1,56 +1,37 @@
-from __future__ import annotations
-
-from datetime import date, timedelta
-
-from app.analysis.music_character import CHARACTER_DEFINITIONS, character_payload
-from app.analysis.normalizer import normalise_collection
+from app.analysis.music_character import CHARACTER_DEFINITIONS, score_personalities, select_habits
 
 
-def _history_item(video_id: str, title: str, artist: str, played: str, album: str | None = None, duration: int = 180) -> dict:
-    item = {
-        "videoId": video_id,
-        "title": title,
-        "artists": [{"name": artist}],
-        "played": played,
-        "duration_seconds": duration,
-        "source": "test",
+def signals(*terms: str, **values: float) -> dict:
+    return {"canonical": list(terms), "traits": [], "clusters": [], "repeat": 0, "artist_loyalty": 0, "single_dominance": 0, "album_depth": 0, "mainstream_niche": 50, "late_night_share": 0, "top_artist_share": 0, "top_track_share": 0, "discovery": 50, "broad_cluster_diversity": 0, "top_cluster_share": 100, **values}
+
+
+def test_catalogue_has_exactly_twelve_primary_personalities() -> None:
+    assert len(CHARACTER_DEFINITIONS) == 12
+    assert {item["name"] for item in CHARACTER_DEFINITIONS} >= {"The Main Character in a Rain Scene", "The Jazz-Bar Overthinker"}
+
+
+def test_each_personality_has_a_representative_winner() -> None:
+    examples = {
+        "divorced_dad_rock_station": ("classic rock", "arena rock", "guitar-driven"), "never_a_phase": ("emo", "pop-punk", "screamo"),
+        "classical_supremacist": ("classical", "orchestral", "opera"), "girly_pop_commander": ("dance-pop", "synth-pop", "electropop"),
+        "club_closing_time_resident": ("house", "techno", "trance"), "main_character_rain_scene": ("shoegaze", "dream pop", "atmospheric"),
+        "heavy_music_therapist": ("metalcore", "alternative metal", "heavy"), "late_night_rnb_philosopher": ("r&b", "neo-soul", "smooth"),
+        "aux_cord_menace": ("rap", "trap", "drill"), "campfire_lore_keeper": ("folk", "country", "acoustic"), "jazz_bar_overthinker": ("jazz", "bebop", "swing"),
     }
-    if album:
-        item["album"] = {"name": album, "id": f"album-{album.lower().replace(' ', '-')}"}
-    return item
+    for expected, terms in examples.items():
+        assert score_personalities(signals(*terms))[0]["id"] == expected
+    assert score_personalities(signals(single_dominance=90, album_depth=5, mainstream_niche=20))[0]["id"] == "tiktok_slop_connoisseur"
 
 
-def test_character_catalog_contains_requested_twenty_characters() -> None:
-    ids = {item["id"] for item in CHARACTER_DEFINITIONS}
-    assert len(CHARACTER_DEFINITIONS) == 20
-    assert "heavy_but_melodic_negotiator" in ids
-    assert "single_song_prisoner" in ids
-    assert "album_loyalist" in ids
-    assert "soundtrack_side_quest" in ids
+def test_documented_genre_boundaries() -> None:
+    assert score_personalities(signals("shoegaze", "dream pop", "atmospheric"))[0]["id"] == "main_character_rain_scene"
+    assert score_personalities(signals("jazz", "bebop"))[0]["id"] != "classical_supremacist"
+    assert score_personalities(signals("classical", "orchestral"))[0]["id"] != "jazz_bar_overthinker"
+    assert score_personalities(signals("folk", "country", "acoustic"))[0]["id"] != "divorced_dad_rock_station"
 
 
-def test_character_selection_is_deterministic_and_period_aware() -> None:
-    history = []
-    start = date(2026, 7, 1)
-    for index in range(35):
-        history.append(_history_item(f"bmth-{index}", f"BMTH {index}", "Bring Me The Horizon", (start + timedelta(days=index % 6)).isoformat(), "Heavy Album"))
-    for index in range(15):
-        history.append(_history_item(f"deftones-{index}", f"Deftones {index}", "Deftones", (start + timedelta(days=index % 6)).isoformat(), "Heavy Album"))
-    for index in range(8):
-        history.append(_history_item(f"mcr-{index}", f"MCR {index}", "My Chemical Romance", (start + timedelta(days=index % 6)).isoformat(), "The Black Parade"))
-    normalised = normalise_collection({"history": history}, today=date(2026, 7, 7))
-    first = character_payload(normalised, "month", "2026-07")
-    second = character_payload(normalised, "month", "2026-07")
-
-    assert first["deterministic"] is True
-    assert first["primary"] == second["primary"]
-    assert first["period"]["label"] == "July 2026"
-    assert first["primary"]["id"] in {"heavy_but_melodic_negotiator", "cathartic_chaos_enjoyer", "im_fine_alternative_listener"}
-    assert first["evidence_chips"]
-
-
-def test_character_returns_forming_profile_for_weak_sample() -> None:
-    normalised = normalise_collection({"history": [_history_item("one", "One", "Unknown Artist", "2026-07-01")]}, today=date(2026, 7, 7))
-    payload = character_payload(normalised, "month", "2026-07")
-    assert payload["primary"]["id"] == "forming"
-    assert payload["sample_warning"]
+def test_habits_rank_and_cap_at_three() -> None:
+    result = select_habits(signals(top_artist_share=25, artist_loyalty=75, album_depth=80, repeat=78, discovery=30, broad_cluster_diversity=80, top_cluster_share=35))
+    assert result[0] == "Artist-Focused"
+    assert {"Album Loyalist", "Genre Explorer"}.issubset(result)
+    assert len(result) <= 3

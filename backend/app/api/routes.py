@@ -107,7 +107,7 @@ genre_enrichment_service = MusicBrainzGenreService()
 genre_enrichment = GenreEnrichmentCoordinator(repo, settings.genre_enrichment_timeout_seconds)
 refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
 
-PERSONA_REPORT_SCHEMA_VERSION = 6
+PERSONA_REPORT_SCHEMA_VERSION = 7
 PERSONA_REPORT_PROMPT_VERSION = 5
 PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300

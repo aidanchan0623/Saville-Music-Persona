@@ -277,13 +277,12 @@ class OllamaService:
             raise RuntimeError(status["message"])
         primary = profile.get("primary") if isinstance(profile.get("primary"), dict) else {}
         secondary = profile.get("secondary") if isinstance(profile.get("secondary"), dict) else None
-        modifier = profile.get("modifier") if isinstance(profile.get("modifier"), dict) else None
         compact = {
             "period": (profile.get("period") or {}).get("label") if isinstance(profile.get("period"), dict) else None,
             "mode": mode,
             "primary_character": primary,
             "secondary_character": secondary,
-            "modifier": modifier,
+            "habits": profile.get("habits", [])[:3],
             "evidence_chips": profile.get("evidence_chips", [])[:8],
             "top_artists": profile.get("top_artists", [])[:5],
             "top_clusters": profile.get("top_clusters", [])[:5],

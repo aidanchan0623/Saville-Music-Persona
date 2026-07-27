@@ -683,17 +683,13 @@ export interface MusicCharacter {
   roast: string;
   profile: string;
   match_score: number;
-  confidence: string;
-  priority: number;
-  evidence: string[];
-  trigger_rules: string[];
 }
 
 export interface MusicCharacterResponse {
   period: PeriodSpec;
   primary: MusicCharacter;
   secondary: MusicCharacter | null;
-  modifier: MusicCharacter | null;
+  habits: string[];
   evidence_chips: string[];
   top_artists: { name: string; plays: number }[];
   top_clusters: { name: string; share: number }[];
@@ -747,7 +743,7 @@ export interface AuthStatus {
 }
 
 export interface PersonaReport {
-  schemaVersion: 6;
+  schemaVersion: 7;
   source: MusicSource;
   mode: "serious" | "playful" | "roast";
   period: PersonaReportPeriod;
@@ -769,7 +765,7 @@ export interface PersonaReportExplainers {
 }
 
 export interface PersonaAgeExplainer { minAge: number; maxAge: number; title: string; summary: string; }
-export interface PersonaPersonalityExplainer { id: string; name: string; category: string; profile: string; triggerRules: string[]; }
+export interface PersonaPersonalityExplainer { id: string; name: string; category: string; profile: string; }
 
 export interface PersonaReportPeriod {
   key: string;
@@ -785,7 +781,7 @@ export interface PersonaReportPersonality {
   shortDescription: string;
   roastDescription: string;
   confidence: number;
-  evidenceKeys: string[];
+  habits: string[];
   generationSource: "gemma" | "cache-gemma" | "fallback";
 }
 
@@ -813,7 +809,10 @@ export interface PersonaMusicalAge {
   confidence: number;
   confidenceLabel: string;
   explanation: string;
-  strongestFactors: string[];
+  typicalRange: number[];
+  weightedMedianReleaseYear: number;
+  dominantDecade: string;
+  releaseYearCoverage: number;
   sourcePeriod: PersonaReportPeriod;
 }
 

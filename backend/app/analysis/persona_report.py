@@ -42,8 +42,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
             "fallbackDescription": str(primary.get("profile") or "Your listening profile is still gathering enough evidence to settle into one clear character."),
             "fallbackRoast": str(primary.get("roast") or "Your taste is still warming up, but the repeat button already has opinions."),
             "confidence": round(float(primary.get("match_score") or 0) / 100, 2),
-            "evidenceKeys": [slug(value) for value in primary.get("evidence", [])[:3]],
-            "evidenceLabels": [str(value) for value in primary.get("evidence", [])[:3]],
+            "habits": [str(value) for value in character.get("habits", [])[:3]],
         },
         "listeningWorld": {
             "detectedMinutes": float(listening["metrics"].get("selected_period_total_minutes") or 0),
@@ -61,7 +60,10 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
             "confidence": float(musical_age.get("confidence") or 0),
             "confidenceLabel": str(musical_age.get("confidenceLabel") or "Limited confidence"),
             "fallbackExplanation": str(musical_age.get("explanation") or musical_age.get("summary") or "The estimate is based on the available rolling-year listening profile."),
-            "strongestFactors": [str(value) for value in musical_age.get("strongestFactors", [])[:3]],
+            "typicalRange": [int(musical_age.get("likelyMin") or 0), int(musical_age.get("likelyMax") or 0)],
+            "weightedMedianReleaseYear": int(musical_age.get("weightedMedianReleaseYear") or 0),
+            "dominantDecade": str(musical_age.get("dominantDecade") or "Unknown"),
+            "releaseYearCoverage": float(musical_age.get("releaseYearCoverage") or 0),
             "sourcePeriod": report_period(musical_age.get("sourcePeriod") or period),
         },
         "topFive": {"songs": top_songs, "artists": top_artists},
@@ -83,7 +85,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "discovery": character.get("key_scores", {}).get("discovery"),
                 "sonicTraits": character.get("sonic_traits", [])[:6],
                 "secondaryCharacter": (character.get("secondary") or {}).get("name"),
-                "modifier": (character.get("modifier") or {}).get("name"),
+                "habits": character.get("habits", []),
             },
         },
         "explainers": {"musicalAges": age_category_catalogue(), "personalities": personality_catalogue()},
@@ -106,7 +108,7 @@ def compose_persona_report(
     personality = evidence["personality"]
     musical_age = evidence["musicalAge"]
     return {
-        "schemaVersion": 6,
+        "schemaVersion": 7,
         "source": source,
         "mode": mode,
         "period": evidence["period"],
@@ -116,7 +118,7 @@ def compose_persona_report(
             "shortDescription": language.get("openingDescription") or personality["fallbackDescription"],
             "roastDescription": language.get("personalityRoast") or personality["fallbackRoast"],
             "confidence": personality["confidence"],
-            "evidenceKeys": personality["evidenceKeys"],
+            "habits": personality["habits"],
             "generationSource": generation_source,
         },
         "listeningWorld": evidence["listeningWorld"],
@@ -259,11 +261,11 @@ def deterministic_roast_body(evidence: dict[str, Any]) -> str:
     personality = evidence["personality"]
     genres = [item["label"] for item in evidence["listeningWorld"]["genres"] if item["key"] != "other_unclassified"]
     top_artist = evidence["topFive"]["artists"][0]["name"] if evidence["topFive"]["artists"] else "your favourite artists"
-    factor = personality["evidenceLabels"][0].lower() if personality["evidenceLabels"] else "repeat listening"
+    habit = (personality.get("habits") or ["repeat listening"])[0]
     genre = genres[0].lower() if genres else "carefully chosen sound"
     return (
         f"Your listening taste treats {genre} less like a genre and more like a climate system. "
-        f"The strongest clue is {factor}, while {top_artist} sits near the centre of a rotation that clearly believes favourites should earn permanent residency. "
+        f"The strongest clue is {habit.lower()}, while {top_artist} sits near the centre of a rotation that clearly believes favourites should earn permanent residency. "
         "You leave just enough room for discovery to claim this is a living ecosystem, then return to the trusted songs with the confidence of someone reopening a book at the best chapter. "
         "It is dramatic, curated, and remarkably committed to making an ordinary day feel like it has closing credits."
     )

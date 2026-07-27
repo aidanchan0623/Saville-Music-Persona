@@ -27,7 +27,7 @@ from app.schemas.responses import PersonaReportResponse
 from app.services.ollama_service import OllamaService
 
 
-def test_report_schema_is_v6_and_strict() -> None:
+def test_report_schema_is_v7_and_strict() -> None:
     payload = compose_persona_report(
         evidence(),
         fallback_language(),
@@ -40,7 +40,7 @@ def test_report_schema_is_v6_and_strict() -> None:
         cache_key="cache",
     )
     report = PersonaReportResponse.model_validate(payload)
-    assert report.schemaVersion == 6
+    assert report.schemaVersion == 7
     assert report.period.key == "rolling_year"
     assert report.musicalAge.age == 29
     with pytest.raises(ValidationError):
@@ -50,9 +50,9 @@ def test_report_schema_is_v6_and_strict() -> None:
 def test_report_explainers_are_public_catalogues_and_current_data_is_typed() -> None:
     catalogue = age_category_catalogue()
     assert len(catalogue) == len(AGE_CATEGORIES)
-    assert catalogue[0]["minAge"] == 12 and catalogue[-1]["maxAge"] == 65
+    assert catalogue[0]["minAge"] == 0 and catalogue[-1]["maxAge"] == 100
     personalities = personality_catalogue()
-    assert {"id", "name", "category", "profile", "triggerRules"} == set(personalities[0])
+    assert {"id", "name", "category", "profile"} == set(personalities[0])
     assert "score" not in personalities[0] and "priority" not in personalities[0]
 
 
@@ -217,14 +217,13 @@ def evidence() -> dict[str, object]:
             "fallbackDescription": "Atmospheric songs become places worth revisiting.",
             "fallbackRoast": "The walk home always has closing credits.",
             "confidence": 0.82,
-            "evidenceKeys": ["atmospheric_signal"],
-            "evidenceLabels": ["Atmospheric signal"],
+            "habits": ["Comfort Repeater"],
         },
         "listeningWorld": {"detectedMinutes": 100.0, "formattedTime": "1 hr 40 min", "durationCoverage": 0.5, "genreCoverage": 0.6, "genres": [{"key": "alternative", "label": "Alternative", "percentage": 60.0, "detectedPlays": 60}], "interpretation": "Alternative sound leads."},
-        "musicalAge": {"age": 29, "likelyMin": 25, "likelyMax": 33, "title": "The Curated Balancer", "confidence": 0.76, "confidenceLabel": "Good confidence", "fallbackExplanation": "Familiar anchors and discovery share the rotation.", "strongestFactors": ["album depth"], "sourcePeriod": period},
+        "musicalAge": {"age": 29, "likelyMin": 25, "likelyMax": 33, "title": "The Y2K Archive", "confidence": 0.76, "confidenceLabel": "Good confidence", "fallbackExplanation": "Release years centre the rotation.", "typicalRange": [25, 33], "weightedMedianReleaseYear": 1997, "dominantDecade": "1990s", "releaseYearCoverage": 75.0, "sourcePeriod": period},
         "topFive": {"songs": [], "artists": [{"rank": 1, "artistImageUrl": None, "name": "Known Artist", "detectedPlays": 10, "uniqueSongs": 3}]},
         "backgroundAlbums": [],
-        "explainers": {"musicalAges": [{"minAge": 12, "maxAge": 65, "title": "The Curated Balancer", "summary": "Summary"}], "personalities": [{"id": "main_character_rain_scene", "name": "The Main Character in a Rain Scene", "category": "sound", "profile": "Profile", "triggerRules": ["Atmospheric listening."]}]},
+        "explainers": {"musicalAges": [{"minAge": 0, "maxAge": 100, "title": "The Y2K Archive", "summary": "Summary"}], "personalities": [{"id": "main_character_rain_scene", "name": "The Main Character in a Rain Scene", "category": "sound", "profile": "Profile"}]},
         "languageEvidence": {"personality": {"id": "main_character_rain_scene", "title": "The Main Character in a Rain Scene"}, "strongestSignals": ["atmospheric signal"], "knownArtists": ["Known Artist"], "knownGenres": ["Alternative"]},
     }
 

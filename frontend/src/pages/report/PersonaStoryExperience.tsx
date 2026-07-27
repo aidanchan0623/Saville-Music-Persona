@@ -62,6 +62,7 @@ function PersonalityScene({ report, titleAnimationKey, onLearnMore }: { report: 
           <h1 id="personality-title" key={titleAnimationKey}>{report.personality.title}</h1>
           <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
           <p className="persona-lede">{report.personality.shortDescription}</p>
+          {report.personality.habits.length > 0 && <div className="persona-habit-chips" aria-label="Listening habits">{report.personality.habits.map((habit) => <span key={habit}>{habit}</span>)}</div>}
           <p className="persona-personality-roast">{report.personality.roastDescription}</p>
           <span className="persona-period-pill">{report.period.label}</span>
           <small className="persona-scroll-cue">Scroll to enter your listening world</small>
@@ -122,11 +123,12 @@ function MusicalAgeScene({ report, onLearnMore }: { report: PersonaReport; onLea
         <h2 id="musical-age-title">{report.musicalAge.title}</h2>
         <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
         <div className="persona-age-facts">
-          <span>Likely range <strong>{report.musicalAge.likelyMin}-{report.musicalAge.likelyMax}</strong></span>
+          <span>Typical range <strong>{report.musicalAge.likelyMin}-{report.musicalAge.likelyMax} years</strong></span>
+          <span>Dominant decade <strong>{report.musicalAge.dominantDecade}</strong></span>
           <span>{report.musicalAge.confidenceLabel}</span>
         </div>
         <p className="persona-body">{report.musicalAge.explanation}</p>
-        <p className="persona-period-line">Source: {report.musicalAge.sourcePeriod.label}</p>
+        <p className="persona-period-line">Musical Age measures how old your music is and which eras dominate. It is not your real age.</p>
       </div>
     </RevealScene>
   );
@@ -220,7 +222,7 @@ function ExplainerModal({ report, kind, onClose }: { report: PersonaReport; kind
     <section ref={dialogRef} className="persona-explainer-modal" role="dialog" aria-modal="true" aria-labelledby="persona-explainer-title">
       <header><h2 id="persona-explainer-title">{heading}</h2><button ref={closeRef} type="button" aria-label="Close guide" onClick={onClose}>Close</button></header>
       <div className="persona-explainer-scroll">
-        {isAges ? report.explainers.musicalAges.map((item) => <article key={item.title} className={report.musicalAge.age >= item.minAge && report.musicalAge.age <= item.maxAge ? "is-current" : ""}><p>{item.minAge}-{item.maxAge}</p><h3>{item.title}</h3><span>{item.summary}</span></article>) : report.explainers.personalities.map((item) => <article key={item.id} className={report.personality.id === item.id ? "is-current" : ""}><p>{item.category}</p><h3>{item.name}</h3><span>{item.profile}</span><ul>{item.triggerRules.map((rule) => <li key={rule}>{rule}</li>)}</ul></article>)}
+        {isAges ? report.explainers.musicalAges.map((item) => <article key={item.title} className={report.musicalAge.age >= item.minAge && report.musicalAge.age <= item.maxAge ? "is-current" : ""}><p>{item.minAge}-{item.maxAge} years</p><h3>{item.title}</h3><span>{item.summary}</span></article>) : report.explainers.personalities.map((item) => <article key={item.id} className={report.personality.id === item.id ? "is-current" : ""}><p>{item.category}</p><h3>{item.name}</h3><span>{item.profile}</span></article>)}
       </div>
     </section>
   </div>;
