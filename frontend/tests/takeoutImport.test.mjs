@@ -47,6 +47,22 @@ test("polling returns the completed profile", async () => {
   assert.equal(result.playCount, 3);
 });
 
+test("polling continues across completed duration batches", async () => {
+  const responses = [
+    { ...status("complete"), continueQueued: true },
+    { ...status("resolving"), continueQueued: false },
+    { ...status("complete"), continueQueued: false },
+  ];
+  const result = await pollTakeoutImport(async () => responses.shift() ?? status("complete"), {
+    signal: new AbortController().signal,
+    intervalMs: 1,
+    timeoutMs: 100,
+    isComplete: (value) => value.status === "complete" && !value.continueQueued,
+  });
+  assert.equal(result.status, "complete");
+  assert.equal(responses.length, 0);
+});
+
 test("polling exposes a failed job and stops", async () => {
   await assert.rejects(
     pollTakeoutImport(async () => status("failed", "Rebuild failed safely."), {

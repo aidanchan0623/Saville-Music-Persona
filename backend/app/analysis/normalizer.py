@@ -265,8 +265,29 @@ def extract_artist_names(item: dict[str, Any]) -> list[str]:
         if name:
             names.append(str(name).strip())
     elif isinstance(artists, str):
-        names.extend([part.strip() for part in re.split(r",|&| feat\. | ft\. ", artists) if part.strip()])
+        # Unstructured names are one artist unless the source supplies a structured list.
+        # Commas, ampersands and "and" are all valid parts of band names.
+        if artists.strip():
+            names.append(artists.strip())
     return names or [UNKNOWN_ARTIST]
+
+
+def extract_artist_genres(item: dict[str, Any]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    artists = item.get("artists")
+    if not isinstance(artists, list):
+        return result
+    for artist in artists:
+        if not isinstance(artist, dict):
+            continue
+        name = artist.get("name") or artist.get("artist")
+        genres = artist.get("genres")
+        if not name or not isinstance(genres, (list, tuple)):
+            continue
+        cleaned = list(dict.fromkeys(str(genre).strip() for genre in genres if str(genre).strip()))
+        if cleaned:
+            result[str(name).strip()] = cleaned
+    return result
 
 
 def extract_artist_ids(item: dict[str, Any]) -> dict[str, str]:
@@ -336,6 +357,7 @@ def normalise_track_item(
     title = str(item.get("title") or item.get("name") or "Unavailable track").strip()
     artists = extract_artist_names(item)
     primary_artist = artists[0]
+    artist_genres = extract_artist_genres(item)
     source = str(item.get("source") or "").strip().lower()
     source_track_id = item.get("source_track_id")
     if source == "spotify":
@@ -378,6 +400,8 @@ def normalise_track_item(
         "title": title,
         "artists": artists,
         "artist_ids": extract_artist_ids(item),
+        "artist_genres": artist_genres,
+        "primary_artist_genres": list(artist_genres.get(primary_artist) or []),
         "primary_artist": primary_artist,
         "album": album,
         "album_id": album_id,
@@ -453,6 +477,13 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
             existing["mood_signals"].append(mood)
     existing["genre_confidence"] = max(existing.get("genre_confidence", 0), incoming.get("genre_confidence", 0))
     existing["artist_ids"].update(incoming.get("artist_ids", {}))
+    for artist, genres in (incoming.get("artist_genres") or {}).items():
+        current = existing.setdefault("artist_genres", {}).setdefault(artist, [])
+        for genre in genres:
+            if genre not in current:
+                current.append(genre)
+    if not existing.get("primary_artist_genres") and incoming.get("primary_artist_genres"):
+        existing["primary_artist_genres"] = list(incoming["primary_artist_genres"])
     return existing
 
 

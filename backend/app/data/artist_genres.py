@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 
 
@@ -25,6 +27,10 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "post-punk revival",
         "art rock",
         "indie pop",
+        "post-punk",
+        "new wave",
+        "noise rock",
+        "psychedelic rock",
     },
     "Emo / Pop Punk / Post-Hardcore": {
         "emo",
@@ -34,6 +40,8 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "emo pop",
         "alternative punk",
         "punk rock",
+        "punk",
+        "hardcore punk",
     },
     "Heavy Alternative / Metalcore": {
         "metalcore",
@@ -43,6 +51,11 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "electronic rock",
         "post-metal",
         "heavy alternative",
+        "metal",
+        "heavy metal",
+        "deathcore",
+        "death metal",
+        "progressive metal",
     },
     "Pop / Pop Rock Crossover": {
         "pop rock",
@@ -52,6 +65,15 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "indie pop",
         "pop",
         "pop rap",
+        "c-pop",
+        "mandopop",
+        "cantopop",
+        "j-pop",
+        "k-pop",
+        "dance-pop",
+        "teen pop",
+        "art pop",
+        "europop",
     },
     "Cinematic / Soundtrack": {
         "film score",
@@ -70,6 +92,13 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "atmospheric electronic",
         "dance",
         "house",
+        "vaporwave",
+        "phonk",
+        "darkwave",
+        "techno",
+        "trance",
+        "drum and bass",
+        "edm",
     },
     "Hip-Hop / Rap": {
         "hip-hop",
@@ -77,6 +106,52 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "trap",
         "alternative hip-hop",
         "pop rap",
+    },
+    "R&B / Soul / Funk": {
+        "r&b",
+        "rhythm and blues",
+        "soul",
+        "neo-soul",
+        "funk",
+        "contemporary r&b",
+    },
+    "Jazz / Classical": {
+        "jazz",
+        "classical",
+        "classical music",
+        "contemporary classical",
+        "classical crossover",
+        "orchestral",
+    },
+    "Folk / Country / Acoustic": {
+        "folk",
+        "folk rock",
+        "country",
+        "country pop",
+        "singer-songwriter",
+        "acoustic",
+        "americana",
+    },
+    "Rock / Classic Rock": {
+        "rock",
+        "classic rock",
+        "progressive rock",
+        "glam rock",
+        "arena rock",
+        "blues rock",
+        "soft rock",
+    },
+    "Latin / Reggaeton": {
+        "latin",
+        "latin pop",
+        "latin trap",
+        "reggaeton",
+        "urbano latino",
+    },
+    "Reggae / Dancehall": {
+        "reggae",
+        "dancehall",
+        "roots reggae",
     },
 }
 
@@ -373,20 +448,65 @@ ARTIST_GENRES: dict[str, ArtistGenreProfile] = {
         broad_clusters=("Pop / Pop Rock Crossover",),
         sonic_traits=("narrative", "melodic", "polished", "songwriting-led"),
     ),
+    "g.e.m.": ArtistGenreProfile(
+        canonical_genres=("pop", "singer-songwriter"),
+        broad_clusters=("Pop / Pop Rock Crossover",),
+        sonic_traits=("melodic", "vocal-led", "polished"),
+    ),
+    "nicholas britell": ArtistGenreProfile(
+        canonical_genres=("film score", "orchestral soundtrack"),
+        broad_clusters=("Cinematic / Soundtrack",),
+        sonic_traits=("cinematic", "orchestral", "dramatic"),
+    ),
+    "hiroyuki sawano": ArtistGenreProfile(
+        canonical_genres=("soundtrack", "cinematic orchestral", "electronic rock"),
+        broad_clusters=("Cinematic / Soundtrack", "Electronic / Atmospheric", "Heavy Alternative / Metalcore"),
+        sonic_traits=("cinematic", "dramatic", "high-energy"),
+    ),
+    "michael jackson": ArtistGenreProfile(
+        canonical_genres=("pop", "dance", "funk"),
+        broad_clusters=("Pop / Pop Rock Crossover", "Electronic / Atmospheric"),
+        sonic_traits=("rhythmic", "melodic", "polished"),
+    ),
 }
 
 
+ARTIST_ALIASES: dict[str, str] = {
+    "30 seconds to mars": "thirty seconds to mars",
+    "blink 182": "blink-182",
+    "bmth": "bring me the horizon",
+    "mcr": "my chemical romance",
+    "one republic": "onerepublic",
+    "sawano hiroyuki": "hiroyuki sawano",
+    "周杰伦": "周杰倫",
+}
+
+
+def _normalise_punctuation_and_spacing(name: str) -> str:
+    value = unicodedata.normalize("NFKC", str(name or "")).casefold()
+    value = value.replace("’", "'").replace("‘", "'").replace("–", "-").replace("—", "-").replace("−", "-")
+    return " ".join(value.strip().split())
+
+
 def normalise_artist_name(name: str) -> str:
-    return " ".join(name.strip().casefold().split())
+    value = _normalise_punctuation_and_spacing(name)
+    value = re.sub(r"\s*-\s*topic$", "", value)
+    value = re.sub(r"(?:\s+|[\[(]\s*)(?:feat\.?|ft\.?|featuring)\s+.+?(?:[\])])?$", "", value)
+    return " ".join(value.strip().split())
+
+
+def get_exact_curated_artist_profile(name: str) -> ArtistGenreProfile | None:
+    return ARTIST_GENRES.get(_normalise_punctuation_and_spacing(name))
 
 
 def get_curated_artist_profile(name: str) -> ArtistGenreProfile | None:
-    return ARTIST_GENRES.get(normalise_artist_name(name))
+    normalised = normalise_artist_name(name)
+    return ARTIST_GENRES.get(ARTIST_ALIASES.get(normalised, normalised))
 
 
 def clusters_for_genres(genres: list[str] | tuple[str, ...]) -> list[str]:
     clusters: list[str] = []
-    lower_genres = {genre.casefold() for genre in genres}
+    lower_genres = {" ".join(unicodedata.normalize("NFKC", str(genre)).casefold().split()) for genre in genres if genre}
     for cluster, cluster_genres in BROAD_CLUSTER_GENRES.items():
         if lower_genres & {genre.casefold() for genre in cluster_genres}:
             clusters.append(cluster)

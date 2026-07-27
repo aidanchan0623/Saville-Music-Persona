@@ -4,7 +4,14 @@ import math
 from collections import Counter, defaultdict
 from typing import Any
 
-from app.data.artist_genres import ArtistGenreProfile, clusters_for_genres, get_curated_artist_profile
+from app.analysis.normalizer import UNKNOWN_ARTIST
+from app.data.artist_genres import (
+    ArtistGenreProfile,
+    clusters_for_genres,
+    get_curated_artist_profile,
+    get_exact_curated_artist_profile,
+    normalise_artist_name,
+)
 
 
 CORE_THRESHOLD = 6.0
@@ -12,7 +19,24 @@ SECONDARY_THRESHOLD = 4.0
 SIDE_THRESHOLD = 1.0
 
 
-def profile_for_artist(artist: str) -> dict[str, Any]:
+def profile_for_artist(artist: str, source_genres: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    curated = get_exact_curated_artist_profile(artist)
+    if curated:
+        return profile_payload(curated)
+    trusted_genres = [str(genre).strip() for genre in (source_genres or []) if str(genre).strip()]
+    source_clusters = clusters_for_genres(trusted_genres)
+    if source_clusters:
+        return {
+            "canonical_genres": trusted_genres,
+            "broad_clusters": source_clusters,
+            "sonic_traits": [],
+            "confidence": "medium",
+            "confidence_label": "Medium - source-provided genres",
+            "source": "trusted source genre metadata",
+            "display_genres": trusted_genres,
+            "taste_role_hint": None,
+            "is_curated": False,
+        }
     curated = get_curated_artist_profile(artist)
     if curated:
         return profile_payload(curated)
@@ -22,10 +46,45 @@ def profile_for_artist(artist: str) -> dict[str, Any]:
         "sonic_traits": [],
         "confidence": "low",
         "confidence_label": "Unavailable / low-confidence",
-        "source": "unverified inferred genre",
+        "source": "unavailable genre metadata",
         "display_genres": [],
         "is_curated": False,
     }
+
+
+def source_genres_for_artist(
+    track: dict[str, Any],
+    artist_metadata: dict[str, dict[str, Any]] | None,
+    artist: str,
+) -> list[str]:
+    target = normalise_artist_name(artist)
+    collected: list[str] = []
+
+    def add_genres(genres: Any) -> None:
+        if not isinstance(genres, (list, tuple)):
+            return
+        for genre in genres:
+            value = str(genre).strip()
+            if value and value not in collected:
+                collected.append(value)
+
+    track_genres = track.get("artist_genres") or {}
+    if isinstance(track_genres, dict):
+        for name, genres in track_genres.items():
+            if normalise_artist_name(str(name)) == target:
+                add_genres(genres)
+    if normalise_artist_name(str(track.get("primary_artist") or "")) == target:
+        add_genres(track.get("primary_artist_genres") or [])
+    for name, metadata in (artist_metadata or {}).items():
+        if normalise_artist_name(str(name)) != target or not isinstance(metadata, dict):
+            continue
+        add_genres(metadata.get("genres") or [])
+    return collected
+
+
+def has_usable_artist(artist: Any) -> bool:
+    value = str(artist or "").strip()
+    return bool(value and normalise_artist_name(value) not in {"unknown artist", "unknown", "unavailable artist", normalise_artist_name(UNKNOWN_ARTIST)})
 
 
 def profile_payload(profile: ArtistGenreProfile) -> dict[str, Any]:
@@ -63,21 +122,33 @@ def artist_why_it_matters(artist: str, share: float, profile: dict[str, Any]) ->
     return f"{artist} contributes {share:.1f}% of detected plays and brings {genre_text} into the profile, adding {trait_text}."
 
 
-def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str, dict[str, Any]]) -> tuple[Counter[str], Counter[str], Counter[str], Counter[str]]:
+def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str, dict[str, Any]], artist_metadata: dict[str, dict[str, Any]] | None = None) -> tuple[Counter[str], Counter[str], Counter[str], Counter[str], Counter[str], int, Counter[str]]:
     cluster_counts: Counter[str] = Counter()
     genre_counts: Counter[str] = Counter()
     trait_counts: Counter[str] = Counter()
     coverage_counts: Counter[str] = Counter()
+    unknown_artists: Counter[str] = Counter()
+    invalid_artist_events = 0
+    unmatched_variants: Counter[str] = Counter()
     for event in events:
         track = tracks_by_id.get(event["track_id"], {})
         artist = track.get("primary_artist", event.get("primary_artist", "Unknown Artist"))
-        profile = profile_for_artist(artist)
+        if not has_usable_artist(artist):
+            invalid_artist_events += 1
+            continue
+        source_genres = source_genres_for_artist(track, artist_metadata, str(artist))
+        profile = profile_for_artist(artist, source_genres)
         if profile["is_curated"]:
             coverage_counts["curated"] += 1
         elif profile["canonical_genres"]:
             coverage_counts["inferred"] += 1
         else:
             coverage_counts["unknown"] += 1
+            unknown_artists[artist] += 1
+            normalised = normalise_artist_name(str(artist))
+            simple = " ".join(str(artist).strip().casefold().split())
+            if normalised != simple:
+                unmatched_variants[f"{artist} -> {normalised}"] += 1
         clusters = profile.get("broad_clusters") or []
         genres = profile.get("canonical_genres") or []
         traits = profile.get("sonic_traits") or []
@@ -91,7 +162,7 @@ def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str
                 genre_counts[genre] += weight
         for trait in traits:
             trait_counts[trait] += 1
-    return cluster_counts, genre_counts, trait_counts, coverage_counts
+    return cluster_counts, genre_counts, trait_counts, coverage_counts, unknown_artists, invalid_artist_events, unmatched_variants
 
 
 def rounded_share(count: float, total: int) -> float:
@@ -141,18 +212,31 @@ def build_taste_model(normalised: dict[str, Any], artist_counts: Counter[str], t
     tracks = normalised.get("tracks", [])
     events = normalised.get("play_events", [])
     tracks_by_id = {track["track_id"]: track for track in tracks}
-    cluster_counts, genre_counts, trait_counts, coverage_counts = weighted_cluster_counts(events, tracks_by_id)
-    clusters = cluster_items(cluster_counts, total_plays)
+    cluster_counts, genre_counts, trait_counts, coverage_counts, unknown_artists, invalid_artist_events, unmatched_variants = weighted_cluster_counts(events, tracks_by_id, normalised.get("artist_metadata"))
+    coverage_total = sum(coverage_counts.values())
+    clusters = cluster_items(cluster_counts, coverage_total)
     layers = classify_clusters(clusters)
     top_cluster = clusters[0]["name"] if clusters else None
     broad_score = entropy_score(list(cluster_counts.values()))
     within_score = entropy_score(list(genre_counts.values()))
-    coverage_total = sum(coverage_counts.values())
+    classified_count = coverage_counts["curated"] + coverage_counts["inferred"]
+    genre_coverage = round(classified_count / coverage_total * 100, 1) if coverage_total else 0.0
+    unknown_coverage = round(100 - genre_coverage, 1) if coverage_total else 0.0
     coverage = {
-        "genre_coverage_percent": round((coverage_total - coverage_counts["unknown"]) / coverage_total * 100, 1) if coverage_total else 0,
+        "totalEventCount": len(events),
+        "usableArtistEventCount": coverage_total,
+        "invalidArtistEventCount": invalid_artist_events,
+        "classifiedEventCount": classified_count,
+        "curatedEventCount": coverage_counts["curated"],
+        "sourceGenreEventCount": coverage_counts["inferred"],
+        "unknownEventCount": coverage_counts["unknown"],
+        "genreCoveragePercent": genre_coverage,
+        "genre_coverage_percent": genre_coverage,
         "curated_artist_coverage_percent": round(coverage_counts["curated"] / coverage_total * 100, 1) if coverage_total else 0,
         "inferred_artist_coverage_percent": round(coverage_counts["inferred"] / coverage_total * 100, 1) if coverage_total else 0,
-        "unknown_artist_coverage_percent": round(coverage_counts["unknown"] / coverage_total * 100, 1) if coverage_total else 0,
+        "unknown_artist_coverage_percent": unknown_coverage,
+        "topUnknownArtists": [{"artist": artist, "playCount": plays, "playShare": round(plays / coverage_total * 100, 2)} for artist, plays in unknown_artists.most_common(10)],
+        "unmatchedNameVariants": [{"variant": variant, "playCount": plays} for variant, plays in unmatched_variants.most_common(10)],
     }
     traits = [trait for trait, _ in trait_counts.most_common(10)]
     core_names = [item["name"] for item in layers["core"][:4]]
@@ -165,7 +249,7 @@ def build_taste_model(normalised: dict[str, Any], artist_counts: Counter[str], t
         "side_quests": layers["side_quests"],
         "cluster_shares": clusters,
         "canonical_genre_shares": [
-            {"name": name, "share": rounded_share(count, total_plays), "value": rounded_share(count, total_plays)}
+            {"name": name, "share": rounded_share(count, coverage_total), "value": rounded_share(count, coverage_total)}
             for name, count in genre_counts.most_common(16)
         ],
         "sonic_traits": traits[:8],
@@ -246,9 +330,9 @@ def build_taste_dna(layers: dict[str, list[dict[str, Any]]], traits: list[str], 
     }
 
 
-def enrich_artist(artist: dict[str, Any], total_plays: int) -> dict[str, Any]:
+def enrich_artist(artist: dict[str, Any], total_plays: int, source_genres: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
     share = artist.get("share_of_listens") or ((artist.get("play_count", 0) / total_plays * 100) if total_plays else 0)
-    profile = profile_for_artist(artist.get("artist", ""))
+    profile = profile_for_artist(artist.get("artist", ""), source_genres)
     artist["genre_profile"] = profile
     artist["related_genres"] = profile["display_genres"] or ["Genre data unavailable"]
     artist["broad_clusters"] = profile.get("broad_clusters", [])

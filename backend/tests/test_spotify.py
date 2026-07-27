@@ -126,6 +126,8 @@ def test_spotify_track_and_artist_normalisation() -> None:
     assert track["source_track_id"] == "spotify:track:track-1"
     assert track["thumbnails"][0]["url"] == "https://img.example/album.jpg"
     assert track["spotify_signal_label"] == "Spotify short-term top track"
+    assert track["artist_genres"] == {"Signal Artist": ["indie rock"]}
+    assert track["primary_artist_genres"] == ["indie rock"]
     assert artist["artist_id"] == "spotify:artist:artist-1"
     assert artist["thumbnails"][0]["url"] == "https://img.example/artist.jpg"
     assert artist["genres"] == ["indie rock"]

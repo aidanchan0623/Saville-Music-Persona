@@ -4,6 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION
+from app.analysis.music_character import personality_catalogue
+from app.analysis.musical_age import AGE_CATEGORIES, age_category_catalogue
+from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
+from app.analysis.period_profile import ANALYTICS_VERSION, GENRE_MAP_VERSION
 from app.analysis.persona_report import (
     compose_persona_report,
     deterministic_roast_body,
@@ -15,13 +19,15 @@ from app.api.routes import (
     PERSONA_REPORT_SCHEMA_VERSION,
     persona_report_cache_key,
     persona_report_fingerprint,
+    persona_report_pointer_is_current,
+    settings,
 )
 from app.config import Settings
 from app.schemas.responses import PersonaReportResponse
 from app.services.ollama_service import OllamaService
 
 
-def test_report_schema_is_v5_and_strict() -> None:
+def test_report_schema_is_v6_and_strict() -> None:
     payload = compose_persona_report(
         evidence(),
         fallback_language(),
@@ -34,11 +40,20 @@ def test_report_schema_is_v5_and_strict() -> None:
         cache_key="cache",
     )
     report = PersonaReportResponse.model_validate(payload)
-    assert report.schemaVersion == 5
+    assert report.schemaVersion == 6
     assert report.period.key == "rolling_year"
     assert report.musicalAge.age == 29
     with pytest.raises(ValidationError):
         PersonaReportResponse.model_validate({**payload, "legacyStory": {}})
+
+
+def test_report_explainers_are_public_catalogues_and_current_data_is_typed() -> None:
+    catalogue = age_category_catalogue()
+    assert len(catalogue) == len(AGE_CATEGORIES)
+    assert catalogue[0]["minAge"] == 12 and catalogue[-1]["maxAge"] == 65
+    personalities = personality_catalogue()
+    assert {"id", "name", "category", "profile", "triggerRules"} == set(personalities[0])
+    assert "score" not in personalities[0] and "priority" not in personalities[0]
 
 
 def test_old_cached_report_is_rejected() -> None:
@@ -58,6 +73,28 @@ def test_cache_key_includes_every_invalidation_version() -> None:
     assert "rolling_year" in key and fingerprint in key
 
 
+def test_report_pointer_requires_current_genre_map_version() -> None:
+    pointer = {
+        "cacheKey": "report-cache",
+        "source": "youtube",
+        "period": "rolling_year",
+        "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
+        "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
+        "analyticsVersion": ANALYTICS_VERSION,
+        "genreMapVersion": GENRE_MAP_VERSION,
+        "musicalAgeCalculationVersion": MUSICAL_AGE_CALCULATION_VERSION,
+        "personalityClassifierVersion": MUSIC_CHARACTER_CLASSIFIER_VERSION,
+        "model": settings.ollama_model,
+        "normalisedUpdatedAt": "2026-07-25T00:00:00+00:00",
+    }
+    assert persona_report_pointer_is_current(pointer, "youtube", pointer["normalisedUpdatedAt"])
+    assert not persona_report_pointer_is_current(
+        {**pointer, "genreMapVersion": GENRE_MAP_VERSION - 1},
+        "youtube",
+        pointer["normalisedUpdatedAt"],
+    )
+
+
 def test_genre_percentages_include_unclassified_without_exceeding_total() -> None:
     genres = report_genres(
         {
@@ -72,6 +109,13 @@ def test_genre_percentages_include_unclassified_without_exceeding_total() -> Non
     assert sum(item["percentage"] for item in genres) == 100
     assert genres[-1]["label"] == "Other / Unclassified"
     assert genres[0]["detectedPlays"] == 421
+
+
+def test_report_genres_do_not_hide_a_seventh_classified_family() -> None:
+    shares = [{"name": f"Family {index}", "share": 5} for index in range(1, 8)]
+    genres = report_genres({"cluster_shares": shares, "coverage": {"genre_coverage_percent": 35}}, 100)
+    assert [item["label"] for item in genres[:-1]] == [f"Family {index}" for index in range(1, 8)]
+    assert genres[-1]["label"] == "Other / Unclassified"
 
 
 def test_background_albums_dedupe_and_skip_missing_artwork() -> None:
@@ -113,6 +157,14 @@ def test_gemma_unavailable_and_malformed_json_have_complete_fallbacks() -> None:
     assert report.fallbackReason == "invalid_language_json"
 
 
+def test_stalled_gemma_returns_the_complete_report_fallback() -> None:
+    stalled = FakeLanguageService()
+    stalled._request_json = lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("stalled"))  # type: ignore[method-assign]
+    report = stalled.generate_persona_language(evidence()["languageEvidence"])
+    assert report.generationSource == "fallback"
+    assert report.fallbackReason == "ollama_timeout"
+
+
 def test_final_roast_fallback_is_natural_and_metric_free() -> None:
     roast = deterministic_roast_body(evidence())
     assert len(roast.split()) >= 70
@@ -150,6 +202,7 @@ def evidence() -> dict[str, object]:
         "musicalAge": {"age": 29, "likelyMin": 25, "likelyMax": 33, "title": "The Curated Balancer", "confidence": 0.76, "confidenceLabel": "Good confidence", "fallbackExplanation": "Familiar anchors and discovery share the rotation.", "strongestFactors": ["album depth"], "sourcePeriod": period},
         "topFive": {"songs": [], "artists": [{"rank": 1, "artistImageUrl": None, "name": "Known Artist", "detectedPlays": 10, "uniqueSongs": 3}]},
         "backgroundAlbums": [],
+        "explainers": {"musicalAges": [{"minAge": 12, "maxAge": 65, "title": "The Curated Balancer", "summary": "Summary"}], "personalities": [{"id": "main_character_rain_scene", "name": "The Main Character in a Rain Scene", "category": "sound", "profile": "Profile", "triggerRules": ["Atmospheric listening."]}]},
         "languageEvidence": {"personality": {"id": "main_character_rain_scene", "title": "The Main Character in a Rain Scene"}, "strongestSignals": ["atmospheric signal"], "knownArtists": ["Known Artist"], "knownGenres": ["Alternative"]},
     }
 

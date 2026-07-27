@@ -43,13 +43,26 @@ class RefreshRequest(BaseModel):
     enrich_durations: bool = False
 
 
-class RefreshResponse(BaseModel):
-    refreshed_at: str
-    use_demo: bool
+class RefreshQueuedResponse(BaseModel):
+    jobId: str
+    status: Literal["queued"]
+
+
+class RefreshStatusResponse(BaseModel):
+    jobId: str | None = None
+    status: str
+    progress: int
+    message: str
+    errorCode: str | None = None
+    refreshedAt: str | None = None
+    useDemo: bool = False
     warnings: list[str] = Field(default_factory=list)
-    coverage: dict[str, Any]
-    track_count: int
-    play_count: int
+    coverage: dict[str, Any] | None = None
+    trackCount: int | None = None
+    playCount: int | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    finishedAt: str | None = None
 
 
 class TakeoutImportQueuedResponse(BaseModel):
@@ -80,6 +93,30 @@ class DurationEnrichmentStatusResponse(BaseModel):
     attempted: int | None = None
     added: int | None = None
     failed: int | None = None
+    continueQueued: bool | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
+    finishedAt: str | None = None
+
+
+class GenreEnrichmentStatusResponse(BaseModel):
+    jobId: str | None = None
+    status: str
+    progress: int
+    message: str
+    errorCode: str | None = None
+    provider: str = "musicbrainz"
+    attempted: int | None = None
+    matched: int | None = None
+    failed: int | None = None
+    providerError: str | None = None
+    matchedEventCount: int | None = None
+    appliedCached: int | None = None
+    remainingCandidates: int | None = None
+    unknownArtistCount: int | None = None
+    beforeCoverage: float | None = None
+    afterCoverage: float | None = None
+    unknownEventCount: int | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
     finishedAt: str | None = None
@@ -388,8 +425,28 @@ class ReportGeneration(StrictReportModel):
     durationMs: int | None = None
 
 
+class ReportAgeExplainer(StrictReportModel):
+    minAge: int
+    maxAge: int
+    title: str
+    summary: str
+
+
+class ReportPersonalityExplainer(StrictReportModel):
+    id: str
+    name: str
+    category: str
+    profile: str
+    triggerRules: list[str]
+
+
+class ReportExplainers(StrictReportModel):
+    musicalAges: list[ReportAgeExplainer]
+    personalities: list[ReportPersonalityExplainer]
+
+
 class PersonaReportResponse(StrictReportModel):
-    schemaVersion: Literal[5] = 5
+    schemaVersion: Literal[6] = 6
     source: Literal["youtube", "spotify"]
     mode: Literal["serious", "playful", "roast"]
     period: ReportPeriod
@@ -398,6 +455,7 @@ class PersonaReportResponse(StrictReportModel):
     musicalAge: ReportMusicalAge
     topFive: ReportTopFive
     summary: ReportSummary
+    explainers: ReportExplainers
     backgroundAlbums: list[ReportBackgroundAlbum]
     generation: ReportGeneration
     analyticsFingerprint: str

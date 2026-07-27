@@ -46,12 +46,23 @@ export function CompactScoreGauge({ score, index }: { score: ScoreMetric; index:
         <h3>{shortScoreName(score)}</h3>
         <p>{title}</p>
         <details>
-          <summary>How this is calculated</summary>
-          <p>{score.formula}</p>
+          <summary>What this score means</summary>
+          <p>{scoreMeaning(score)}</p>
         </details>
       </div>
     </div>
   );
+}
+
+function scoreMeaning(score: ScoreMetric) {
+  const meanings: Record<string, string> = {
+    repeat: "A higher score means you often return to the same songs. A lower score means your track rotation changes more often.",
+    discovery: "A higher score means your recent listening contains more songs and artists that were not present earlier in the selected period.",
+    artist_loyalty: "A higher score means a small group of favourite artists accounts for more of your listening. A lower score means your attention is spread more widely.",
+    broad_cluster_diversity: "A higher score means your listening reaches across more musical styles. A lower score means it stays closer to a few core sounds.",
+    mainstream_niche: "A higher score suggests you lean toward artists with smaller audiences. A lower score suggests more of your listening comes from widely known artists.",
+  };
+  return meanings[score.key] ?? score.explanation;
 }
 
 function shortScoreName(score: ScoreMetric) {

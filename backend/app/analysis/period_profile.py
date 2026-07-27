@@ -21,7 +21,7 @@ from app.analysis.scoring import build_analysis
 
 
 ANALYTICS_VERSION = 3
-GENRE_MAP_VERSION = 1
+GENRE_MAP_VERSION = 4
 
 
 def build_period_profile(

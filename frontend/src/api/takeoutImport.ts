@@ -30,11 +30,12 @@ interface PollOptions<T extends PollableJob> {
   timeoutMs?: number;
   intervalMs?: number;
   onStatus?: (status: T) => void;
+  isComplete?: (status: T) => boolean;
 }
 
 export async function pollTakeoutImport<T extends PollableJob>(
   getStatus: (signal: AbortSignal) => Promise<T>,
-  { signal, timeoutMs = 10 * 60 * 1000, intervalMs = 1000, onStatus }: PollOptions<T>,
+  { signal, timeoutMs = 10 * 60 * 1000, intervalMs = 1000, onStatus, isComplete = (status) => status.status === "complete" }: PollOptions<T>,
 ): Promise<T> {
   const startedAt = Date.now();
   let networkFailures = 0;
@@ -44,7 +45,7 @@ export async function pollTakeoutImport<T extends PollableJob>(
       const status = await getStatus(signal);
       networkFailures = 0;
       onStatus?.(status);
-      if (status.status === "complete") return status;
+      if (isComplete(status)) return status;
       if (status.status === "failed") {
         throw new Error(`${status.message}${status.errorCode ? ` (${status.errorCode})` : ""}`);
       }

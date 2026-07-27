@@ -11,11 +11,13 @@ export type ArtworkProps = {
   className?: string;
   fallbackLabel?: string;
   shape?: "rounded" | "circle";
+  fit?: "cover" | "contain";
 };
 
-export function Artwork({ src, alt, kind, size = "md", priority = false, className = "", fallbackLabel, shape }: ArtworkProps) {
+export function Artwork({ src, alt, kind, size = "md", priority = false, className = "", fallbackLabel, shape, fit = "cover" }: ArtworkProps) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [naturalRatio, setNaturalRatio] = useState<number | null>(() => initialArtworkRatio(src, kind));
   const previousSrcRef = useRef(src);
   const usableSrc = src && src !== failedSrc ? src : null;
   const loading = Boolean(usableSrc && loadedSrc !== usableSrc);
@@ -27,10 +29,14 @@ export function Artwork({ src, alt, kind, size = "md", priority = false, classNa
     previousSrcRef.current = src;
     setFailedSrc(null);
     setLoadedSrc(null);
-  }, [src]);
+    setNaturalRatio(initialArtworkRatio(src, kind));
+  }, [src, kind]);
 
   return (
-    <div className={`artwork-frame artwork-frame--${kind} artwork-frame--${size} artwork-frame--${resolvedShape}${className ? ` ${className}` : ""}`}>
+    <div
+      className={`artwork-frame artwork-frame--${kind} artwork-frame--${size} artwork-frame--${resolvedShape} artwork-frame--fit-${fit}${className ? ` ${className}` : ""}`}
+      style={naturalRatio ? { aspectRatio: naturalRatio } : undefined}
+    >
       {usableSrc ? (
         <>
           {loading ? <div className="artwork-frame__skeleton" aria-hidden="true" /> : null}
@@ -40,7 +46,12 @@ export function Artwork({ src, alt, kind, size = "md", priority = false, classNa
             loading={priority ? "eager" : "lazy"}
             decoding="async"
             data-loaded={loading ? "false" : "true"}
-            onLoad={() => setLoadedSrc(usableSrc)}
+            onLoad={(event) => {
+              setLoadedSrc(usableSrc);
+              if (kind === "track" && event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) {
+                setNaturalRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight);
+              }
+            }}
             onError={() => {
               setFailedSrc(usableSrc);
               setLoadedSrc(null);
@@ -60,6 +71,7 @@ type StrictArtworkProps = {
   className?: string;
   size?: ArtworkProps["size"];
   priority?: boolean;
+  fit?: ArtworkProps["fit"];
 };
 
 export function ArtistAvatar({
@@ -151,4 +163,9 @@ export function PersonaBackground({
 function initials(value: string) {
   const parts = value.split(/\s+/).filter(Boolean);
   return `${parts[0]?.[0] ?? "?"}${parts[1]?.[0] ?? ""}`.toUpperCase();
+}
+
+function initialArtworkRatio(src: string | null | undefined, kind: ArtworkProps["kind"]) {
+  if (kind !== "track") return null;
+  return src?.includes("i.ytimg.com/vi/") ? 4 / 3 : null;
 }

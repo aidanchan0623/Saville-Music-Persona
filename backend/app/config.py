@@ -36,8 +36,11 @@ class Settings:
         self.duration_enrichment_limit = int(os.getenv("SMP_DURATION_ENRICHMENT_LIMIT", "1000"))
         self.youtube_data_api_key = os.getenv("YOUTUBE_DATA_API_KEY", "").strip()
         self.duration_enrichment_timeout_seconds = int(os.getenv("SMP_DURATION_ENRICHMENT_TIMEOUT_SECONDS", "300"))
+        self.genre_enrichment_limit = int(os.getenv("SMP_GENRE_ENRICHMENT_LIMIT", "20"))
+        self.genre_enrichment_timeout_seconds = int(os.getenv("SMP_GENRE_ENRICHMENT_TIMEOUT_SECONDS", "180"))
         self.takeout_max_upload_bytes = int(os.getenv("SMP_TAKEOUT_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))
         self.takeout_import_timeout_seconds = int(os.getenv("SMP_TAKEOUT_IMPORT_TIMEOUT_SECONDS", "600"))
+        self.refresh_timeout_seconds = int(os.getenv("SMP_REFRESH_TIMEOUT_SECONDS", "600"))
         auth_default = self.private_dir / "oauth.json"
         self.ytmusic_auth_file = Path(os.getenv("YTMUSIC_AUTH_FILE", auth_default))
         if not self.ytmusic_auth_file.is_absolute():

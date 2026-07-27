@@ -49,6 +49,16 @@ CATEGORY_SUMMARIES = {
     "The Timeless Integrator": "The listening map connects eras and established favourites without treating age as a hierarchy.",
 }
 
+
+def age_category_catalogue() -> list[dict[str, Any]]:
+    """Return public age ranges directly from the calculation catalogue."""
+    lower = AGE_MIN
+    catalogue: list[dict[str, Any]] = []
+    for upper, title in AGE_CATEGORIES:
+        catalogue.append({"minAge": lower, "maxAge": upper, "title": title, "summary": CATEGORY_SUMMARIES[title]})
+        lower = upper + 1
+    return catalogue
+
 INTENSITY_TERMS = {
     "aggressive",
     "anthemic",

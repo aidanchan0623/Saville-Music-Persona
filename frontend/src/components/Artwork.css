@@ -54,6 +54,14 @@
   transition: opacity 180ms ease;
 }
 
+.artwork-frame--track {
+  background: #050505;
+}
+
+.artwork-frame--fit-contain img {
+  object-fit: contain;
+}
+
 .artwork-frame img[data-loaded="false"] {
   opacity: 0;
 }

@@ -38,6 +38,27 @@ export interface TakeoutImportStatus {
   playCount: number | null;
 }
 
+export type RefreshStage = "queued" | "fetching" | "normalizing" | "enriching" | "rebuilding" | "saving" | "complete" | "failed";
+
+export interface RefreshQueued {
+  jobId: string;
+  status: "queued";
+}
+
+export interface RefreshStatus {
+  jobId: string;
+  status: RefreshStage;
+  progress: number;
+  message: string;
+  errorCode: string | null;
+  refreshedAt: string | null;
+  useDemo: boolean;
+  warnings: string[];
+  coverage: Record<string, unknown> | null;
+  trackCount: number | null;
+  playCount: number | null;
+}
+
 export type DurationEnrichmentStage = "idle" | "queued" | "resolving" | "rebuilding" | "complete" | "failed";
 
 export interface DurationEnrichmentStatus {
@@ -49,6 +70,29 @@ export interface DurationEnrichmentStatus {
   attempted: number | null;
   added: number | null;
   failed: number | null;
+  continueQueued: boolean | null;
+}
+
+export type GenreEnrichmentStage = "idle" | "queued" | "resolving" | "rebuilding" | "complete" | "failed";
+
+export interface GenreEnrichmentStatus {
+  jobId: string | null;
+  status: GenreEnrichmentStage;
+  progress: number;
+  message: string;
+  errorCode: string | null;
+  provider: "musicbrainz";
+  attempted: number | null;
+  matched: number | null;
+  failed: number | null;
+  providerError: string | null;
+  matchedEventCount: number | null;
+  appliedCached: number | null;
+  remainingCandidates: number | null;
+  unknownArtistCount: number | null;
+  beforeCoverage: number | null;
+  afterCoverage: number | null;
+  unknownEventCount: number | null;
 }
 
 export interface SpotifyStatus {
@@ -120,10 +164,20 @@ export interface TasteInterpretation {
   evidence: string[];
   summary: string;
   coverage: {
+    totalEventCount: number;
+    usableArtistEventCount: number;
+    invalidArtistEventCount: number;
+    classifiedEventCount: number;
+    curatedEventCount: number;
+    sourceGenreEventCount: number;
+    unknownEventCount: number;
+    genreCoveragePercent: number;
     genre_coverage_percent: number;
     curated_artist_coverage_percent: number;
     inferred_artist_coverage_percent: number;
     unknown_artist_coverage_percent: number;
+    topUnknownArtists: { artist: string; playCount: number; playShare: number }[];
+    unmatchedNameVariants: { variant: string; playCount: number }[];
   };
   diversity: {
     broad_cluster_score: number;
@@ -693,7 +747,7 @@ export interface AuthStatus {
 }
 
 export interface PersonaReport {
-  schemaVersion: 5;
+  schemaVersion: 6;
   source: MusicSource;
   mode: "serious" | "playful" | "roast";
   period: PersonaReportPeriod;
@@ -702,11 +756,20 @@ export interface PersonaReport {
   musicalAge: PersonaMusicalAge;
   topFive: PersonaTopFive;
   summary: PersonaReportSummary;
+  explainers: PersonaReportExplainers;
   backgroundAlbums: PersonaBackgroundAlbum[];
   generation: PersonaGeneration;
   analyticsFingerprint: string;
   cacheKey: string;
 }
+
+export interface PersonaReportExplainers {
+  musicalAges: PersonaAgeExplainer[];
+  personalities: PersonaPersonalityExplainer[];
+}
+
+export interface PersonaAgeExplainer { minAge: number; maxAge: number; title: string; summary: string; }
+export interface PersonaPersonalityExplainer { id: string; name: string; category: string; profile: string; triggerRules: string[]; }
 
 export interface PersonaReportPeriod {
   key: string;

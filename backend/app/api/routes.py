@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import shutil
 import hashlib
 import json
@@ -55,8 +56,10 @@ from app.schemas.responses import (
     PrerequisitesResponse,
     PersonaReportResponse,
     RefreshRequest,
-    RefreshResponse,
+    RefreshQueuedResponse,
+    RefreshStatusResponse,
     DurationEnrichmentStatusResponse,
+    GenreEnrichmentStatusResponse,
     ReportRequest,
     TakeoutImportQueuedResponse,
     TakeoutImportStatusResponse,
@@ -75,7 +78,13 @@ from app.services.duration_enrichment_jobs import (
     DurationEnrichmentAlreadyRunning,
     DurationEnrichmentCoordinator,
 )
+from app.services.genre_enrichment_jobs import (
+    GenreEnrichmentAlreadyRunning,
+    GenreEnrichmentCoordinator,
+)
+from app.services.genre_enrichment_service import MusicBrainzGenreService
 from app.services.ollama_service import OllamaService
+from app.services.refresh_jobs import RefreshAlreadyRunning, RefreshCoordinator
 from app.services.recommendations import generate_recommendations
 from app.services.spotify_service import SpotifyService
 from app.services.takeout_import_jobs import (
@@ -94,8 +103,11 @@ ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 takeout_imports = TakeoutImportCoordinator(repo, settings.takeout_import_timeout_seconds)
 duration_enrichment = DurationEnrichmentCoordinator(repo, settings.duration_enrichment_timeout_seconds)
+genre_enrichment_service = MusicBrainzGenreService()
+genre_enrichment = GenreEnrichmentCoordinator(repo, settings.genre_enrichment_timeout_seconds)
+refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
 
-PERSONA_REPORT_SCHEMA_VERSION = 5
+PERSONA_REPORT_SCHEMA_VERSION = 6
 PERSONA_REPORT_PROMPT_VERSION = 5
 PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
@@ -103,6 +115,8 @@ INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 INSIGHTS_RESPONSE_CACHE_LIMIT = 24
 PERIOD_PROFILE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 PERIOD_PROFILE_CACHE_LIMIT = 32
+OVERVIEW_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
+OVERVIEW_RESPONSE_CACHE_LIMIT = 16
 TAKEOUT_CACHE_METADATA_KEY = "takeout_history_meta"
 
 SPOTIFY_CACHE_KEYS = [
@@ -138,10 +152,49 @@ def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str)
 def persona_report_pointer_key(source: str) -> str:
     return f"persona_report_pointer:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}"
 
+
+def persona_report_pointer_is_current(pointer: Any, source: str, normalised_updated_at: str | None) -> bool:
+    return (
+        isinstance(pointer, dict)
+        and pointer.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
+        and pointer.get("period") == PERSONA_REPORT_PERIOD
+        and pointer.get("source") == source
+        and pointer.get("promptVersion") == PERSONA_REPORT_PROMPT_VERSION
+        and pointer.get("analyticsVersion") == ANALYTICS_VERSION
+        and pointer.get("genreMapVersion") == GENRE_MAP_VERSION
+        and pointer.get("musicalAgeCalculationVersion") == MUSICAL_AGE_CALCULATION_VERSION
+        and pointer.get("personalityClassifierVersion") == MUSIC_CHARACTER_CLASSIFIER_VERSION
+        and pointer.get("model") == settings.ollama_model
+        and pointer.get("normalisedUpdatedAt") == normalised_updated_at
+        and bool(pointer.get("cacheKey"))
+    )
+
+
+def save_persona_report_pointer(source: str, mode: str, analytics_fingerprint: str, report_cache_key: str, generated_at: str) -> None:
+    repo.save_json(
+        persona_report_pointer_key(source),
+        {
+            "cacheKey": report_cache_key,
+            "source": source,
+            "mode": mode,
+            "period": PERSONA_REPORT_PERIOD,
+            "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
+            "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
+            "analyticsVersion": ANALYTICS_VERSION,
+            "genreMapVersion": GENRE_MAP_VERSION,
+            "musicalAgeCalculationVersion": MUSICAL_AGE_CALCULATION_VERSION,
+            "personalityClassifierVersion": MUSIC_CHARACTER_CLASSIFIER_VERSION,
+            "model": settings.ollama_model,
+            "analyticsFingerprint": analytics_fingerprint,
+            "normalisedUpdatedAt": repo.updated_at(cache_key("normalised", source)),
+            "generatedAt": generated_at,
+        },
+    )
+
 def require_cache(key: str) -> Any:
     if key in {"normalised", "analysis", "recommendations"}:
         validate_takeout_cache_schema()
-    value = repo.load_json(key)
+    value = repo.load_json_cached(key)
     if value is None:
         raise HTTPException(status_code=404, detail={"error": "No data yet", "detail": "Refresh music data first or enable demo data.", "code": "no_cached_data"})
     return value
@@ -164,7 +217,7 @@ def require_source_cache(key: str, source: str | None = "youtube") -> Any:
     resolved_source = normalise_source(source)
     if resolved_source == "youtube":
         return require_cache(key)
-    value = repo.load_json(cache_key(key, resolved_source))
+    value = repo.load_json_cached(cache_key(key, resolved_source))
     if value is None:
         raise HTTPException(
             status_code=404,
@@ -308,11 +361,14 @@ def normalise_with_duration_cache(
         except Exception as exc:  # noqa: BLE001
             if warnings is not None:
                 warnings.append(f"Artist image enrichment skipped: {exc}")
+    normalised = normalise_collection(raw)
     if allow_album_image_enrichment:
         try:
-            stats = ytmusic.enrich_album_image_cache(raw, album_cache)
+            preferred_albums = preferred_album_image_targets(normalised)
+            stats = ytmusic.enrich_album_image_cache(raw, album_cache, preferred_albums=preferred_albums)
             if stats.get("seeded") or stats.get("attempted"):
                 repo.save_json("album_image_cache_v1", album_cache)
+                normalised = normalise_collection(raw)
                 if warnings is not None:
                     warnings.append(
                         f"Album image cache checked {stats['attempted']} album(s), added {stats['added']} official cover(s), and reused {stats['seeded']} library album cover(s)."
@@ -320,7 +376,6 @@ def normalise_with_duration_cache(
         except Exception as exc:  # noqa: BLE001
             if warnings is not None:
                 warnings.append(f"Album image enrichment skipped: {exc}")
-    normalised = normalise_collection(raw)
     duration_cache = repo.load_json("duration_cache") or {}
     if duration_cache:
         normalised = annotate_normalised_durations(normalised, duration_cache)
@@ -338,6 +393,26 @@ def normalise_with_duration_cache(
             if warnings is not None:
                 warnings.append(f"Duration enrichment skipped: {exc}")
     return normalised
+
+
+def preferred_album_image_targets(normalised: dict[str, Any]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for period in ("this_month", "rolling_year"):
+        payload = albums_payload(normalised, period=period, timezone_name=settings.local_timezone, limit=10)
+        for album in payload.get("albums") or []:
+            key = str(album.get("key") or "").strip().casefold()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            result.append(
+                {
+                    "album": album.get("album"),
+                    "artist": album.get("artist"),
+                    "album_id": album.get("album_id"),
+                }
+            )
+    return result
 
 
 def analysis_for_period(period: str, month: str | None, timezone_name: str | None, source: str | None = "youtube") -> tuple[dict[str, Any], dict[str, Any], int]:
@@ -371,6 +446,44 @@ def canonical_period_profile(source: str, period: str, month: str | None, timezo
             PERIOD_PROFILE_CACHE.clear()
         PERIOD_PROFILE_CACHE[cache_identity] = profile
     return profile, normalised
+
+
+def canonical_overview_payload(
+    source: str,
+    period: str,
+    month: str | None,
+    timezone_name: str | None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    profile, normalised = canonical_period_profile(source, period, month, timezone_name)
+    cache_identity = (
+        normalise_source(source),
+        period,
+        month,
+        timezone_name or settings.local_timezone,
+        profile["dataFingerprint"],
+        OVERVIEW_SCHEMA_VERSION,
+        MUSICAL_AGE_CALCULATION_VERSION,
+        MUSIC_CHARACTER_CLASSIFIER_VERSION,
+    )
+    payload = OVERVIEW_RESPONSE_CACHE.get(cache_identity)
+    if payload is None:
+        payload = build_overview_response(
+            normalised,
+            period,
+            month,
+            timezone_name or settings.local_timezone,
+            profile=profile,
+        )
+        if len(OVERVIEW_RESPONSE_CACHE) >= OVERVIEW_RESPONSE_CACHE_LIMIT:
+            OVERVIEW_RESPONSE_CACHE.clear()
+        OVERVIEW_RESPONSE_CACHE[cache_identity] = payload
+    return copy.deepcopy(payload), profile, normalised
+
+
+def clear_analytics_memory_caches() -> None:
+    INSIGHTS_RESPONSE_CACHE.clear()
+    PERIOD_PROFILE_CACHE.clear()
+    OVERVIEW_RESPONSE_CACHE.clear()
 
 
 def analytics_envelope(source: str, profile: dict[str, Any], normalised: dict[str, Any], data: Any) -> AnalyticsEnvelope[Any]:
@@ -576,11 +689,13 @@ def spotify_refresh() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail={"error": "Spotify refresh failed", "detail": str(exc), "code": "spotify_refresh_failed"}) from exc
 
 
-@router.post("/data/refresh", response_model=RefreshResponse)
-def refresh_data(request: RefreshRequest) -> RefreshResponse:
+def process_refresh(options: dict[str, bool], coordinator: RefreshCoordinator, deadline: float) -> None:
     settings.ensure_local_dirs()
+    use_demo = bool(options.get("use_demo"))
+    enrich_durations = bool(options.get("enrich_durations"))
     warnings: list[str] = []
-    if request.use_demo:
+    coordinator.stage("fetching", "Loading local listening sources...")
+    if use_demo:
         raw = demo_raw_collection()
         warnings.append("Demo data is enabled; no private account data was fetched.")
         live_connected = False
@@ -589,7 +704,8 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         status = ytmusic.auth_status()
         live_connected = bool(status["connected"])
         if not status["connected"] and not takeout_history:
-            raise HTTPException(status_code=400, detail={"error": "YouTube Music is not connected", "detail": status["message"], "code": "ytmusic_not_connected"})
+            coordinator.fail(f"YouTube Music is not connected: {status['message']}", "ytmusic_not_connected")
+            return
         if status["connected"]:
             raw = ytmusic.fetch_library()
             warnings.extend(raw.get("warnings") or [])
@@ -597,34 +713,69 @@ def refresh_data(request: RefreshRequest) -> RefreshResponse:
         else:
             raw = {"source": "google_takeout", "history": [], "warnings": []}
             warnings.append(f"Live YouTube Music sync skipped: {status['message']}")
-    takeout_history = None if request.use_demo else load_current_takeout_history()
+    coordinator.check_timeout(deadline)
+    coordinator.stage("normalizing", "Merging listening events into the canonical local profile...", warnings=warnings)
+    takeout_history = None if use_demo else load_current_takeout_history()
     if takeout_history:
         raw["takeout_history"] = takeout_history
         raw["takeout_import_batch_id"] = (repo.load_json(TAKEOUT_CACHE_METADATA_KEY) or {}).get("import_batch_id")
         warnings.append("Google Takeout history is merged as the longest available play-history source.")
+    coordinator.check_timeout(deadline)
+    coordinator.stage("enriching", "Resolving available track, artist, and album metadata...", warnings=warnings)
     normalised = normalise_with_duration_cache(
         raw,
         warnings,
-        allow_enrichment=(not request.use_demo and request.enrich_durations),
+        allow_enrichment=(not use_demo and enrich_durations),
         allow_artist_image_enrichment=live_connected,
-        allow_album_image_enrichment=not request.use_demo,
+        allow_album_image_enrichment=not use_demo,
     )
+    coordinator.check_timeout(deadline)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
+    coordinator.stage("rebuilding", "Rebuilding listening analytics from the refreshed profile...", warnings=warnings)
     analysis = build_analysis(normalised)
-    repo.save_json("raw", raw)
-    repo.save_json("normalised", normalised)
-    repo.save_json("analysis", analysis)
-    repo.save_json("last_refresh_meta", {"refreshed_at": refreshed_at, "use_demo": request.use_demo, "warnings": warnings})
-    return RefreshResponse(
-        refreshed_at=refreshed_at,
-        use_demo=request.use_demo,
+    coordinator.check_timeout(deadline)
+    coordinator.stage("saving", "Saving the refreshed profile atomically...", warnings=warnings)
+    repo.save_json_batch(
+        {
+            "raw": raw,
+            "normalised": normalised,
+            "analysis": analysis,
+            "last_refresh_meta": {"refreshed_at": refreshed_at, "use_demo": use_demo, "warnings": warnings},
+        }
+    )
+    clear_analytics_memory_caches()
+    coordinator.stage(
+        "complete",
+        "Music refresh complete.",
+        refreshedAt=refreshed_at,
+        useDemo=use_demo,
         warnings=warnings,
         coverage=analysis["coverage"],
-        track_count=normalised["metadata"]["track_count"],
-        play_count=normalised["metadata"]["play_count"],
+        trackCount=normalised["metadata"]["track_count"],
+        playCount=normalised["metadata"]["play_count"],
     )
+
+
+@router.post("/data/refresh", response_model=RefreshQueuedResponse, status_code=202)
+def refresh_data(request: RefreshRequest) -> RefreshQueuedResponse:
+    try:
+        job = refresh_jobs.start(request.model_dump(), process_refresh)
+    except RefreshAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Music refresh already running", "detail": str(exc), "code": "refresh_already_running"},
+        ) from exc
+    return RefreshQueuedResponse(jobId=str(job["jobId"]), status="queued")
+
+
+@router.get("/data/refresh/{job_id}", response_model=RefreshStatusResponse)
+def refresh_status(job_id: str) -> RefreshStatusResponse:
+    job = refresh_jobs.status()
+    if not job or job.get("jobId") != job_id:
+        raise HTTPException(status_code=404, detail={"error": "Refresh job not found", "detail": "Start a new music refresh.", "code": "refresh_job_not_found"})
+    return RefreshStatusResponse(**job)
 
 
 @router.post("/data/import-takeout", response_model=TakeoutImportQueuedResponse, status_code=202)
@@ -847,6 +998,7 @@ def process_takeout_import(
         )
         return
     coordinator.log(job_id, "cache_invalidated", cacheGroups=["persona_report", "overview_language", "recommendations"])
+    clear_analytics_memory_caches()
     coordinator.log(job_id, "persistence_completed", acceptedEventCount=len(parsed.entries))
     coordinator.stage(
         job_id,
@@ -886,7 +1038,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         delete_keys=["latest_report", "recommendations"],
         delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
     )
-    INSIGHTS_RESPONSE_CACHE.clear()
+    clear_analytics_memory_caches()
     remaining_note = f" {stats['remaining']} more track(s) remain queued for the next local batch." if stats.get("remaining") else ""
     coordinator.stage(
         "complete",
@@ -916,6 +1068,88 @@ def duration_enrichment_status() -> DurationEnrichmentStatusResponse:
     return DurationEnrichmentStatusResponse.model_validate(job)
 
 
+def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: float) -> None:
+    cached_normalised = repo.load_json("normalised")
+    if not isinstance(cached_normalised, dict) or not cached_normalised.get("tracks"):
+        coordinator.fail("No YouTube listening profile is available to enrich yet.", "genre_profile_missing")
+        return
+
+    working_normalised = copy.deepcopy(cached_normalised)
+    before_analysis = build_analysis(working_normalised)
+    before_coverage = genre_coverage_payload(before_analysis)
+    coordinator.stage(
+        "resolving",
+        "Checking high-impact unclassified artists against MusicBrainz.",
+        provider="musicbrainz",
+        beforeCoverage=before_coverage["genreCoveragePercent"],
+    )
+    cache, stats = genre_enrichment_service.enrich(
+        working_normalised,
+        repo.load_json("genre_metadata_cache"),
+        limit=settings.genre_enrichment_limit,
+        deadline=deadline,
+    )
+
+    coordinator.stage(
+        "rebuilding",
+        "Applying trusted genre matches and rebuilding local analytics.",
+        provider="musicbrainz",
+        beforeCoverage=before_coverage["genreCoveragePercent"],
+        **stats,
+    )
+    rebuilt_analysis = build_analysis(working_normalised)
+    after_coverage = genre_coverage_payload(rebuilt_analysis)
+    repo.save_json_batch(
+        {
+            "genre_metadata_cache": cache,
+            "normalised": working_normalised,
+            "analysis": rebuilt_analysis,
+        },
+        delete_keys=["latest_report", "recommendations"],
+        delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
+    )
+    clear_analytics_memory_caches()
+    gain = round(after_coverage["genreCoveragePercent"] - before_coverage["genreCoveragePercent"], 1)
+    provider_note = " MusicBrainz was temporarily unavailable before the full batch finished; completed matches were kept." if stats.get("providerError") else ""
+    coordinator.stage(
+        "complete",
+        f"Genre enrichment complete. Coverage is {after_coverage['genreCoveragePercent']:.1f}% ({gain:+.1f} points).{provider_note}",
+        provider="musicbrainz",
+        beforeCoverage=before_coverage["genreCoveragePercent"],
+        afterCoverage=after_coverage["genreCoveragePercent"],
+        unknownEventCount=after_coverage["unknownEventCount"],
+        **stats,
+    )
+
+
+def genre_coverage_payload(analysis: dict[str, Any]) -> dict[str, Any]:
+    coverage = ((analysis.get("overview") or {}).get("taste_interpretation") or {}).get("coverage") or {}
+    return {
+        "genreCoveragePercent": float(coverage.get("genreCoveragePercent") or coverage.get("genre_coverage_percent") or 0),
+        "unknownEventCount": int(coverage.get("unknownEventCount") or 0),
+    }
+
+
+@router.post("/data/genre-enrichment", response_model=GenreEnrichmentStatusResponse, status_code=202)
+def start_genre_enrichment() -> GenreEnrichmentStatusResponse:
+    try:
+        job = genre_enrichment.start(process_genre_enrichment)
+    except GenreEnrichmentAlreadyRunning as exc:
+        existing = genre_enrichment.status()
+        if existing:
+            return GenreEnrichmentStatusResponse.model_validate(existing)
+        raise HTTPException(status_code=409, detail={"error": "Genre enrichment is already running", "code": "genre_enrichment_in_progress"}) from exc
+    return GenreEnrichmentStatusResponse.model_validate(job)
+
+
+@router.get("/data/genre-enrichment", response_model=GenreEnrichmentStatusResponse)
+def genre_enrichment_status() -> GenreEnrichmentStatusResponse:
+    job = genre_enrichment.status()
+    if not job:
+        return GenreEnrichmentStatusResponse(status="idle", progress=0, message="No genre enrichment is running.")
+    return GenreEnrichmentStatusResponse.model_validate(job)
+
+
 @router.get("/data/coverage")
 def coverage(source: str = Query("youtube")) -> dict[str, Any]:
     return require_source_cache("analysis", source)["coverage"]
@@ -932,8 +1166,7 @@ def analytics_diagnostics(
     reimport = takeout_reimport_status(repo.load_json(TAKEOUT_CACHE_METADATA_KEY)) if normalise_source(source) == "youtube" else {"requiresReimport": False}
     if reimport["requiresReimport"]:
         return {"cache": {"status": "stale"}, "reimport": reimport}
-    normalised = require_source_cache("normalised", source)
-    profile = build_period_profile(normalised, period, month, timezone_name or settings.local_timezone)
+    profile, normalised = canonical_period_profile(source, period, month, timezone_name)
     metadata = normalised.get("metadata") or {}
     return {
         "parserVersion": metadata.get("parser_schema_version"),
@@ -957,9 +1190,8 @@ def overview(
     source: str = Query("youtube"),
 ) -> dict[str, Any]:
     resolved_source = normalise_source(source)
-    normalised = require_source_cache("normalised", resolved_source)
     meta = repo.load_json(cache_key("last_refresh_meta", resolved_source)) or {}
-    payload = build_overview_response(normalised, period, month, timezone_name or settings.local_timezone)
+    payload, _, _ = canonical_overview_payload(resolved_source, period, month, timezone_name)
     evidence = overview_language_evidence(payload)
     fingerprint = overview_language_fingerprint(evidence, resolved_source, settings.ollama_model)
     language_key = f"overview_language:v{OVERVIEW_LANGUAGE_CACHE_VERSION}:{resolved_source}:{fingerprint}"
@@ -1032,13 +1264,13 @@ def contract_overview(
 
 @router.get("/analysis/top-tracks")
 def top_tracks(source: str = Query("youtube")) -> list[dict[str, Any]]:
-    profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
+    profile, _ = canonical_period_profile(source, "this_month", None, settings.local_timezone)
     return [{**item, "rank": index} for index, item in enumerate(profile["top_tracks"][:10], 1)]
 
 
 @router.get("/analysis/top-artists")
 def top_artists(source: str = Query("youtube")) -> list[dict[str, Any]]:
-    profile = build_period_profile(require_source_cache("normalised", source), "this_month", timezone_name=settings.local_timezone)
+    profile, _ = canonical_period_profile(source, "this_month", None, settings.local_timezone)
     return [{**item, "rank": index} for index, item in enumerate(profile["top_artists"][:10], 1)]
 
 
@@ -1159,7 +1391,7 @@ def period_top(
     source: str = Query("youtube"),
 ) -> dict[str, Any]:
     kind = "artists" if type == "artists" else "tracks"
-    profile = build_period_profile(require_source_cache("normalised", source), period, month, timezone_name or settings.local_timezone)
+    profile, _ = canonical_period_profile(source, period, month, timezone_name)
     ranked_items = profile["top_artists"] if kind == "artists" else profile["top_tracks"]
     items = ranked_items[:10]
     return {
@@ -1308,43 +1540,16 @@ def generate_report(request: ReportRequest) -> PersonaReportResponse:
     )
     validated = PersonaReportResponse.model_validate(payload)
     repo.save_json(report_cache_key, payload)
-    repo.save_json(
-        persona_report_pointer_key(source),
-        {
-            "cacheKey": report_cache_key,
-            "source": source,
-            "mode": request.mode,
-            "period": PERSONA_REPORT_PERIOD,
-            "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
-            "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
-            "musicalAgeCalculationVersion": MUSICAL_AGE_CALCULATION_VERSION,
-            "personalityClassifierVersion": MUSIC_CHARACTER_CLASSIFIER_VERSION,
-            "model": settings.ollama_model,
-            "analyticsFingerprint": analytics_fingerprint,
-            "generatedAt": generated_at,
-        },
-    )
+    save_persona_report_pointer(source, request.mode, analytics_fingerprint, report_cache_key, generated_at)
     return validated
 
 
 @router.get("/report/latest", response_model=PersonaReportResponse)
 def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
     resolved_source = normalise_source(source)
-    profile = report_profile_with_characters(resolved_source)
-    analytics_fingerprint = persona_report_fingerprint(profile)
     pointer = repo.load_json(persona_report_pointer_key(resolved_source))
-    if (
-        isinstance(pointer, dict)
-        and pointer.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
-        and pointer.get("period") == PERSONA_REPORT_PERIOD
-        and pointer.get("source") == resolved_source
-        and pointer.get("promptVersion") == PERSONA_REPORT_PROMPT_VERSION
-        and pointer.get("musicalAgeCalculationVersion") == MUSICAL_AGE_CALCULATION_VERSION
-        and pointer.get("personalityClassifierVersion") == MUSIC_CHARACTER_CLASSIFIER_VERSION
-        and pointer.get("model") == settings.ollama_model
-        and pointer.get("analyticsFingerprint") == analytics_fingerprint
-        and pointer.get("cacheKey")
-    ):
+    normalised_updated_at = repo.updated_at(cache_key("normalised", resolved_source))
+    if persona_report_pointer_is_current(pointer, resolved_source, normalised_updated_at):
         cached = repo.load_json(str(pointer["cacheKey"]))
         if isinstance(cached, dict) and cached.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION:
             payload = dict(cached)
@@ -1354,6 +1559,8 @@ def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
                 payload["summary"] = {**payload["summary"], "generationSource": "cache-gemma"}
             return PersonaReportResponse.model_validate(payload)
 
+    profile = report_profile_with_characters(resolved_source)
+    analytics_fingerprint = persona_report_fingerprint(profile)
     mode = str(pointer.get("mode") or "serious") if isinstance(pointer, dict) else "serious"
     language = ollama.fallback_persona_language(profile["languageEvidence"], "no_matching_gemma_cache").model_dump()
     generated_at = datetime.now(timezone.utc).isoformat()
@@ -1369,7 +1576,10 @@ def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
         analytics_fingerprint=analytics_fingerprint,
         cache_key=report_cache_key,
     )
-    return PersonaReportResponse.model_validate(fallback_payload)
+    validated = PersonaReportResponse.model_validate(fallback_payload)
+    repo.save_json(report_cache_key, fallback_payload)
+    save_persona_report_pointer(resolved_source, mode, analytics_fingerprint, report_cache_key, generated_at)
+    return validated
 
 
 @router.get("/v1/report/latest", response_model=AnalyticsEnvelope[PersonaReportResponse])

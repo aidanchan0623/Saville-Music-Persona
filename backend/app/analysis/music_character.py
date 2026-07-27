@@ -13,6 +13,11 @@ MUSIC_CHARACTER_CLASSIFIER_VERSION = 1
 MODIFIER_IDS = {"comfort_loop_specialist", "album_loyalist", "single_song_prisoner", "genre_tourist", "one_artist_cult_member"}
 
 
+def personality_catalogue() -> list[dict[str, Any]]:
+    """Public definitions only; scoring and classifier precedence remain private."""
+    return [{"id": item["id"], "name": item["name"], "category": item["category"], "profile": item["profile"], "triggerRules": list(item["trigger_rules"])} for item in CHARACTER_DEFINITIONS]
+
+
 def character_payload(
     normalised: dict[str, Any],
     period: str = "rolling_year",

@@ -17,6 +17,7 @@ interface Props {
   onConnectSpotify: () => void;
   onRefreshSpotify: () => void;
   onDisconnectSpotify: () => void;
+  onImproveGenres: () => void;
   titleAnimationKey: string;
 }
 
@@ -32,6 +33,7 @@ export function SettingsPage({
   onConnectSpotify,
   onRefreshSpotify,
   onDisconnectSpotify,
+  onImproveGenres,
   titleAnimationKey,
 }: Props) {
   return (
@@ -145,13 +147,21 @@ export function SettingsPage({
 
       <SettingsCard>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Analysis rules</p>
-        <h2 className="mt-2 text-2xl font-black text-white">Analytics timezone and duration enrichment</h2>
+        <h2 className="mt-2 text-2xl font-black text-white">Analytics timezone and metadata enrichment</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
           Calendar months, daily charts and streaks use the backend local timezone. Change <code>SMP_LOCAL_TIMEZONE</code> in the backend environment to adjust it.
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="Analytics timezone" value={prerequisites?.local_timezone || "Asia/Kuala_Lumpur"} />
           <Info label="Duration enrichment limit" value={`${prerequisites?.duration_enrichment_limit ?? 150} missing tracks per refresh/import`} />
+        </div>
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <button className="btn-secondary" type="button" disabled={busy || !auth?.cached_data_available} onClick={onImproveGenres}>
+            <RefreshCw size={16} /> Improve genre coverage
+          </button>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-mist">
+            Checks high-impact unclassified artists against MusicBrainz in the background. Only unique exact matches with supported genres are accepted; unresolved listening stays visible as unclassified.
+          </p>
         </div>
       </SettingsCard>
 

@@ -252,14 +252,16 @@ class YTMusicService:
         album_cache = ensure_album_image_cache_schema(album_cache)
         seeded = seed_album_cache_from_library(raw, album_cache)
         album_targets = top_album_targets(raw, preferred_albums=preferred_albums)
+        preferred_keys = {
+            (normalise_album_name(item.get("album")), normalise_artist_name(item.get("artist")))
+            for item in preferred_albums or []
+            if isinstance(item, dict)
+        }
         if not album_targets:
             raw["album_image_cache_v1"] = album_cache
             return {"seeded": seeded, "attempted": 0, "added": 0, "failed": 0}
 
-        try:
-            yt = self.client()
-        except Exception:
-            yt = self.public_client()
+        yt = self.public_client()
         attempted = 0
         added = 0
         failed = 0
@@ -268,7 +270,8 @@ class YTMusicService:
             artist = target["artist"]
             album_id = target.get("album_id")
             cached = album_cache_lookup(album_cache, album_id=album_id, album=album, artist=artist)
-            if album_cache_has_result(cached):
+            is_preferred = (normalise_album_name(album), normalise_artist_name(artist)) in preferred_keys
+            if album_cache_has_result(cached) and (album_cache_has_thumbnail(cached) or not is_preferred):
                 continue
             if attempted >= limit:
                 break

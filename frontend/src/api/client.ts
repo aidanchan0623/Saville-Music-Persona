@@ -2,6 +2,7 @@ import type {
   AnalyticsEnvelope,
   AuthStatus,
   DurationEnrichmentStatus,
+  GenreEnrichmentStatus,
   InsightsResponse,
   ListeningMinutes,
   MusicSource,
@@ -15,6 +16,8 @@ import type {
   PeriodTopResponse,
   Prerequisites,
   Recommendation,
+  RefreshQueued,
+  RefreshStatus,
   SpotifyStatus,
   TasteDnaComparison,
   TasteDnaExplorer,
@@ -83,11 +86,14 @@ export const api = {
       body: "{}",
     }),
   spotifyDisconnect: () => request<{ connected: boolean; message: string }>("/spotify/disconnect", { method: "POST", body: "{}" }),
-  refresh: (useDemo: boolean) =>
-    request<{ refreshed_at: string; warnings: string[]; coverage: unknown; track_count: number; play_count: number }>("/data/refresh", {
+  refresh: (useDemo: boolean, signal?: AbortSignal) =>
+    request<RefreshQueued>("/data/refresh", {
       method: "POST",
       body: JSON.stringify({ use_demo: useDemo }),
+      signal,
     }),
+  refreshStatus: (jobId: string, signal?: AbortSignal) =>
+    request<RefreshStatus>(`/data/refresh/${encodeURIComponent(jobId)}`, { signal }),
   importTakeout: async (file: File, signal?: AbortSignal) => {
     const form = new FormData();
     form.append("file", file);
@@ -108,6 +114,8 @@ export const api = {
     request<TakeoutImportStatus>(`/data/import-takeout/${encodeURIComponent(jobId)}`, { signal }),
   startDurationEnrichment: () => request<DurationEnrichmentStatus>("/data/duration-enrichment", { method: "POST", body: "{}" }),
   durationEnrichmentStatus: (signal?: AbortSignal) => request<DurationEnrichmentStatus>("/data/duration-enrichment", { signal }),
+  startGenreEnrichment: () => request<GenreEnrichmentStatus>("/data/genre-enrichment", { method: "POST", body: "{}" }),
+  genreEnrichmentStatus: (signal?: AbortSignal) => request<GenreEnrichmentStatus>("/data/genre-enrichment", { signal }),
   overview: (period = "this_month", month?: string | null, source: MusicSource = "youtube") => {
     const params = paramsWithSource(source, { period, month });
     return analyticsRequest<OverviewResponse>(`/v1/analysis/overview?${params.toString()}`).then(requireOverviewSchema);
@@ -158,7 +166,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ period, month, mode, source }),
     }),
-  latestReport: (source: MusicSource = "youtube") => analyticsRequest<PersonaReport>(`/v1/report/latest?${paramsWithSource(source).toString()}`),
+  latestReport: (source: MusicSource = "youtube") => request<PersonaReport>(`/report/latest?${paramsWithSource(source).toString()}`),
   generateReport: (mode: "serious" | "playful" | "roast", source: MusicSource = "youtube") =>
     request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source, period: "rolling_year" }) }),
   recommendations: () => analyticsRequest<{ items: Recommendation[] }>("/v1/recommendations").then((data) => data.items),

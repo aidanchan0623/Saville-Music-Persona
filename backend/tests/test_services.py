@@ -6,7 +6,7 @@ import pytest
 
 from app.config import Settings
 from app.analysis.thumbnails import best_thumbnail_url
-from app.analysis.media import album_id_key, album_name_artist_key, artist_id_key, artist_name_key
+from app.analysis.media import album_cache_failure, album_cache_set, album_id_key, album_name_artist_key, artist_id_key, artist_name_key
 from app.services.recommendations import dedupe_candidates
 from app.services.ytmusic_service import YTMusicService, friendly_auth_error, normalise_artist_name
 
@@ -158,6 +158,66 @@ def test_album_image_enrichment_searches_takeout_album_names() -> None:
     assert fake.search_calls == [("Sempiternal Bring Me The Horizon", "albums", 5)]
     assert fake.get_album_calls == ["MPRE-bmth"]
     assert album_cache_record(cache, "Sempiternal", "Bring Me The Horizon")["album_image_url"] == "https://img.example/sempiternal.jpg"
+
+
+def test_album_image_enrichment_prioritises_visible_albums() -> None:
+    fake = FakeYTMusic(
+        search_results={
+            "Current Album Current Artist": [{"title": "Current Album", "browseId": "MPRE-current", "artists": [{"name": "Current Artist"}]}],
+            "History Album History Artist": [{"title": "History Album", "browseId": "MPRE-history", "artists": [{"name": "History Artist"}]}],
+        },
+        album_pages={
+            "MPRE-current": {"title": "Current Album", "browseId": "MPRE-current", "thumbnails": [{"url": "https://img.example/current-album.jpg", "width": 512, "height": 512}]},
+            "MPRE-history": {"title": "History Album", "browseId": "MPRE-history", "thumbnails": [{"url": "https://img.example/history-album.jpg", "width": 512, "height": 512}]},
+        },
+    )
+    cache: dict[str, object] = {}
+
+    stats = fake_service(fake).enrich_album_image_cache(
+        {"history": [_history_album("History Album", "History Artist")]},
+        cache,
+        limit=1,
+        preferred_albums=[{"album": "Current Album", "artist": "Current Artist"}],
+    )
+
+    assert stats["added"] == 1
+    assert fake.search_calls[0][0] == "Current Album Current Artist"
+    assert album_cache_record(cache, "Current Album", "Current Artist")["album_image_url"] == "https://img.example/current-album.jpg"
+
+
+def test_album_image_enrichment_uses_public_catalogue_when_saved_auth_is_stale() -> None:
+    stale = FakeYTMusic(search_results={"Koi No Yokan Deftones": []})
+    public = FakeYTMusic(
+        search_results={
+            "Koi No Yokan Deftones": [{"title": "Koi No Yokan", "browseId": "MPRE-koi", "artists": [{"name": "Deftones"}]}],
+        },
+        album_pages={
+            "MPRE-koi": {"title": "Koi No Yokan", "browseId": "MPRE-koi", "thumbnails": [{"url": "https://img.example/koi-no-yokan.jpg", "width": 512, "height": 512}]},
+        },
+    )
+    service = YTMusicService(Settings())
+    service.client = lambda prefer_browser=True: stale  # type: ignore[method-assign]
+    service.public_client = lambda: public  # type: ignore[method-assign]
+    cache: dict[str, object] = {}
+    album_cache_set(
+        cache,
+        album_cache_failure("Koi No Yokan", "Deftones", "MPRE-stale", "no_exact_album_match"),
+        album_id="MPRE-stale",
+        album="Koi No Yokan",
+        artist="Deftones",
+    )
+
+    stats = service.enrich_album_image_cache(
+        {"history": [_history_album("Koi No Yokan", "Deftones")]},
+        cache,
+        limit=1,
+        preferred_albums=[{"album": "Koi No Yokan", "artist": "Deftones"}],
+    )
+
+    assert stats["added"] == 1
+    assert stale.search_calls == []
+    assert public.search_calls == [("Koi No Yokan Deftones", "albums", 5)]
+    assert album_cache_record(cache, "Koi No Yokan", "Deftones")["album_image_url"] == "https://img.example/koi-no-yokan.jpg"
 
 
 def test_artist_image_enrichment_prioritises_preferred_artists() -> None:
@@ -333,6 +393,7 @@ class FakeYTMusic:
 def fake_service(fake: FakeYTMusic) -> YTMusicService:
     service = YTMusicService(Settings())
     service.client = lambda prefer_browser=True: fake  # type: ignore[method-assign]
+    service.public_client = lambda: fake  # type: ignore[method-assign]
     return service
 
 

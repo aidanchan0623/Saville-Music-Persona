@@ -747,6 +747,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
             "thumbnail": None,
             "album_image_url": None,
             "album_image_source": None,
+            "track_art_fallback": None,
             "plays": 0,
             "seconds": 0,
             "usable": 0,
@@ -771,6 +772,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
         stat["album_image_url"] = stat["album_image_url"] or album_art
         stat["album_image_source"] = stat["album_image_source"] or resolve_album_image_source(track)
         stat["thumbnail"] = stat["thumbnail"] or album_art
+        stat["track_art_fallback"] = stat["track_art_fallback"] or resolve_track_image_url(track)
         stat["plays"] += 1
         sec = usable_duration_seconds(event) or 0
         stat["seconds"] += sec
@@ -794,6 +796,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
         unique_songs = len(item["tracks"])
         most_played_id, most_played_count = item["song_counts"].most_common(1)[0] if item["song_counts"] else ("", 0)
         most_played_song = item["song_titles"].get(most_played_id)
+        display_thumbnail = item.get("album_image_url") or (item.get("track_art_fallback") if unique_songs == 1 else None)
         result.append(
             {
                 "rank": index,
@@ -801,7 +804,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
                 "album": item["album"],
                 "artist": item["artist"],
                 "album_id": item.get("album_id"),
-                "thumbnail": item.get("thumbnail"),
+                "thumbnail": display_thumbnail,
                 "album_image_url": item.get("album_image_url"),
                 "album_image_source": item.get("album_image_source"),
                 "plays": play_count,
@@ -976,7 +979,7 @@ def taste_dna_payload(
         "traits": traits,
         "structured_summary": structured_taste_summary(taste, nodes),
         "sample_warning": "Limited monthly sample - this view may be shaped by short-term spikes." if len(events) < MIN_STRONG_SAMPLE_PLAYS else None,
-        "methodology": "Sound Profile uses detected plays, curated artist genre mappings, and duration-aware period filters. It is music analysis, not a psychological diagnosis.",
+        "methodology": "Sound Profile uses detected plays, curated artist mappings first, then trusted source genres. Listening without reliable genres remains unclassified; no genre is guessed.",
     }
 
 

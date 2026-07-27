@@ -3,7 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.analysis.music_character import character_payload
+from app.analysis.music_character import character_payload, personality_catalogue
+from app.analysis.musical_age import age_category_catalogue
 from app.analysis.overview import build_overview_response
 from app.analysis.periods import albums_payload, listening_minutes_payload, taste_dna_payload, top_payload
 
@@ -60,7 +61,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
             "confidence": float(musical_age.get("confidence") or 0),
             "confidenceLabel": str(musical_age.get("confidenceLabel") or "Limited confidence"),
             "fallbackExplanation": str(musical_age.get("explanation") or musical_age.get("summary") or "The estimate is based on the available rolling-year listening profile."),
-            "strongestFactors": [str(value) for value in musical_age.get("sourcePeriod", {}).get("strongestFactors", [])[:3]],
+            "strongestFactors": [str(value) for value in musical_age.get("strongestFactors", [])[:3]],
             "sourcePeriod": report_period(musical_age.get("sourcePeriod") or period),
         },
         "topFive": {"songs": top_songs, "artists": top_artists},
@@ -75,7 +76,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "age": musical_age.get("age"),
                 "title": musical_age.get("title"),
                 "confidence": musical_age.get("confidenceLabel"),
-                "strongestFactors": musical_age.get("sourcePeriod", {}).get("strongestFactors", [])[:3],
+                "strongestFactors": musical_age.get("strongestFactors", [])[:3],
             },
             "behaviour": {
                 "repeat": character.get("key_scores", {}).get("repeat"),
@@ -85,6 +86,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "modifier": (character.get("modifier") or {}).get("name"),
             },
         },
+        "explainers": {"musicalAges": age_category_catalogue(), "personalities": personality_catalogue()},
     }
 
 
@@ -104,7 +106,7 @@ def compose_persona_report(
     personality = evidence["personality"]
     musical_age = evidence["musicalAge"]
     return {
-        "schemaVersion": 5,
+        "schemaVersion": 6,
         "source": source,
         "mode": mode,
         "period": evidence["period"],
@@ -130,6 +132,7 @@ def compose_persona_report(
             "generationSource": generation_source,
         },
         "backgroundAlbums": evidence["backgroundAlbums"],
+        "explainers": evidence["explainers"],
         "generation": {
             "source": generation_source,
             "model": model,
@@ -154,7 +157,7 @@ def report_period(period: dict[str, Any]) -> dict[str, str]:
 
 
 def report_genres(taste: dict[str, Any], total_music_plays: int) -> list[dict[str, Any]]:
-    shares = list(taste.get("cluster_shares") or [])[:6]
+    shares = list(taste.get("cluster_shares") or [])
     coverage = max(0.0, min(100.0, float(taste.get("coverage", {}).get("genre_coverage_percent") or 0)))
     result = [
         {

@@ -18,7 +18,7 @@ from app.analysis.periods import (
 )
 from app.analysis.scoring import build_analysis
 from app.analysis.period_profile import build_period_profile
-from app.analysis.taste_model import profile_for_artist
+from app.analysis.taste_model import profile_for_artist, source_genres_for_artist
 
 
 INSIGHTS_SCHEMA_VERSION = 1
@@ -88,24 +88,24 @@ def insights_payload(
         "durationQuality": minutes["duration_quality"],
         "canonicalFigures": profile["figures"],
         "genreShares": profile["genre_shares"]["items"],
-        "musicProfile": music_profile(music_events, tracks_by_id(normalised)),
+        "musicProfile": music_profile(music_events, tracks_by_id(normalised), normalised.get("artist_metadata") or {}),
         "scores": scores,
         "rhythm": rhythm_payload(minutes, music_events, spec),
         "topArtists": [compact_artist(item) for item in (artist_top.get("items") or [])[:5]],
         "repeatedSongs": [compact_track(item) for item in (track_top.get("items") or [])[:5]],
         "dailyIntensity": minutes.get("heatmap") or [],
         "sampleWarning": artist_top.get("sample_warning"),
-        "methodology": "All Insights values are deterministic. Detected minutes estimate full-track duration for events with usable duration metadata; play rankings retain events without duration metadata.",
+        "methodology": "All Insights values are deterministic. Genre analysis prefers curated mappings, then trusted source-provided genres; listening with no reliable mapping remains visibly unclassified.",
     }
 
 
-def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], artist_metadata: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     family_weights: Counter[str] = Counter()
     classified_plays = 0
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
-        profile = profile_for_artist(artist)
+        profile = profile_for_artist(artist, source_genres_for_artist(track, artist_metadata, artist))
         families = {
             CLUSTER_TO_FAMILY[cluster]
             for cluster in profile.get("broad_clusters") or []
@@ -139,7 +139,7 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
         "unclassifiedPlays": max(total - classified_plays, 0),
         "totalPlays": total,
         "axes": axes,
-        "methodology": "Each classified play is split evenly across that artist's canonical mapped families, so displayed shares remain portions of all detected plays and sum to classification coverage.",
+        "methodology": "Each classified play is split evenly across curated or trusted source-provided families. Unknown artists remain unclassified, and displayed shares sum to measured classification coverage.",
     }
 
 

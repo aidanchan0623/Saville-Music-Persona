@@ -26,8 +26,9 @@ def build_overview_response(
     today: date | None = None,
     language: dict[str, Any] | None = None,
     generation_source: str = "fallback",
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    profile = build_period_profile(normalised, period, month, timezone_name, today)
+    profile = profile or build_period_profile(normalised, period, month, timezone_name, today)
     selected_spec = profile["spec"]
     selected_events = profile["events"]
     selected_analysis = profile["analysis"]

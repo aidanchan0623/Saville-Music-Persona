@@ -424,7 +424,7 @@ def build_top_artists(events: list[dict[str, Any]], tracks: list[dict[str, Any]]
             }
         )
     total_plays = len(events)
-    return [enrich_artist(item, total_plays) for item in result]
+    return [enrich_artist(item, total_plays, list((artist_metadata.get(item["artist"]) or {}).get("genres") or [])) for item in result]
 
 
 def broad_cluster_diversity_metric(taste_model: dict[str, Any]) -> dict[str, Any]:

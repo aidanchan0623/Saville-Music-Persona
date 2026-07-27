@@ -63,7 +63,9 @@ export default function App() {
   const loadAnalysisTokenRef = useRef(0);
   const operationInFlightRef = useRef(false);
   const importAbortControllerRef = useRef<AbortController | null>(null);
+  const refreshAbortControllerRef = useRef<AbortController | null>(null);
   const durationAbortControllerRef = useRef<AbortController | null>(null);
+  const genreAbortControllerRef = useRef<AbortController | null>(null);
   const lastTakeoutFileRef = useRef<File | null>(null);
   const skipNextSourceLoadRef = useRef(false);
   const [canRetryTakeout, setCanRetryTakeout] = useState(false);
@@ -100,10 +102,10 @@ export default function App() {
     const setIfCurrent = <T,>(setter: (value: T) => void) => (value: T) => {
       if (isCurrentRequest()) setter(value);
     };
-    setReport(null);
+    setReport((current) => current?.source === activeSource ? current : null);
     void api.latestReport(activeSource)
       .then(setIfCurrent(setReport))
-      .catch(() => { if (isCurrentRequest()) setReport(null); });
+      .catch(() => { if (isCurrentRequest()) setReport((current) => current?.source === activeSource ? current : null); });
     const nextOverview = await api.overview("this_month", null, activeSource);
     if (!isCurrentRequest()) return;
     setOverview(nextOverview);
@@ -167,19 +169,45 @@ export default function App() {
 
   useEffect(() => () => {
     importAbortControllerRef.current?.abort();
+    refreshAbortControllerRef.current?.abort();
     durationAbortControllerRef.current?.abort();
+    genreAbortControllerRef.current?.abort();
   }, []);
 
   const refresh = async () => {
     const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
       setMessage(source === "spotify" ? "Refreshing local Spotify data..." : useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
       try {
-        const response = source === "spotify" ? await api.spotifyRefresh() : await api.refresh(useDemo);
+        if (source === "spotify") {
+          const response = await api.spotifyRefresh();
+          await loadStatus();
+          await loadAnalysis(source);
+          setMessage(`Refreshed ${response.track_count} tracks and ${response.play_count} local signals.`);
+          return;
+        }
+        refreshAbortControllerRef.current?.abort();
+        const controller = new AbortController();
+        refreshAbortControllerRef.current = controller;
+        const queued = await api.refresh(useDemo, controller.signal);
+        const response = await pollTakeoutImport(
+          (signal) => api.refreshStatus(queued.jobId, signal),
+          {
+            signal: controller.signal,
+            timeoutMs: 12 * 60 * 1000,
+            intervalMs: 1000,
+            onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+          },
+        );
         await loadStatus();
         await loadAnalysis(source);
-        setMessage(`Refreshed ${response.track_count} tracks and ${response.play_count} detected plays.`);
+        if (source === "youtube" && !useDemo) void enrichDurationsInBackground();
+        setMessage(`Refreshed ${(response.trackCount ?? 0).toLocaleString()} tracks and ${(response.playCount ?? 0).toLocaleString()} detected plays.`);
       } catch (error) {
-        setMessage(error instanceof Error ? error.message : "Refresh failed.");
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setMessage(error instanceof Error ? error.message : "Refresh failed. Your previous profile is still available.");
+        }
+      } finally {
+        refreshAbortControllerRef.current = null;
       }
     });
     if (!started) {
@@ -187,16 +215,20 @@ export default function App() {
     }
   };
 
-  const generateReport = async (mode: "serious" | "playful" | "roast" = "serious") => {
+  const generateReport = async (): Promise<{ ok: boolean; message: string }> => {
     setBusy(true);
     setMessage("Asking local Gemma to rewrite the deterministic Music Character profile...");
     try {
-      const nextReport = await api.generateReport(mode, source);
+      const nextReport = await api.generateReport("serious", source);
       setReport(nextReport);
       navigate("report");
-      setMessage("Persona report generated locally.");
+      const message = nextReport.generation.source === "fallback" ? "Gemma is offline; the report was regenerated from the local fallback." : "Persona report regenerated locally.";
+      setMessage(message);
+      return { ok: true, message };
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Report generation failed.");
+      const message = error instanceof Error ? error.message : "Report generation failed.";
+      setMessage(message);
+      return { ok: false, message };
     } finally {
       setBusy(false);
     }
@@ -279,6 +311,7 @@ export default function App() {
           intervalMs: 1500,
           timeoutMs: 6 * 60 * 1000,
           onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+          isComplete: (status) => status.status === "complete" && !status.continueQueued,
         },
       );
       await loadAnalysis("youtube");
@@ -292,9 +325,43 @@ export default function App() {
     }
   };
 
+  const improveGenres = async () => {
+    const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
+      genreAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      genreAbortControllerRef.current = controller;
+      setMessage("Queuing confidence-checked MusicBrainz genre enrichment...");
+      try {
+        const queued = await api.startGenreEnrichment();
+        const result = queued.status === "complete"
+          ? queued
+          : await pollTakeoutImport(
+              (signal) => api.genreEnrichmentStatus(signal),
+              {
+                signal: controller.signal,
+                intervalMs: 1200,
+                timeoutMs: 5 * 60 * 1000,
+                onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+              },
+            );
+        await loadAnalysis("youtube");
+        const coverage = result.afterCoverage == null ? "updated" : `${result.afterCoverage.toFixed(1)}%`;
+        setMessage(`Genre enrichment finished: ${result.matched ?? 0} artist match(es), coverage ${coverage}.`);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setMessage(error instanceof Error ? error.message : "Genre enrichment could not finish. Your existing analysis is still available.");
+        }
+      } finally {
+        if (genreAbortControllerRef.current === controller) genreAbortControllerRef.current = null;
+      }
+    });
+    if (!started) setMessage("Another data operation is already running. Wait for it to finish before enriching genres.");
+  };
+
+  const analysisReady = Boolean(overview);
   useEffect(() => {
-    if (overview && source === "youtube" && !useDemo) void enrichDurationsInBackground();
-  }, [overview, source, useDemo]);
+    if (analysisReady && source === "youtube" && !useDemo) void enrichDurationsInBackground();
+  }, [analysisReady, source, useDemo]);
 
   const createPlaylist = async () => {
     if (source === "spotify") {
@@ -374,7 +441,7 @@ export default function App() {
       case "insights":
         return <InsightsPage source={source} titleAnimationKey={titleAnimationKey} onOpenTop10={() => navigate("top10")} />;
       case "report":
-        return <ReportPage report={report} prerequisites={prerequisites} busy={busy} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
+        return <ReportPage report={report} busy={busy} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
         return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} titleAnimationKey={titleAnimationKey} />;
       case "settings":
@@ -399,6 +466,7 @@ export default function App() {
             onConnectSpotify={connectSpotify}
             onRefreshSpotify={refreshSpotify}
             onDisconnectSpotify={disconnectSpotify}
+            onImproveGenres={improveGenres}
             titleAnimationKey={titleAnimationKey}
           />
         );
@@ -471,7 +539,7 @@ export default function App() {
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
           <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
-          {message ? (
+          {message && page !== "report" ? (
             <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-mist">
               <span>{message}</span>
               {canRetryTakeout && lastTakeoutFileRef.current ? (

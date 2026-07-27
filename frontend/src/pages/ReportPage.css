@@ -32,6 +32,17 @@
 .persona-tone { border: 1px solid rgb(255 255 255 / 13%); border-radius: 5px; background: rgb(12 12 14 / 72%); color: #aaa6b1; padding: 0.45rem 0.65rem; font-size: 0.76rem; text-transform: capitalize; }
 .persona-tone:hover:not(:disabled), .persona-tone--active { border-color: rgb(251 113 133 / 58%); color: #fff; background: rgb(190 24 52 / 20%); }
 .persona-tone:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.persona-generation-notice { max-width: 18rem; color: #d6d1da; font-size: 0.76rem; line-height: 1.35; }
+.persona-explainer-button { margin-top: 0.9rem; border: 1px solid rgb(255 255 255 / 25%); border-radius: 4px; background: rgb(12 12 14 / 72%); color: #fff; padding: 0.42rem 0.65rem; font: inherit; font-size: 0.78rem; }
+.persona-explainer-button:hover, .persona-explainer-button:focus-visible { border-color: #fb7b82; background: rgb(190 24 52 / 24%); }
+.persona-scene-grid h2, .persona-age-copy h2, .persona-ranking-heading h2, .persona-final-copy h2 { color: #fff; text-shadow: 0 2px 18px rgb(0 0 0 / 40%); }
+.persona-chapter-label { color: #ff9ba1; }
+.persona-explainer-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 1.25rem; background: rgb(0 0 0 / 66%); }
+.persona-explainer-modal { width: min(680px, 100%); max-height: min(760px, 88vh); display: flex; flex-direction: column; border: 1px solid rgb(255 255 255 / 18%); border-radius: 8px; background: #111114; box-shadow: 0 24px 80px rgb(0 0 0 / 65%); }
+.persona-explainer-modal header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1.1rem 1.25rem; border-bottom: 1px solid rgb(255 255 255 / 12%); }
+.persona-explainer-modal h2 { margin: 0; color: #fff; font-size: 1.1rem; }.persona-explainer-modal header button { border: 0; background: transparent; color: #fff; font: inherit; font-size: .82rem; }
+.persona-explainer-scroll { overflow: auto; padding: 1rem 1.25rem 1.25rem; }.persona-explainer-scroll article { padding: .85rem 0; border-bottom: 1px solid rgb(255 255 255 / 10%); }.persona-explainer-scroll article:last-child { border-bottom: 0; }.persona-explainer-scroll article.is-current { margin-inline: -.6rem; padding-inline: .6rem; border-radius: 5px; background: rgb(190 24 52 / 20%); }.persona-explainer-scroll p { margin: 0 0 .25rem; color: #ff9ba1; font-size: .74rem; font-weight: 800; text-transform: uppercase; }.persona-explainer-scroll h3 { margin: 0 0 .3rem; color: #fff; font-size: .98rem; }.persona-explainer-scroll span, .persona-explainer-scroll li { color: #c5c0c8; font-size: .86rem; line-height: 1.5; }.persona-explainer-scroll ul { margin: .5rem 0 0; padding-left: 1.1rem; }
+@media (max-width: 640px) { .persona-report__masthead { align-items: flex-start; flex-direction: column; }.persona-report__actions { align-items: flex-start; flex-direction: column; }.persona-explainer-modal { max-height: 90vh; }.persona-explainer-scroll { padding: .9rem 1rem 1rem; } }
 
 .persona-scene-track { position: relative; min-height: 165vh; }
 .persona-scene-track--opening { min-height: 180vh; }
@@ -94,8 +105,6 @@
 .persona-final-copy::before { inset: -5rem -8rem; background: radial-gradient(ellipse, rgb(5 5 6 / 76%) 0%, rgb(5 5 6 / 42%) 48%, transparent 76%); }
 .persona-final-body { max-width: 68ch; margin: 1.6rem auto 0; color: #e1dde4; font-size: clamp(1.08rem, 1.55vw, 1.3rem); line-height: 1.68; }
 .persona-final-copy blockquote { margin: 2rem auto 0; color: #fb9da2; font-size: clamp(1.25rem, 2.3vw, 1.8rem); font-weight: 800; line-height: 1.35; }
-.persona-report-footer { position: absolute; right: 0; bottom: 0; left: 0; display: flex; justify-content: center; gap: 0.75rem 1.5rem; flex-wrap: wrap; padding: 1rem var(--report-gutter); border-top: 1px solid rgb(255 255 255 / 11%); color: #9e9aa4; font-size: 0.8rem; }
-.persona-report-footer strong { color: #fff; }
 
 .persona-report-empty { display: grid; min-height: 60vh; place-content: center; max-width: 700px; margin: auto; text-align: center; }
 .persona-report-empty h1 { margin: 0.8rem 0; font-size: clamp(2.2rem, 5vw, 4.4rem); line-height: 1; }
@@ -127,7 +136,6 @@
   .persona-ranking-row, .persona-ranking-row:nth-child(n) { margin-left: 0; }
   .persona-ranking-row .artwork-frame, .persona-ranking-row:first-child .artwork-frame { width: clamp(56px, 18vw, 78px); height: clamp(56px, 18vw, 78px); }
   .persona-final-scene { min-height: 100vh; padding: 7rem 1.25rem 8rem; text-align: left; }
-  .persona-report-footer { position: relative; }
   .persona-final-body { margin-inline: 0; }
   .persona-final-copy blockquote { margin-inline: 0; }
 }

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
 import type { PersonaGenre, PersonaReport } from "../../types/api";
@@ -6,17 +6,19 @@ import { PersonaAlbumDome } from "./PersonaAlbumDome";
 
 interface Props {
   report: PersonaReport;
-  modelReady: boolean;
   busy: boolean;
-  onGenerate: (mode: "serious" | "playful" | "roast") => void;
+  onGenerate: () => Promise<{ ok: boolean; message: string }>;
   titleAnimationKey: string;
 }
 
-export function PersonaStoryExperience({ report, modelReady, busy, onGenerate, titleAnimationKey }: Props) {
+export function PersonaStoryExperience({ report, busy, onGenerate, titleAnimationKey }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const { scrollYProgress } = useScroll({ target: rootRef, offset: ["start start", "end end"] });
   const progress = useSpring(scrollYProgress, { stiffness: 82, damping: 24, mass: 0.35 });
   const albumList = useMemo(() => report.backgroundAlbums, [report.backgroundAlbums]);
+  const [explainer, setExplainer] = useState<"ages" | "personalities" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const regenerate = async () => setNotice((await onGenerate()).message);
 
   return (
     <div ref={rootRef} className="persona-report-page">
@@ -28,32 +30,25 @@ export function PersonaStoryExperience({ report, modelReady, busy, onGenerate, t
             <p className="persona-report__eyebrow">Persona Report</p>
             <p className="persona-report__meta">{report.period.label} &middot; {report.period.timezone}</p>
           </div>
-          <div className="persona-report__actions" aria-label="Report writing tone">
-            {(["serious", "playful", "roast"] as const).map((mode) => (
-              <button key={mode} type="button" disabled={busy || !modelReady} className={report.mode === mode ? "persona-tone persona-tone--active" : "persona-tone"} onClick={() => onGenerate(mode)}>
-                {busy && report.mode === mode ? "Writing..." : mode}
-              </button>
-            ))}
+          <div className="persona-report__actions">
+            <button type="button" disabled={busy} className="persona-tone persona-tone--active" onClick={regenerate}>{busy ? "Regenerating..." : "Regenerate report"}</button>
+            {notice && <span className="persona-generation-notice" role="status">{notice}</span>}
           </div>
         </header>
 
-        <PersonalityScene report={report} titleAnimationKey={titleAnimationKey} />
+        <PersonalityScene report={report} titleAnimationKey={titleAnimationKey} onLearnMore={() => setExplainer("personalities")} />
         <ListeningWorldScene report={report} />
-        <MusicalAgeScene report={report} />
+        <MusicalAgeScene report={report} onLearnMore={() => setExplainer("ages")} />
         <TopFiveScene report={report} />
         <FinalRoastScene report={report} />
 
-        <footer className="persona-report-footer">
-          <strong>{report.personality.title}</strong>
-          <span>Musical age {report.musicalAge.age}</span>
-          <span>Top artist {report.topFive.artists[0]?.name || "Still forming"}</span>
-        </footer>
       </main>
+      {explainer && <ExplainerModal report={report} kind={explainer} onClose={() => setExplainer(null)} />}
     </div>
   );
 }
 
-function PersonalityScene({ report, titleAnimationKey }: { report: PersonaReport; titleAnimationKey: string }) {
+function PersonalityScene({ report, titleAnimationKey, onLearnMore }: { report: PersonaReport; titleAnimationKey: string; onLearnMore: () => void }) {
   const sceneRef = useRef<HTMLElement | null>(null);
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll({ target: sceneRef, offset: ["start start", "end start"] });
@@ -65,6 +60,7 @@ function PersonalityScene({ report, titleAnimationKey }: { report: PersonaReport
         <div className="persona-text-scrim persona-opening-copy">
           <p className="persona-chapter-label">Your Musical Personality</p>
           <h1 id="personality-title" key={titleAnimationKey}>{report.personality.title}</h1>
+          <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
           <p className="persona-lede">{report.personality.shortDescription}</p>
           <p className="persona-personality-roast">{report.personality.roastDescription}</p>
           <span className="persona-period-pill">{report.period.label}</span>
@@ -116,7 +112,7 @@ function GenreComposition({ genres }: { genres: PersonaGenre[] }) {
   );
 }
 
-function MusicalAgeScene({ report }: { report: PersonaReport }) {
+function MusicalAgeScene({ report, onLearnMore }: { report: PersonaReport; onLearnMore: () => void }) {
   return (
     <RevealScene id="musical-age" direction="zoom" className="persona-age-scene">
       <div className="persona-age-orbit" aria-hidden="true" />
@@ -124,6 +120,7 @@ function MusicalAgeScene({ report }: { report: PersonaReport }) {
         <p className="persona-chapter-label">Musical Age</p>
         <p className="persona-age-number">{report.musicalAge.age}</p>
         <h2 id="musical-age-title">{report.musicalAge.title}</h2>
+        <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
         <div className="persona-age-facts">
           <span>Likely range <strong>{report.musicalAge.likelyMin}-{report.musicalAge.likelyMax}</strong></span>
           <span>{report.musicalAge.confidenceLabel}</span>
@@ -178,7 +175,7 @@ function FinalRoastScene({ report }: { report: PersonaReport }) {
   return (
     <section className="persona-final-scene" aria-labelledby="final-roast-title">
       <motion.div className="persona-text-scrim persona-final-copy" initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.35 }} transition={{ duration: 0.72 }}>
-        <p className="persona-chapter-label">Final Roast</p>
+        <p className="persona-chapter-label">Closing Summary</p>
         <h2 id="final-roast-title">{report.summary.headline}</h2>
         <p className="persona-final-body">{report.summary.body}</p>
         <blockquote>{report.summary.finalLine}</blockquote>
@@ -198,3 +195,33 @@ function RevealScene({ id, direction, className, children }: { id: string; direc
 }
 
 function formatPercent(value: number) { return `${Math.round(value * 100)}%`; }
+
+function ExplainerModal({ report, kind, onClose }: { report: PersonaReport; kind: "ages" | "personalities"; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement | null>(null);
+  const dialogRef = useRef<HTMLElement | null>(null);
+  const restoreFocus = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  const isAges = kind === "ages";
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { onClose(); return; }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"));
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); restoreFocus.current?.focus(); };
+  }, [onClose]);
+  const heading = isAges ? "Musical Age guide" : "Musical Personality guide";
+  return <div className="persona-explainer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section ref={dialogRef} className="persona-explainer-modal" role="dialog" aria-modal="true" aria-labelledby="persona-explainer-title">
+      <header><h2 id="persona-explainer-title">{heading}</h2><button ref={closeRef} type="button" aria-label="Close guide" onClick={onClose}>Close</button></header>
+      <div className="persona-explainer-scroll">
+        {isAges ? report.explainers.musicalAges.map((item) => <article key={item.title} className={report.musicalAge.age >= item.minAge && report.musicalAge.age <= item.maxAge ? "is-current" : ""}><p>{item.minAge}-{item.maxAge}</p><h3>{item.title}</h3><span>{item.summary}</span></article>) : report.explainers.personalities.map((item) => <article key={item.id} className={report.personality.id === item.id ? "is-current" : ""}><p>{item.category}</p><h3>{item.name}</h3><span>{item.profile}</span><ul>{item.triggerRules.map((rule) => <li key={rule}>{rule}</li>)}</ul></article>)}
+      </div>
+    </section>
+  </div>;
+}

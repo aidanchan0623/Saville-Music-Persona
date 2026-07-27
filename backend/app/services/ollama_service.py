@@ -11,7 +11,9 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import Settings
 
-REPORT_GENERATE_TIMEOUT_SECONDS = 240.0
+# A report is still useful without Gemma. Do not leave the UI waiting behind a
+# stalled local model; the deterministic fallback is intentionally complete.
+REPORT_GENERATE_TIMEOUT_SECONDS = 8.0
 OVERVIEW_GENERATE_TIMEOUT_SECONDS = 12.0
 
 

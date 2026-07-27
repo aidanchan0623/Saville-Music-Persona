@@ -271,6 +271,8 @@ def test_favourite_albums_rank_by_plays_minutes_and_unique_songs() -> None:
     assert albums[0]["unique_songs"] == 2
     assert albums[0]["album_signal_note"] == "Real album-level signal."
     assert albums[1]["label"] == "Single-led album signal"
+    assert albums[1]["album_image_url"] is None
+    assert albums[1]["thumbnail"] == "https://i.ytimg.com/vi/b1/hqdefault.jpg"
     assert all(item["album"] != "Unknown Album" for item in albums)
 
     drilldown = album_songs_payload(normalised, "Real Album", "Album Artist", "month", "2026-07", today=date(2026, 7, 7))
