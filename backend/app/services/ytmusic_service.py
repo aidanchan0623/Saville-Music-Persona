@@ -33,6 +33,15 @@ from app.config import Settings
 logger = logging.getLogger(__name__)
 
 
+# A few artist names are genuinely ambiguous in YouTube Music search.  These are
+# exact display-name matches from exports, rather than fuzzy aliases: using the
+# official channel avoids caching an unrelated artist with the same name.
+ARTIST_BROWSE_ID_OVERRIDES = {
+    "g.e.m.": "UCBRh2Z_U1Lw9-YJ-XGZ8M2Q",
+    "lane 8": "UCqjupXgFQVmnpYo-sJ47dHg",
+}
+
+
 class YTMusicService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -189,13 +198,13 @@ class YTMusicService:
 
     def enrich_artist_image_cache(self, raw: dict[str, Any], artist_cache: dict[str, Any], limit: int = 25, preferred_artists: list[str] | None = None) -> dict[str, int]:
         if limit <= 0:
-            return {"seeded": 0, "attempted": 0, "added": 0, "failed": 0}
+            return {"seeded": 0, "attempted": 0, "added": 0, "failed": 0, "repaired": 0}
         artist_cache = ensure_artist_image_cache_schema(artist_cache)
         seeded = seed_artist_cache_from_library(raw, artist_cache)
         artist_targets = top_artist_targets(raw, preferred_artists=preferred_artists)
         if not artist_targets:
             raw["artist_image_cache_v2"] = artist_cache
-            return {"seeded": seeded, "attempted": 0, "added": 0, "failed": 0}
+            return {"seeded": seeded, "attempted": 0, "added": 0, "failed": 0, "repaired": 0}
 
         try:
             yt = self.client()
@@ -204,19 +213,27 @@ class YTMusicService:
         attempted = 0
         added = 0
         failed = 0
+        repaired = 0
         for artist, artist_id in artist_targets:
+            override_browse_id = ARTIST_BROWSE_ID_OVERRIDES.get(str(artist).strip().casefold())
+            if override_browse_id:
+                repaired += remove_conflicting_artist_cache_entries(artist_cache, artist, override_browse_id)
             cached = artist_cache_lookup(artist_cache, artist, artist_id)
-            if artist_cache_has_result(cached):
+            if cached and override_browse_id:
+                repaired += ensure_artist_cache_alias(cached, artist)
+            # Replace an old ambiguous match when an exact, curated channel is
+            # available.  Otherwise cache hits remain entirely offline.
+            if artist_cache_has_result(cached) and (not override_browse_id or cached.get("browse_id") == override_browse_id):
                 continue
             if attempted >= limit:
                 break
             attempted += 1
             try:
                 payload = None
-                matched_browse_id = artist_id
-                if artist_id:
+                matched_browse_id = override_browse_id or artist_id
+                if matched_browse_id:
                     try:
-                        payload = yt.get_artist(str(artist_id))
+                        payload = yt.get_artist(str(matched_browse_id))
                     except Exception:
                         payload = None
                 if not artist_payload_has_thumbnail(payload):
@@ -244,7 +261,7 @@ class YTMusicService:
                 failed += 1
                 logger.info('[artist-image] No official thumbnail found for "%s"', artist)
         raw["artist_image_cache_v2"] = artist_cache
-        return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
+        return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed, "repaired": repaired}
 
     def enrich_album_image_cache(self, raw: dict[str, Any], album_cache: dict[str, Any], limit: int = 48, preferred_albums: list[dict[str, Any]] | None = None) -> dict[str, int]:
         if limit <= 0:
@@ -636,6 +653,33 @@ def artist_payload_has_thumbnail(payload: Any) -> bool:
     return isinstance(payload, dict) and bool(best_thumbnail(payload))
 
 
+def remove_conflicting_artist_cache_entries(cache: dict[str, Any], artist: str, accepted_browse_id: str) -> int:
+    """Discard a stale same-name cache record before applying an exact override."""
+    items = cache.get("items")
+    if not isinstance(items, dict):
+        return 0
+    wanted_name = normalise_artist_name(artist)
+    removed = 0
+    for key, entry in list(items.items()):
+        if not isinstance(entry, dict) or entry.get("mediaType") != "artist":
+            continue
+        entry_name = entry.get("artist") or entry.get("name") or entry.get("entityName")
+        entry_id = str(entry.get("browse_id") or entry.get("artist_id") or entry.get("entityId") or "")
+        if normalise_artist_name(entry_name) == wanted_name and entry_id != accepted_browse_id:
+            items.pop(key, None)
+            removed += 1
+    return removed
+
+
+def ensure_artist_cache_alias(entry: dict[str, Any], artist: str) -> int:
+    aliases = entry.get("aliases")
+    values = [str(value).strip() for value in aliases] if isinstance(aliases, list) else []
+    if any(normalise_artist_name(value) == normalise_artist_name(artist) for value in values):
+        return 0
+    entry["aliases"] = [*values, artist]
+    return 1
+
+
 def album_payload_has_thumbnail(payload: Any) -> bool:
     return isinstance(payload, dict) and bool(best_thumbnail(payload.get("thumbnails") or payload.get("thumbnail") or payload.get("images") or payload.get("image")))
 
@@ -695,7 +739,7 @@ def artist_cache_entry(artist: str, payload: Any, artist_id: Any = None, source:
         "browse_id": browse_id,
         "channel_id": payload.get("channelId") or payload.get("channel_id"),
         "subscribers": payload.get("subscribers"),
-        "aliases": artist_candidate_names(payload),
+        "aliases": list(dict.fromkeys([artist, *artist_candidate_names(payload)])),
         "thumbnails": [selected] if selected else [],
         "thumbnail_url": selected_url,
         "url": selected_url,

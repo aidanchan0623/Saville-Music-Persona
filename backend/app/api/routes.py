@@ -352,7 +352,7 @@ def normalise_with_duration_cache(
     if allow_artist_image_enrichment:
         try:
             stats = ytmusic.enrich_artist_image_cache(raw, artist_cache, preferred_artists=preferred_artist_images)
-            if stats.get("seeded") or stats.get("attempted"):
+            if stats.get("seeded") or stats.get("attempted") or stats.get("repaired"):
                 repo.save_json("artist_image_cache_v2", artist_cache)
                 if warnings is not None:
                     warnings.append(

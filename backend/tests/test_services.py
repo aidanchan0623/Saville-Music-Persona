@@ -323,6 +323,59 @@ def test_artist_image_enrichment_cache_hit_skips_upstream_calls() -> None:
     assert fake.get_artist_calls == []
 
 
+def test_artist_image_enrichment_replaces_ambiguous_cached_gem_match() -> None:
+    fake = FakeYTMusic(
+        artist_pages={
+            "UCBRh2Z_U1Lw9-YJ-XGZ8M2Q": {
+                "artist": "鄧紫棋 - G.E.M.",
+                "browseId": "UCBRh2Z_U1Lw9-YJ-XGZ8M2Q",
+                "thumbnails": [{"url": "https://img.example/gem.jpg", "width": 512, "height": 512}],
+            }
+        }
+    )
+    cache = {
+        "schemaVersion": 2,
+        "items": {
+            "artist-name:g e m": {
+                "schemaVersion": 2,
+                "mediaType": "artist",
+                "browse_id": "UC-wrong-gem",
+                "url": "https://img.example/wrong.jpg",
+                "thumbnail_url": "https://img.example/wrong.jpg",
+                "thumbnails": [{"url": "https://img.example/wrong.jpg"}],
+            }
+        },
+    }
+
+    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("G.E.M.")]}, cache)
+
+    assert stats["added"] == 1
+    assert fake.search_calls == []
+    assert fake.get_artist_calls == ["UCBRh2Z_U1Lw9-YJ-XGZ8M2Q"]
+    assert cache_record(cache, "G.E.M.")["url"] == "https://img.example/gem.jpg"
+    assert "artist:UC-wrong-gem" not in cache["items"]
+
+
+def test_artist_image_enrichment_uses_verified_lane_8_channel() -> None:
+    fake = FakeYTMusic(
+        artist_pages={
+            "UCqjupXgFQVmnpYo-sJ47dHg": {
+                "artist": "Lane 8",
+                "browseId": "UCqjupXgFQVmnpYo-sJ47dHg",
+                "thumbnails": [{"url": "https://img.example/lane-8.jpg", "width": 512, "height": 512}],
+            }
+        }
+    )
+    cache: dict[str, object] = {}
+
+    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("Lane 8")]}, cache)
+
+    assert stats["added"] == 1
+    assert fake.search_calls == []
+    assert fake.get_artist_calls == ["UCqjupXgFQVmnpYo-sJ47dHg"]
+    assert cache_record(cache, "Lane 8")["url"] == "https://img.example/lane-8.jpg"
+
+
 def test_artist_image_enrichment_keeps_list_on_upstream_exception() -> None:
     fake = FakeYTMusic(raise_search=True)
     cache: dict[str, object] = {}

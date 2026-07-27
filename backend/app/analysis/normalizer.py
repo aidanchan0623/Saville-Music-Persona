@@ -576,18 +576,25 @@ def build_artist_metadata(raw: dict[str, Any]) -> dict[str, dict[str, Any]]:
             if unique_key in seen_cache_records:
                 continue
             seen_cache_records.add(unique_key)
-            store_artist(
-                name=artist.get("artist") or artist.get("name") or artist.get("entityName") or key,
-                artist_id=artist.get("browseId") or artist.get("artist_id") or artist.get("entityId") or artist.get("id"),
-                subscribers=artist.get("subscribers"),
-                thumbnails=artist.get("artist_thumbnails") or artist.get("thumbnails") or [],
-                image_url=artist.get("artist_image_url") or artist.get("url") or artist.get("thumbnail_url"),
-                image_source=artist.get("artist_image_source") or artist.get("source"),
-                genres=artist.get("genres") or [],
-                popularity=artist.get("popularity"),
-                followers=artist.get("followers"),
-                source=artist.get("source"),
-            )
+            names = [artist.get("artist") or artist.get("name") or artist.get("entityName") or key]
+            aliases = artist.get("aliases") or []
+            if isinstance(aliases, str):
+                names.append(aliases)
+            elif isinstance(aliases, list):
+                names.extend(aliases)
+            for name in dict.fromkeys(str(value).strip() for value in names if value):
+                store_artist(
+                    name=name,
+                    artist_id=artist.get("browseId") or artist.get("artist_id") or artist.get("entityId") or artist.get("id"),
+                    subscribers=artist.get("subscribers"),
+                    thumbnails=artist.get("artist_thumbnails") or artist.get("thumbnails") or [],
+                    image_url=artist.get("artist_image_url") or artist.get("url") or artist.get("thumbnail_url"),
+                    image_source=artist.get("artist_image_source") or artist.get("source"),
+                    genres=artist.get("genres") or [],
+                    popularity=artist.get("popularity"),
+                    followers=artist.get("followers"),
+                    source=artist.get("source"),
+                )
     return metadata
 
 
