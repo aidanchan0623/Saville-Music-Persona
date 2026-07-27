@@ -110,7 +110,10 @@ export function TrackArtwork({
   title: string;
   fallbackLabel?: string;
 }) {
-  return <Artwork src={trackImageUrl ?? albumArtUrl ?? null} alt={`${title} track artwork`} kind="track" fallbackLabel={fallbackLabel} shape="rounded" {...props} />;
+  // A track thumbnail is often a widescreen video still. Prefer the resolved
+  // album cover so song cards retain the same square, cover-art treatment as
+  // album and artist cards, then fall back to the video thumbnail if needed.
+  return <Artwork src={albumArtUrl ?? trackImageUrl ?? null} alt={`${title} track artwork`} kind="track" fallbackLabel={fallbackLabel} shape="rounded" {...props} />;
 }
 
 export function AlbumCover({
@@ -165,7 +168,6 @@ function initials(value: string) {
   return `${parts[0]?.[0] ?? "?"}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
-function initialArtworkRatio(src: string | null | undefined, kind: ArtworkProps["kind"]) {
-  if (kind !== "track") return null;
-  return src?.includes("i.ytimg.com/vi/") ? 4 / 3 : null;
+function initialArtworkRatio(_src: string | null | undefined, _kind: ArtworkProps["kind"]) {
+  return null;
 }

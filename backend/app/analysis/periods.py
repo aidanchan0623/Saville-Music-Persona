@@ -624,7 +624,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             title = str(meta_track.get("title") or "Unknown track")
             track_art = resolve_track_image_url(meta_track)
             album_art = resolve_album_image_url(meta_track)
-            image = track_art or album_art
+            image = album_art or track_art
             most_played_song = None
             album = meta_track.get("album")
             source = meta_track.get("source")

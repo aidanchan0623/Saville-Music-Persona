@@ -63,14 +63,14 @@ export const PersonaAlbumDome = memo(function PersonaAlbumDome({ albums, progres
 });
 
 function layoutFor(index: number, mobile: boolean) {
-  const columns = mobile ? 4 : 7;
+  const columns = mobile ? 4 : 5;
   const row = Math.floor(index / columns);
   const column = index % columns;
-  const xStep = mobile ? 29 : 16.5;
-  const left = mobile ? 5 + column * xStep : 1 + column * xStep + (row % 2 ? 7 : 0);
-  const topRows = mobile ? [10, 37] : [5, 31, 67];
-  const arc = Math.abs(column - (columns - 1) / 2) * (mobile ? 2.5 : 4.2);
-  const size = mobile ? 78 + ((index * 17) % 48) : 92 + ((index * 37) % 154);
+  const xStep = mobile ? 29 : 23.5;
+  const left = mobile ? 5 + column * xStep : 3 + column * xStep + (row % 2 ? 4 : 0);
+  const topRows = mobile ? [16, 68] : [9, 34, 60, 85];
+  const arc = Math.abs(column - (columns - 1) / 2) * (mobile ? 2 : 2.8);
+  const size = mobile ? 78 + ((index * 17) % 42) : 82 + ((index * 29) % 104);
   const direction = index % 2 ? -1 : 1;
   return {
     "--dome-left": `${left}%`,
