@@ -131,6 +131,17 @@ def test_background_albums_dedupe_and_skip_missing_artwork() -> None:
     assert all(item["albumImageUrl"] for item in albums)
 
 
+def test_background_albums_use_available_takeout_thumbnail_fallbacks() -> None:
+    albums = report_background_albums(
+        [{"album": "Album", "artist": "Artist", "thumbnail": "https://img/album-thumb.jpg", "plays": 2}],
+        [{"album": "Second", "artist": "Artist", "track_image_url": "https://img/track-thumb.jpg", "play_count": 3}],
+    )
+    assert [(item["albumTitle"], item["albumImageUrl"]) for item in albums] == [
+        ("Album", "https://img/album-thumb.jpg"),
+        ("Second", "https://img/track-thumb.jpg"),
+    ]
+
+
 def test_gemma_language_validation_accepts_bounded_prose() -> None:
     service = OllamaService(Settings())
     parsed = service.parse_persona_language(valid_language_json(), evidence()["languageEvidence"])
@@ -144,6 +155,17 @@ def test_gemma_language_rejects_numbers_and_unknown_artist() -> None:
         service.parse_persona_language(valid_language_json().replace("carefully", "carefully 42", 1), evidence()["languageEvidence"])
     with pytest.raises(ValueError, match="unknown artist"):
         service.parse_persona_language(valid_language_json().replace("the familiar rotation", "the band Invented Artist"), evidence()["languageEvidence"])
+
+
+def test_gemma_language_keeps_valid_sections_when_the_closing_body_is_too_short() -> None:
+    service = OllamaService(Settings())
+    raw = valid_language_json().replace(
+        "Your music taste treats atmosphere like a basic utility and the repeat button like a trusted advisor. Intensity is welcome, but only when it arrives with melody, drama, and enough emotional architecture to survive another listen. Discovery gets invited in, shown around politely, and then asked whether it can match the standards set by the familiar rotation. There is a reflective, cinematic streak running through everything, plus a suspicious talent for making an ordinary commute feel like the final scene of a film. You call it curation; the favourites call it permanent residency.",
+        "A carefully built listening world.",
+    )
+    parsed = service.parse_persona_language(raw, evidence()["languageEvidence"])
+    assert parsed.generationSource == "gemma"
+    assert len(parsed.finalRoastBody.split()) >= 70
 
 
 def test_gemma_unavailable_and_malformed_json_have_complete_fallbacks() -> None:

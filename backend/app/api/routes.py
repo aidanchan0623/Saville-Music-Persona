@@ -726,7 +726,7 @@ def process_refresh(options: dict[str, bool], coordinator: RefreshCoordinator, d
         raw,
         warnings,
         allow_enrichment=(not use_demo and enrich_durations),
-        allow_artist_image_enrichment=live_connected,
+        allow_artist_image_enrichment=not use_demo,
         allow_album_image_enrichment=not use_demo,
     )
     coordinator.check_timeout(deadline)
@@ -910,7 +910,16 @@ def process_takeout_import(
         if cached:
             raw[key] = cached
     try:
-        normalised = normalise_collection(raw)
+        warnings = ["Google Takeout history imported and rebuilt from canonical local events."]
+        normalised = normalise_with_duration_cache(
+            raw,
+            warnings,
+            # Both lookups can use the public YouTube Music catalogue. A
+            # Takeout-only setup should not need a live account session just to
+            # display its own artists and album covers.
+            allow_artist_image_enrichment=True,
+            allow_album_image_enrichment=True,
+        )
         normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     except Exception:  # noqa: BLE001
         coordinator.fail(
@@ -963,7 +972,6 @@ def process_takeout_import(
     )
 
     unknown_tracks = sum(1 for track in normalised.get("tracks", []) if track.get("primary_artist") == "Unknown Artist")
-    warnings = ["Google Takeout history imported and rebuilt from canonical local events."]
     if unknown_tracks:
         warnings.append(f"{unknown_tracks} track(s) have partial artist metadata; play counts are still included.")
     metadata = {
@@ -1028,6 +1036,13 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         return
 
     coordinator.stage("rebuilding", "Applying resolved durations and rebuilding listening totals.", **stats)
+    # Refreshes can enrich artwork while a duration job is awaiting upstream
+    # metadata. Reload the current profile before saving so this background job
+    # applies its cache to the newest data instead of overwriting album covers
+    # and artist portraits with its older snapshot.
+    latest_normalised = repo.load_json("normalised")
+    if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
+        cached_normalised = latest_normalised
     rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
     rebuilt_analysis = build_analysis(rebuilt_normalised)
     if "coverage" not in rebuilt_analysis:

@@ -233,10 +233,25 @@ def report_background_albums(albums: list[Any], tracks: list[Any], limit: int = 
 
     for item in albums:
         if isinstance(item, dict):
-            add(item.get("album_id"), item.get("album"), item.get("artist"), item.get("album_image_url"), item.get("plays"))
+            add(
+                item.get("album_id"),
+                item.get("album"),
+                item.get("artist"),
+                item.get("album_image_url") or item.get("thumbnail") or item.get("track_art_fallback"),
+                item.get("plays"),
+            )
     for item in tracks:
         if isinstance(item, dict):
-            add(None, item.get("album"), item.get("artist"), item.get("album_art_url"), item.get("play_count"))
+            # Takeout records often have a video thumbnail before an album cover
+            # has been resolved. It is still useful as a visual in the ambient
+            # album dome, and later enrichment replaces it with the proper cover.
+            add(
+                None,
+                item.get("album"),
+                item.get("artist"),
+                item.get("album_art_url") or item.get("track_image_url"),
+                item.get("play_count"),
+            )
     return result
 
 

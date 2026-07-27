@@ -13,7 +13,10 @@ from app.config import Settings
 
 # A report is still useful without Gemma. Do not leave the UI waiting behind a
 # stalled local model; the deterministic fallback is intentionally complete.
-REPORT_GENERATE_TIMEOUT_SECONDS = 8.0
+# A local model may need a few seconds to load into GPU memory before it starts
+# producing tokens. Eight seconds was shorter than a cold Gemma 3 4B start on
+# common laptop GPUs, which made a healthy model look offline to the report.
+REPORT_GENERATE_TIMEOUT_SECONDS = 90.0
 OVERVIEW_GENERATE_TIMEOUT_SECONDS = 12.0
 
 
@@ -165,7 +168,14 @@ class OllamaService:
         if len(fields["openingDescription"].split()) > 60:
             raise ValueError("opening description is too long")
         body_words = len(fields["finalRoastBody"].split())
-        if body_words < 70 or body_words > 130:
+        if body_words < 70:
+            # Gemma 3 4B reliably follows the six-field JSON shape, but can
+            # occasionally compress the closing section into a sentence. Keep
+            # the model-written sections and use the deterministic evidence
+            # summary for that one under-length field rather than throwing away
+            # an otherwise valid local generation.
+            fields["finalRoastBody"] = self.fallback_persona_language(evidence, "gemma_short_final_roast").finalRoastBody
+        elif body_words > 130:
             raise ValueError("final roast length is outside the accepted range")
         if any(re.search(r"\d", value) for value in fields.values()):
             raise ValueError("generated language contains an invented numeric claim")
