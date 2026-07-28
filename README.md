@@ -148,6 +148,14 @@ Rules:
 - The duration cache is stored locally so successful YouTube Music duration lookups are reused.
 - Confidence badges are based on usable-duration coverage: High confidence is 90% or higher, Good coverage is 75-89%, Partial coverage is 50-74%, and Limited is below 50%.
 
+## Durable genre metadata and repeated Takeout imports
+
+Genre coverage is built from conservative evidence rather than language or title guesses. Curated mappings take precedence, exact Spotify artist metadata can contribute when Spotify is connected, and MusicBrainz matches require a unique exact artist name or alias. Each accepted record stores its provider, provider artist ID, match method, confidence, genres, and lookup time. Agreement between independent providers raises confidence; disagreement remains visible as medium-confidence evidence.
+
+The genre cache is versioned and reapplied after every Takeout import, YouTube refresh, duration/release-year rebuild, and genre-enrichment batch. Completed MusicBrainz requests are checkpointed individually so a restart does not discard earlier results.
+
+Multiple Takeout JSON, HTML, or ZIP files can be imported sequentially. The backend merges them into the existing local history and deduplicates events using, in order, a source event ID, video ID plus timestamp, or title/artist plus timestamp. Entries with invalid timestamps are retained because merging them would risk deleting genuine separate plays.
+
 ## Period definitions
 
 Period analytics use the configured local timezone. The default is `Asia/Kuala_Lumpur`; set `SMP_LOCAL_TIMEZONE` to change it.

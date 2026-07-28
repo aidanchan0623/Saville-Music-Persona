@@ -9,7 +9,15 @@ import httpx
 from app.analysis.normalizer import normalise_collection
 from app.analysis.scoring import build_analysis
 from app.analysis.taste_model import profile_for_artist
-from app.services.genre_enrichment_service import MusicBrainzGenreService
+from app.api import routes
+from app.database.repository import JsonRepository
+from app.services.genre_enrichment_service import (
+    GENRE_METADATA_CACHE_VERSION,
+    MusicBrainzGenreService,
+    apply_genre_cache,
+    ensure_genre_cache,
+    seed_cache_from_source,
+)
 
 
 class FakeMusicBrainzGenreService(MusicBrainzGenreService):
@@ -209,7 +217,7 @@ def test_cache_version_change_removes_stale_enriched_genres_before_rechecking() 
     service = FakeMusicBrainzGenreService([{"artists": []}])
     cache, stats = service.enrich(normalised, old_cache, limit=1, deadline=time.monotonic() + 10)
     assert stats["attempted"] == 1
-    assert cache["schemaVersion"] == 3
+    assert cache["schemaVersion"] == GENRE_METADATA_CACHE_VERSION
     assert normalised["artist_metadata"]["Versioned Artist"]["genres"] == []
 
 
@@ -225,3 +233,156 @@ def test_regional_musicbrainz_tags_are_kept_and_count_as_classified() -> None:
     assert stats["matched"] == 1
     assert normalised["artist_metadata"]["Regional Artist"]["genres"] == ["k-pop", "mandopop"]
     assert profile_for_artist("Regional Artist", ["k-pop", "mandopop"])["canonical_genres"]
+
+
+def test_v3_musicbrainz_cache_migrates_without_losing_matches() -> None:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    legacy = {
+        "schemaVersion": 3,
+        "provider": "musicbrainz",
+        "updatedAt": checked_at,
+        "items": {
+            "narvent": {
+                "artistName": "Narvent",
+                "status": "matched",
+                "genres": ["synthwave"],
+                "provider": "musicbrainz",
+                "providerArtistId": "mbid",
+                "matchedName": "Narvent",
+                "confidence": "medium",
+                "checkedAt": checked_at,
+            }
+        },
+    }
+
+    migrated = ensure_genre_cache(legacy)
+
+    assert migrated["schemaVersion"] == GENRE_METADATA_CACHE_VERSION
+    assert migrated["items"]["narvent"]["genres"] == ["synthwave"]
+    assert migrated["items"]["narvent"]["evidence"][0]["provider"] == "musicbrainz"
+
+
+def test_exact_spotify_catalogue_genres_merge_with_musicbrainz_evidence() -> None:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    cache = ensure_genre_cache(
+        {
+            "schemaVersion": 3,
+            "items": {
+                "regional artist": {
+                    "artistName": "Regional Artist",
+                    "status": "matched",
+                    "genres": ["k-pop"],
+                    "provider": "musicbrainz",
+                    "providerArtistId": "mbid",
+                    "checkedAt": checked_at,
+                }
+            },
+        }
+    )
+    spotify_normalised = {
+        "artist_metadata": {
+            "Regional Artist": {
+                "artist_id": "spotify:artist:123",
+                "source": "spotify",
+                "genres": ["korean pop", "dance pop"],
+            }
+        }
+    }
+
+    merged, added = seed_cache_from_source(cache, spotify_normalised, provider="spotify")
+    target = unknown_profile("Regional Artist", 2)
+    applied = apply_genre_cache(target, merged)
+
+    assert added == 1
+    assert applied == 1
+    assert merged["items"]["regional artist"]["confidence"] == "high"
+    assert set(merged["items"]["regional artist"]["genres"]) == {"k-pop", "dance pop"}
+    assert target["artist_metadata"]["Regional Artist"]["genre_providers"] == ["musicbrainz", "spotify"]
+
+
+def test_normalisation_reapplies_durable_genres_after_rebuild(tmp_path, monkeypatch) -> None:
+    repository = JsonRepository(tmp_path / "durable-genres.db")
+    checked_at = datetime.now(timezone.utc).isoformat()
+    repository.save_json(
+        "genre_metadata_cache",
+        {
+            "schemaVersion": 3,
+            "items": {
+                "narvent": {
+                    "artistName": "Narvent",
+                    "status": "matched",
+                    "genres": ["synthwave"],
+                    "provider": "musicbrainz",
+                    "providerArtistId": "mbid",
+                    "confidence": "medium",
+                    "checkedAt": checked_at,
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(routes, "repo", repository)
+
+    rebuilt = routes.normalise_with_duration_cache(
+        {
+            "history": [
+                {
+                    "videoId": "narvent-track",
+                    "title": "Track",
+                    "artists": [{"name": "Narvent"}],
+                    "played": "2026-07-01",
+                }
+            ]
+        }
+    )
+
+    assert rebuilt["artist_metadata"]["Narvent"]["genres"] == ["synthwave"]
+    assert repository.load_json("genre_metadata_cache")["schemaVersion"] == GENRE_METADATA_CACHE_VERSION
+
+
+def test_provider_refresh_replaces_its_stale_genres_instead_of_accumulating_them() -> None:
+    spotify_v1 = {
+        "artist_metadata": {
+            "Changing Artist": {
+                "artist_id": "spotify:artist:changing",
+                "source": "spotify",
+                "genres": ["indie pop", "old tag"],
+            }
+        }
+    }
+    cache, _ = seed_cache_from_source(None, spotify_v1, provider="spotify")
+    spotify_v2 = {
+        "artist_metadata": {
+            "Changing Artist": {
+                "artist_id": "spotify:artist:changing",
+                "source": "spotify",
+                "genres": ["indie pop", "dream pop"],
+            }
+        }
+    }
+
+    refreshed, _ = seed_cache_from_source(cache, spotify_v2, provider="spotify")
+
+    assert refreshed["items"]["changing artist"]["genres"] == ["indie pop", "dream pop"]
+    assert len(refreshed["items"]["changing artist"]["evidence"]) == 1
+
+
+def test_each_completed_provider_lookup_is_checkpointed() -> None:
+    normalised = unknown_profile("Checkpoint Artist", 1)
+    service = FakeMusicBrainzGenreService(
+        [
+            {"artists": [{"id": "checkpoint", "name": "Checkpoint Artist", "score": 100}]},
+            {"genres": [{"name": "electronic", "count": 2}]},
+        ]
+    )
+    checkpoints: list[dict[str, Any]] = []
+
+    service.enrich(
+        normalised,
+        None,
+        limit=1,
+        deadline=time.monotonic() + 10,
+        on_cache_update=lambda cache: checkpoints.append(ensure_genre_cache(cache)),
+    )
+
+    assert checkpoints
+    assert checkpoints[-1]["items"]["checkpoint artist"]["status"] == "matched"

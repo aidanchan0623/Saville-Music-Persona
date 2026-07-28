@@ -82,7 +82,12 @@ from app.services.genre_enrichment_jobs import (
     GenreEnrichmentAlreadyRunning,
     GenreEnrichmentCoordinator,
 )
-from app.services.genre_enrichment_service import MusicBrainzGenreService
+from app.services.genre_enrichment_service import (
+    MusicBrainzGenreService,
+    apply_genre_cache,
+    ensure_genre_cache,
+    seed_cache_from_source,
+)
 from app.services.ollama_service import OllamaService
 from app.services.refresh_jobs import RefreshAlreadyRunning, RefreshCoordinator
 from app.services.recommendations import generate_recommendations
@@ -92,7 +97,12 @@ from app.services.takeout_import_jobs import (
     TakeoutImportCoordinator,
     TakeoutImportTimedOut,
 )
-from app.services.takeout_service import TAKEOUT_PARSER_SCHEMA_VERSION, TakeoutParseError, parse_takeout_file
+from app.services.takeout_service import (
+    TAKEOUT_PARSER_SCHEMA_VERSION,
+    TakeoutParseError,
+    dedupe_takeout_entries,
+    parse_takeout_file,
+)
 from app.services.ytmusic_service import YTMusicService
 
 
@@ -394,7 +404,25 @@ def normalise_with_duration_cache(
         except Exception as exc:  # noqa: BLE001
             if warnings is not None:
                 warnings.append(f"Duration enrichment skipped: {exc}")
+    genre_cache = durable_genre_cache()
+    applied_genres = apply_genre_cache(normalised, genre_cache)
+    if applied_genres and warnings is not None:
+        warnings.append(f"Reapplied durable genre metadata for {applied_genres} artist(s).")
     return normalised
+
+
+def durable_genre_cache() -> dict[str, Any]:
+    """Return the canonical genre cache, including exact Spotify catalogue evidence."""
+    stored = repo.load_json("genre_metadata_cache")
+    prepared = ensure_genre_cache(stored)
+    prepared, _ = seed_cache_from_source(
+        prepared,
+        repo.load_json("spotify_normalised"),
+        provider="spotify",
+    )
+    if prepared != stored:
+        repo.save_json("genre_metadata_cache", prepared)
+    return prepared
 
 
 def preferred_album_image_targets(normalised: dict[str, Any]) -> list[dict[str, Any]]:
@@ -538,14 +566,21 @@ def rebuild_spotify_cache() -> dict[str, Any]:
     repo.save_json("spotify_profile", raw.get("profile") or {})
     collection = spotify_raw_to_collection(raw)
     normalised = normalise_collection(collection)
+    genre_cache, _ = seed_cache_from_source(durable_genre_cache(), normalised, provider="spotify")
+    apply_genre_cache(normalised, genre_cache)
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     analysis = build_analysis(normalised)
-    repo.save_json("spotify_raw", raw)
-    repo.save_json("spotify_normalised", normalised)
-    repo.save_json("spotify_analysis", analysis)
-    repo.save_json("spotify_last_refresh_meta", {"refreshed_at": refreshed_at, "warnings": [SPOTIFY_LIMITATION_NOTE], "use_demo": False})
+    repo.save_json_batch(
+        {
+            "spotify_raw": raw,
+            "spotify_normalised": normalised,
+            "spotify_analysis": analysis,
+            "spotify_last_refresh_meta": {"refreshed_at": refreshed_at, "warnings": [SPOTIFY_LIMITATION_NOTE], "use_demo": False},
+            "genre_metadata_cache": genre_cache,
+        }
+    )
     return {
         "refreshed_at": refreshed_at,
         "warnings": [SPOTIFY_LIMITATION_NOTE],
@@ -903,7 +938,10 @@ def process_takeout_import(
     else:
         raw = dict(previous_raw)
         raw["source"] = "google_takeout"
-    raw["takeout_history"] = parsed.entries
+    previous_takeout = repo.load_json("takeout_history")
+    previous_entries = previous_takeout if isinstance(previous_takeout, list) else []
+    combined_entries = dedupe_takeout_entries([*previous_entries, *parsed.entries])
+    raw["takeout_history"] = combined_entries
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
     raw["takeout_import_batch_id"] = job_id
     raw["takeout_import_diagnostics"] = parsed.diagnostics
@@ -989,7 +1027,7 @@ def process_takeout_import(
     try:
         repo.save_json_batch(
             {
-                "takeout_history": parsed.entries,
+                "takeout_history": combined_entries,
                 TAKEOUT_CACHE_METADATA_KEY: metadata,
                 "raw": raw,
                 "normalised": normalised,
@@ -1015,6 +1053,8 @@ def process_takeout_import(
         "complete",
         "Google Takeout history imported. Overview is ready.",
         importedCount=len(parsed.entries),
+        totalImportedCount=len(combined_entries),
+        duplicateCount=max(0, len(previous_entries) + len(parsed.entries) - len(combined_entries)),
         trackCount=normalised["metadata"]["track_count"],
         playCount=normalised["metadata"]["play_count"],
     )
@@ -1055,6 +1095,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         cached_normalised = latest_normalised
     rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
     rebuilt_normalised = apply_release_year_cache(rebuilt_normalised, release_year_cache)
+    apply_genre_cache(rebuilt_normalised, durable_genre_cache())
     rebuilt_analysis = build_analysis(rebuilt_normalised)
     if "coverage" not in rebuilt_analysis:
         raise ValueError("duration rebuild produced an incomplete analysis")
@@ -1110,6 +1151,8 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
         return
 
     working_normalised = copy.deepcopy(cached_normalised)
+    cache = durable_genre_cache()
+    apply_genre_cache(working_normalised, cache)
     before_analysis = build_analysis(working_normalised)
     before_coverage = genre_coverage_payload(before_analysis)
     coordinator.stage(
@@ -1120,9 +1163,13 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     )
     cache, stats = genre_enrichment_service.enrich(
         working_normalised,
-        repo.load_json("genre_metadata_cache"),
+        cache,
         limit=settings.genre_enrichment_limit,
         deadline=deadline,
+        # Persist provider evidence after every resolved artist. If the laptop
+        # sleeps or the backend restarts, the completed requests are still
+        # available and will be reapplied on the next rebuild.
+        on_cache_update=lambda updated: repo.save_json("genre_metadata_cache", updated),
     )
 
     coordinator.stage(
@@ -1132,6 +1179,12 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
         beforeCoverage=before_coverage["genreCoveragePercent"],
         **stats,
     )
+    # Another import or metadata job may have completed while MusicBrainz was
+    # rate-limited. Always apply this batch to the newest canonical profile.
+    latest_normalised = repo.load_json("normalised")
+    if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
+        working_normalised = copy.deepcopy(latest_normalised)
+    apply_genre_cache(working_normalised, cache)
     rebuilt_analysis = build_analysis(working_normalised)
     after_coverage = genre_coverage_payload(rebuilt_analysis)
     repo.save_json_batch(

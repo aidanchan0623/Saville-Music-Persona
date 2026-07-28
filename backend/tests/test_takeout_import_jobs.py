@@ -90,6 +90,30 @@ def test_large_valid_takeout_file_keeps_all_events(tmp_path: Path) -> None:
     assert len(result.entries) == 5000
 
 
+def test_sequential_takeout_files_merge_and_deduplicate_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository = JsonRepository(tmp_path / "merged-takeouts.db")
+    coordinator = TakeoutImportCoordinator(repository, timeout_seconds=30)
+    monkeypatch.setattr(routes, "repo", repository)
+    monkeypatch.setattr(routes.ytmusic, "enrich_artist_image_cache", lambda *_args, **_kwargs: {"seeded": 0, "attempted": 0, "repaired": 0, "added": 0})
+    monkeypatch.setattr(routes.ytmusic, "enrich_album_image_cache", lambda *_args, **_kwargs: {"seeded": 0, "attempted": 0, "added": 0})
+
+    first = write_format(tmp_path, "json", count=3)
+    coordinator.stage("first", "queued", "queued")
+    routes.process_takeout_import("first", first, coordinator, time.monotonic() + 30)
+
+    second = tmp_path / "watch-history-second.json"
+    second.write_text(json.dumps(json_history(4)), encoding="utf-8")
+    coordinator.stage("second", "queued", "queued")
+    routes.process_takeout_import("second", second, coordinator, time.monotonic() + 30)
+
+    history = repository.load_json("takeout_history")
+    job = coordinator.get("second")
+    assert len(history) == 4
+    assert repository.load_json("normalised")["metadata"]["play_count"] == 4
+    assert job["totalImportedCount"] == 4
+    assert job["duplicateCount"] == 3
+
+
 def test_malformed_parser_input_has_a_safe_error(tmp_path: Path) -> None:
     path = tmp_path / "watch-history.json"
     path.write_text("{not-json", encoding="utf-8")

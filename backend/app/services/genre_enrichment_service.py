@@ -4,7 +4,7 @@ import math
 import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -13,7 +13,7 @@ from app.data.artist_genres import normalise_artist_name, normalise_genre
 
 
 MUSICBRAINZ_API_URL = "https://musicbrainz.org/ws/2"
-GENRE_METADATA_CACHE_VERSION = 3
+GENRE_METADATA_CACHE_VERSION = 4
 NEGATIVE_CACHE_TTL_DAYS = 30
 POSITIVE_CACHE_TTL_DAYS = 180
 
@@ -33,8 +33,9 @@ class MusicBrainzGenreService:
         *,
         limit: int,
         deadline: float,
+        on_cache_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if not isinstance(cache, dict) or cache.get("schemaVersion") != GENRE_METADATA_CACHE_VERSION:
+        if not isinstance(cache, dict) or cache.get("schemaVersion") not in {3, GENRE_METADATA_CACHE_VERSION}:
             clear_musicbrainz_genres(normalised)
         prepared_cache = ensure_genre_cache(cache)
         items = prepared_cache["items"]
@@ -63,12 +64,15 @@ class MusicBrainzGenreService:
                     failed += 1
                     provider_error = "musicbrainz_temporarily_unavailable"
                     break
-                items[normalise_artist_name(artist)] = record
+                record = merge_cache_record(prepared_cache, artist, record)
                 attempted += 1
                 if record["status"] == "matched":
                     apply_genre_record(normalised, artist, record)
                     matched += 1
                     matched_events += plays
+                prepared_cache["updatedAt"] = utc_now()
+                if on_cache_update:
+                    on_cache_update(prepared_cache)
 
         prepared_cache["updatedAt"] = utc_now()
         remaining = max(0, len(candidates) - attempted)
@@ -180,16 +184,92 @@ class MusicBrainzGenreService:
 
 
 def ensure_genre_cache(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict) or value.get("schemaVersion") != GENRE_METADATA_CACHE_VERSION:
+    if not isinstance(value, dict) or value.get("schemaVersion") not in {3, GENRE_METADATA_CACHE_VERSION}:
         return {
             "schemaVersion": GENRE_METADATA_CACHE_VERSION,
-            "provider": "musicbrainz",
+            "provider": "multi_source",
             "updatedAt": None,
             "items": {},
         }
-    items = value.get("items")
-    value["items"] = items if isinstance(items, dict) else {}
-    return value
+    migrated = {
+        "schemaVersion": GENRE_METADATA_CACHE_VERSION,
+        "provider": "multi_source",
+        "updatedAt": value.get("updatedAt"),
+        "items": {},
+    }
+    for key, record in (value.get("items") or {}).items():
+        if isinstance(record, dict):
+            migrated["items"][str(key)] = normalise_cache_record(record)
+    return migrated
+
+
+def apply_genre_cache(normalised: dict[str, Any], cache: dict[str, Any] | None) -> int:
+    """Reapply durable trusted genre matches after any canonical profile rebuild."""
+    prepared = ensure_genre_cache(cache)
+    applied = 0
+    for artist in artist_names(normalised):
+        record = prepared["items"].get(normalise_artist_name(artist))
+        if isinstance(record, dict) and record.get("status") == "matched" and record.get("genres"):
+            apply_genre_record(normalised, artist, record)
+            applied += 1
+    return applied
+
+
+def seed_cache_from_source(
+    cache: dict[str, Any] | None,
+    source_normalised: dict[str, Any] | None,
+    *,
+    provider: str,
+) -> tuple[dict[str, Any], int]:
+    """Add exact-name genres from an authenticated catalogue without fuzzy identity guesses."""
+    prepared = ensure_genre_cache(cache)
+    if not isinstance(source_normalised, dict):
+        return prepared, 0
+    added = 0
+    metadata = source_normalised.get("artist_metadata")
+    if not isinstance(metadata, dict):
+        return prepared, 0
+    for artist, item in metadata.items():
+        if not isinstance(item, dict) or not has_usable_artist(artist):
+            continue
+        if provider == "spotify":
+            artist_id = str(item.get("artist_id") or "")
+            if item.get("source") != "spotify" and not artist_id.startswith("spotify:artist:"):
+                continue
+        genres = supported_genre_names(item.get("genres"))
+        if not genres:
+            continue
+        provider_artist_id = str(item.get("artist_id") or "").strip() or None
+        current = prepared["items"].get(normalise_artist_name(str(artist)))
+        current_evidence = current.get("evidence") if isinstance(current, dict) else []
+        source_identity = evidence_identity(
+            {"provider": provider, "providerArtistId": provider_artist_id, "matchedName": str(artist)}
+        )
+        if any(
+            evidence_identity(evidence) == source_identity
+            and genre_keys(evidence.get("genres")) == genre_keys(genres)
+            for evidence in current_evidence or []
+            if isinstance(evidence, dict)
+        ):
+            continue
+        record = cache_record(
+            str(artist),
+            "matched",
+            genres=genres,
+            provider=provider,
+            provider_artist_id=provider_artist_id,
+            matched_name=str(artist),
+            checked_at=utc_now(),
+            confidence="medium",
+            match_method="exact_normalised_artist_name",
+        )
+        before = prepared["items"].get(normalise_artist_name(str(artist)))
+        merged = merge_cache_record(prepared, str(artist), record)
+        if before != merged:
+            added += 1
+    if added:
+        prepared["updatedAt"] = utc_now()
+    return prepared, added
 
 
 def cache_record(
@@ -197,20 +277,147 @@ def cache_record(
     status: str,
     *,
     genres: list[str] | None = None,
+    provider: str = "musicbrainz",
     provider_artist_id: str | None = None,
     matched_name: str | None = None,
     checked_at: str,
+    confidence: str | None = None,
+    match_method: str = "unique_exact_artist_alias",
 ) -> dict[str, Any]:
-    return {
+    record = {
         "artistName": artist,
         "status": status,
         "genres": list(genres or []),
-        "provider": "musicbrainz",
+        "provider": provider,
         "providerArtistId": provider_artist_id,
         "matchedName": matched_name,
-        "confidence": "medium" if status == "matched" else "unavailable",
+        "confidence": confidence or ("medium" if status == "matched" else "unavailable"),
+        "matchMethod": match_method if status == "matched" else None,
         "checkedAt": checked_at,
     }
+    record["evidence"] = [evidence_from_record(record)] if status == "matched" else []
+    return record
+
+
+def normalise_cache_record(record: dict[str, Any]) -> dict[str, Any]:
+    prepared = dict(record)
+    prepared["genres"] = supported_genre_names(record.get("genres"))
+    evidence = [dict(item) for item in record.get("evidence") or [] if isinstance(item, dict)]
+    if record.get("status") == "matched" and prepared["genres"] and not evidence:
+        evidence = [evidence_from_record(prepared)]
+    prepared["evidence"] = evidence
+    return prepared
+
+
+def evidence_from_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "provider": record.get("provider"),
+        "providerArtistId": record.get("providerArtistId"),
+        "matchedName": record.get("matchedName") or record.get("artistName"),
+        "genres": supported_genre_names(record.get("genres")),
+        "confidence": record.get("confidence") or "medium",
+        "matchMethod": record.get("matchMethod") or "unique_exact_artist_alias",
+        "checkedAt": record.get("checkedAt"),
+    }
+
+
+def merge_cache_record(cache: dict[str, Any], artist: str, incoming: dict[str, Any]) -> dict[str, Any]:
+    key = normalise_artist_name(artist)
+    current = cache["items"].get(key)
+    if incoming.get("status") != "matched" or not incoming.get("genres"):
+        if not isinstance(current, dict) or current.get("status") != "matched":
+            cache["items"][key] = normalise_cache_record(incoming)
+        return cache["items"].get(key) or incoming
+
+    records = []
+    if isinstance(current, dict) and current.get("status") == "matched":
+        records.extend(item for item in current.get("evidence") or [] if isinstance(item, dict))
+        if not records:
+            records.append(evidence_from_record(current))
+    incoming_evidence = [item for item in incoming.get("evidence") or [] if isinstance(item, dict)]
+    if not incoming_evidence:
+        incoming_evidence = [evidence_from_record(incoming)]
+    replacement_keys = {evidence_identity(item) for item in incoming_evidence}
+    records = [item for item in records if evidence_identity(item) not in replacement_keys]
+    records.extend(incoming_evidence)
+
+    unique: dict[tuple[str, str, tuple[str, ...]], dict[str, Any]] = {}
+    for evidence in records:
+        genres = tuple(supported_genre_names(evidence.get("genres")))
+        identity = (str(evidence.get("provider") or ""), str(evidence.get("providerArtistId") or ""), genres)
+        if genres:
+            unique[identity] = {**evidence, "genres": list(genres)}
+    evidence = list(unique.values())
+    genres = combined_evidence_genres(evidence)
+    providers = sorted({str(item.get("provider")) for item in evidence if item.get("provider")})
+    consensus = has_genre_consensus(evidence)
+    merged = {
+        **normalise_cache_record(incoming),
+        "artistName": artist,
+        "status": "matched",
+        "genres": genres,
+        "provider": "+".join(providers) if providers else incoming.get("provider"),
+        "confidence": "high" if consensus else "medium",
+        "matchMethod": "provider_consensus" if consensus else "multi_provider_exact_match" if len(providers) > 1 else incoming.get("matchMethod"),
+        "evidence": evidence,
+    }
+    cache["items"][key] = merged
+    return merged
+
+
+def evidence_identity(evidence: dict[str, Any]) -> tuple[str, str]:
+    provider = str(evidence.get("provider") or "")
+    entity = str(evidence.get("providerArtistId") or evidence.get("matchedName") or "")
+    return provider, normalise_artist_name(entity)
+
+
+def has_genre_consensus(evidence: list[dict[str, Any]]) -> bool:
+    provider_genres: dict[str, set[str]] = {}
+    for item in evidence:
+        provider = str(item.get("provider") or "")
+        if not provider:
+            continue
+        keys = genre_keys(item.get("genres"))
+        provider_genres.setdefault(provider, set()).update(keys)
+    sets = list(provider_genres.values())
+    return len(sets) > 1 and any(left & right for index, left in enumerate(sets) for right in sets[index + 1 :])
+
+
+def genre_keys(value: Any) -> set[str]:
+    keys: set[str] = set()
+    for genre in supported_genre_names(value):
+        normalised = normalise_genre(genre)
+        if normalised:
+            keys.add(normalised[0])
+    return keys
+
+
+def combined_evidence_genres(evidence: list[dict[str, Any]]) -> list[str]:
+    votes: Counter[str] = Counter()
+    first_seen: dict[str, int] = {}
+    labels: dict[str, str] = {}
+    for item in evidence:
+        for genre in supported_genre_names(item.get("genres")):
+            normalised = normalise_genre(genre)
+            if not normalised:
+                continue
+            key = normalised[0]
+            votes[key] += 1
+            first_seen.setdefault(key, len(first_seen))
+            labels.setdefault(key, genre)
+    ordered = sorted(votes, key=lambda key: (-votes[key], first_seen[key]))[:8]
+    return [labels[key] for key in ordered]
+
+
+def supported_genre_names(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    genres: list[str] = []
+    for genre in value:
+        normalised = normalise_genre(str(genre))
+        if normalised and normalised[1].casefold() not in genres:
+            genres.append(normalised[1].casefold())
+    return genres[:8]
 
 
 def unique_exact_candidates(value: Any, artist: str) -> list[dict[str, Any]]:
@@ -286,9 +493,16 @@ def apply_genre_record(normalised: dict[str, Any], artist: str, record: dict[str
     if item.get("genres"):
         return
     item["genres"] = list(record.get("genres") or [])
-    item["genre_source"] = "musicbrainz_artist_genres"
-    item["genre_confidence"] = "medium"
-    item["musicbrainz_artist_id"] = record.get("providerArtistId")
+    providers = sorted({str(evidence.get("provider")) for evidence in record.get("evidence") or [] if isinstance(evidence, dict) and evidence.get("provider")})
+    item["genre_source"] = "durable_genre_metadata"
+    item["genre_confidence"] = record.get("confidence") or "medium"
+    item["genre_providers"] = providers or [record.get("provider")]
+    item["genre_evidence"] = list(record.get("evidence") or [])
+    if any(provider == "musicbrainz" for provider in item["genre_providers"]):
+        item["musicbrainz_artist_id"] = next(
+            (evidence.get("providerArtistId") for evidence in item["genre_evidence"] if evidence.get("provider") == "musicbrainz"),
+            record.get("providerArtistId"),
+        )
     item["genre_checked_at"] = record.get("checkedAt")
 
 
@@ -297,10 +511,10 @@ def clear_musicbrainz_genres(normalised: dict[str, Any]) -> None:
     if not isinstance(metadata, dict):
         return
     for item in metadata.values():
-        if not isinstance(item, dict) or item.get("genre_source") != "musicbrainz_artist_genres":
+        if not isinstance(item, dict) or item.get("genre_source") not in {"musicbrainz_artist_genres", "durable_genre_metadata"}:
             continue
         item["genres"] = []
-        for key in ("genre_source", "genre_confidence", "musicbrainz_artist_id", "genre_checked_at"):
+        for key in ("genre_source", "genre_confidence", "genre_providers", "genre_evidence", "musicbrainz_artist_id", "genre_checked_at"):
             item.pop(key, None)
 
 
