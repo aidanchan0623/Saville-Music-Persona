@@ -131,6 +131,12 @@ export default function App() {
   }, [useDemo]);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("spotify_connected") === "1") setMessage("Spotify connected and refreshed. YouTube Music data remains separate.");
+    if (params.get("spotify_error")) setMessage("Spotify connection did not complete. You can retry from Settings.");
+  }, []);
+
+  useEffect(() => {
     const refreshStatus = () => {
       void loadStatus().catch((error) => setMessage(error.message));
     };
@@ -258,9 +264,10 @@ export default function App() {
     }
   };
 
-  const importTakeout = async (file: File) => {
+  const importTakeout = async (file: File): Promise<boolean> => {
     lastTakeoutFileRef.current = file;
     setCanRetryTakeout(false);
+    let completed = false;
     const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
       const controller = new AbortController();
       importAbortControllerRef.current = controller;
@@ -282,8 +289,8 @@ export default function App() {
         }
         setCanRetryTakeout(false);
         setMessage(`${result.message} Imported ${result.importedCount ?? 0} history entries.`);
-        navigate("overview");
         void enrichDurationsInBackground();
+        completed = true;
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setCanRetryTakeout(true);
@@ -295,7 +302,9 @@ export default function App() {
     });
     if (!started) {
       setMessage("A Takeout import or refresh is already running. Wait for it to finish before starting another.");
+      return false;
     }
+    return completed;
   };
 
   const retryTakeout = () => {
@@ -468,6 +477,10 @@ export default function App() {
               }
             }}
             onImportTakeout={importTakeout}
+            message={message}
+            canRetryTakeout={canRetryTakeout}
+            onRetryTakeout={retryTakeout}
+            onViewOverview={() => navigate("overview")}
             spotifyStatus={spotifyStatus}
             onConnectSpotify={connectSpotify}
             onRefreshSpotify={refreshSpotify}
@@ -477,7 +490,7 @@ export default function App() {
           />
         );
     }
-  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source]);
+  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source, message, canRetryTakeout]);
 
   const youtubeAnalysisReady = overview?.source === "youtube";
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || youtubeAnalysisReady || (useDemo && overview));

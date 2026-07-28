@@ -11,6 +11,7 @@ from app.data.artist_genres import (
     get_curated_artist_profile,
     get_exact_curated_artist_profile,
     normalise_artist_name,
+    normalise_genre,
 )
 
 
@@ -23,7 +24,7 @@ def profile_for_artist(artist: str, source_genres: list[str] | tuple[str, ...] |
     curated = get_exact_curated_artist_profile(artist)
     if curated:
         return profile_payload(curated)
-    trusted_genres = [str(genre).strip() for genre in (source_genres or []) if str(genre).strip()]
+    trusted_genres = [normalised[1] if normalised else str(genre).strip() for genre in (source_genres or []) if str(genre).strip() for normalised in [normalise_genre(str(genre))]]
     source_clusters = clusters_for_genres(trusted_genres)
     if source_clusters:
         return {

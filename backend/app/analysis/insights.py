@@ -19,28 +19,10 @@ from app.analysis.periods import (
 from app.analysis.scoring import build_analysis
 from app.analysis.period_profile import build_period_profile
 from app.analysis.taste_model import profile_for_artist, source_genres_for_artist
+from app.data.artist_genres import normalise_genre
 
 
 INSIGHTS_SCHEMA_VERSION = 1
-
-FAMILY_DEFINITIONS: tuple[tuple[str, str], ...] = (
-    ("alternative_rock", "Alternative / Rock"),
-    ("pop", "Pop"),
-    ("heavy", "Heavy"),
-    ("electronic_atmospheric", "Electronic / Atmospheric"),
-    ("hip_hop_rnb", "Hip-Hop / R&B"),
-    ("classical_cinematic", "Classical / Cinematic"),
-)
-
-CLUSTER_TO_FAMILY = {
-    "Alternative / Indie Rock": "alternative_rock",
-    "Emo / Pop Punk / Post-Hardcore": "alternative_rock",
-    "Pop / Pop Rock Crossover": "pop",
-    "Heavy Alternative / Metalcore": "heavy",
-    "Electronic / Atmospheric": "electronic_atmospheric",
-    "Hip-Hop / Rap": "hip_hop_rnb",
-    "Cinematic / Soundtrack": "classical_cinematic",
-}
 
 USEFUL_SCORE_KEYS = (
     "repeat",
@@ -100,34 +82,56 @@ def insights_payload(
 
 
 def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], artist_metadata: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
-    family_weights: Counter[str] = Counter()
+    genre_weights: Counter[str] = Counter()
+    labels: dict[str, str] = {}
+    contributors: dict[str, Counter[str]] = {}
+    source_counts: dict[str, Counter[str]] = {}
+    confidence_counts: dict[str, Counter[str]] = {}
     classified_plays = 0
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         profile = profile_for_artist(artist, source_genres_for_artist(track, artist_metadata, artist))
-        families = {
-            CLUSTER_TO_FAMILY[cluster]
-            for cluster in profile.get("broad_clusters") or []
-            if cluster in CLUSTER_TO_FAMILY
-        }
-        if not families:
+        genres = [normalise_genre(str(value)) for value in (profile.get("canonical_genres") or [])]
+        meaningful = list(dict.fromkeys(item for item in genres if item))
+        regional_keys = {"k-pop", "mandopop", "cantopop", "c-pop", "j-pop"}
+        if any(key in regional_keys for key, _ in meaningful):
+            # A regional-pop tag is more informative than its accompanying
+            # generic Pop/Dance Pop metadata, so do not dilute it in the UI.
+            meaningful = [item for item in meaningful if item[0] not in {"pop", "dance-pop", "pop-rock"}]
+        meaningful = meaningful[:3]
+        if not meaningful:
             continue
         classified_plays += 1
-        weight = 1 / len(families)
-        for family in families:
-            family_weights[family] += weight
+        weight = 1 / len(meaningful)
+        for key, label in meaningful:
+            genre_weights[key] += weight
+            labels[key] = label
+            contributors.setdefault(key, Counter())[artist] += weight
+            source_counts.setdefault(key, Counter())[str(profile.get("source") or "unavailable")] += weight
+            confidence_counts.setdefault(key, Counter())[str(profile.get("confidence") or "low")] += weight
 
     total = len(events)
+    ranked_keys = sorted(genre_weights, key=lambda key: (-genre_weights[key], labels[key].casefold()))
+    # Preserve 4--8 real genres where the metadata supports them.  Never add
+    # placeholder categories; "Other" is only shown for a meaningful tail.
+    selected_keys = ranked_keys[:8]
+    remaining = ranked_keys[8:]
+    other_weight = sum(genre_weights[key] for key in remaining)
     axes = [
         {
             "key": key,
-            "label": label,
-            "value": round(family_weights[key] / total * 100, 1) if total else 0.0,
-            "detectedPlays": round(family_weights[key], 1),
+            "label": labels[key],
+            "value": round(genre_weights[key] / total * 100, 1) if total else 0.0,
+            "detectedPlays": round(genre_weights[key], 1),
+            "contributingArtists": [name for name, _ in contributors[key].most_common(3)],
+            "metadataSource": source_counts[key].most_common(1)[0][0],
+            "confidence": confidence_counts[key].most_common(1)[0][0],
         }
-        for key, label in FAMILY_DEFINITIONS
+        for key in selected_keys
     ]
+    if total and other_weight / total >= 0.03:
+        axes.append({"key": "other", "label": "Other classified genres", "value": round(other_weight / total * 100, 1), "detectedPlays": round(other_weight, 1), "contributingArtists": [], "metadataSource": "combined reliable metadata", "confidence": "mixed"})
     target_share = round(classified_plays / total * 100, 1) if total else 0.0
     displayed_share = round(sum(axis["value"] for axis in axes), 1)
     if axes and displayed_share != target_share:
@@ -139,7 +143,7 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
         "unclassifiedPlays": max(total - classified_plays, 0),
         "totalPlays": total,
         "axes": axes,
-        "methodology": "Each classified play is split evenly across curated or trusted source-provided families. Unknown artists remain unclassified, and displayed shares sum to measured classification coverage.",
+        "methodology": "Each classified play is split evenly across up to three reliable, normalised artist genres. The chart contains only genres present in this source and period; unknown artists remain unclassified and displayed shares sum to measured classification coverage.",
     }
 
 

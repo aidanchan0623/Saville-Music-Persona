@@ -238,6 +238,9 @@ class InsightsProfileAxis(BaseModel):
     label: str
     value: float
     detectedPlays: float
+    contributingArtists: list[str] = Field(default_factory=list)
+    metadataSource: str = "unavailable genre metadata"
+    confidence: str = "low"
 
 
 class InsightsMusicProfile(BaseModel):

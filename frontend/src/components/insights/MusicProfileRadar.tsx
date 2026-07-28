@@ -11,6 +11,19 @@ export function MusicProfileRadar({ axes, coverage }: { axes: InsightsProfileAxi
   );
   const ranked = useMemo(() => [...axes].sort((a, b) => b.value - a.value), [axes]);
   const summaryId = "music-profile-summary";
+  const useRankedFallback = axes.length < 3 || (typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches && axes.length > 5);
+
+  if (useRankedFallback) {
+    return (
+      <div ref={ref} className="insights-radar" data-halo-active="false">
+        <div className="space-y-3" role="img" aria-describedby={summaryId} aria-label="Ranked genre shares">
+          {ranked.map((axis) => <div key={axis.key}><div className="mb-1 flex justify-between gap-3 text-sm"><span className="text-mist">{axis.label}</span><strong className="text-white">{axis.value.toFixed(1)}%</strong></div><div className="h-2 overflow-hidden rounded bg-white/10"><div className="h-full rounded bg-red-500" style={{ width: `${Math.min(axis.value, 100)}%` }} /></div></div>)}
+          {axes.length < 3 ? <p className="text-sm text-mist">Limited genre detail: a ranked view is clearer than a radar with fewer than three real genres.</p> : null}
+        </div>
+        <ProfileLegend id={summaryId} ranked={ranked} coverage={coverage} />
+      </div>
+    );
+  }
 
   return (
     <div ref={ref} className="insights-radar" data-halo-active={motionActive ? "true" : "false"}>
@@ -38,22 +51,13 @@ export function MusicProfileRadar({ axes, coverage }: { axes: InsightsProfileAxi
         </ResponsiveContainer>
       </div>
 
-      <div id={summaryId} className="insights-profile-legend">
-        <p className="insights-coverage">
-          <span>{Math.round(coverage * 100)}% classified</span>
-          <span>{Math.round((1 - coverage) * 100)}% unclassified</span>
-        </p>
-        <ol>
-          {ranked.map((axis) => (
-            <li key={axis.key}>
-              <span>{axis.label}</span>
-              <strong>{axis.value.toFixed(1)}%</strong>
-            </li>
-          ))}
-        </ol>
-      </div>
+      <ProfileLegend id={summaryId} ranked={ranked} coverage={coverage} />
     </div>
   );
+}
+
+function ProfileLegend({ id, ranked, coverage }: { id: string; ranked: InsightsProfileAxis[]; coverage: number }) {
+  return <div id={id} className="insights-profile-legend"><p className="insights-coverage"><span>{Math.round(coverage * 100)}% classified</span><span>{Math.round((1 - coverage) * 100)}% unclassified</span></p><ol>{ranked.map((axis) => <li key={axis.key}><span>{axis.label}</span><strong>{axis.value.toFixed(1)}%</strong></li>)}</ol></div>;
 }
 
 function radarTick(props: { x?: string | number; y?: string | number; textAnchor?: string; payload?: { value?: string | number } }) {
@@ -79,6 +83,8 @@ function RadarTooltip({ active, payload }: { active?: boolean; payload?: Array<{
       <strong>{axis.label}</strong>
       <span>{axis.value.toFixed(1)}% of detected plays</span>
       <span>{formatWeightedPlays(axis.detectedPlays)} classified play weight</span>
+      <span>{axis.confidence} confidence · {axis.metadataSource}</span>
+      {axis.contributingArtists.length ? <span>Artists: {axis.contributingArtists.join(", ")}</span> : null}
     </div>
   );
 }

@@ -514,3 +514,33 @@ def clusters_for_genres(genres: list[str] | tuple[str, ...]) -> list[str]:
         if lower_genres & {genre.casefold() for genre in cluster_genres}:
             clusters.append(cluster)
     return clusters
+
+
+# Keep the granular names users recognise in the UI.  Broad clusters are still
+# useful for taste-model scoring, but are deliberately not used as the Insights
+# chart labels.
+GENRE_ALIASES: dict[str, tuple[str, str]] = {
+    "k pop": ("k-pop", "K-pop"), "k-pop": ("k-pop", "K-pop"), "korean pop": ("k-pop", "K-pop"),
+    "mandopop": ("mandopop", "Mandopop"), "mandarin pop": ("mandopop", "Mandopop"),
+    "cantopop": ("cantopop", "Cantopop"), "cantonese pop": ("cantopop", "Cantopop"),
+    "c pop": ("c-pop", "C-pop"), "c-pop": ("c-pop", "C-pop"), "chinese pop": ("c-pop", "C-pop"),
+    "j pop": ("j-pop", "J-pop"), "j-pop": ("j-pop", "J-pop"), "japanese pop": ("j-pop", "J-pop"),
+    "rnb": ("r-b", "R&B"), "r&b": ("r-b", "R&B"), "rhythm and blues": ("r-b", "R&B"),
+    "alt rock": ("alternative-rock", "Alternative rock"), "alternative rock": ("alternative-rock", "Alternative rock"),
+    "indie rock": ("indie-rock", "Indie rock"), "pop punk": ("pop-punk", "Pop punk"),
+    "hip hop": ("hip-hop", "Hip-hop"), "hip-hop": ("hip-hop", "Hip-hop"),
+    "film score": ("film-score", "Film score"), "soundtrack": ("soundtrack", "Soundtrack"),
+}
+
+
+def normalise_genre(genre: str) -> tuple[str, str] | None:
+    """Return a stable key and a meaningful display label for genre metadata."""
+    value = " ".join(unicodedata.normalize("NFKC", str(genre or "")).casefold().replace("/", " ").split())
+    if not value:
+        return None
+    if value in GENRE_ALIASES:
+        return GENRE_ALIASES[value]
+    key = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
+    if not key or key in {"music", "other", "unknown", "various"}:
+        return None
+    return key, " ".join(part.capitalize() for part in value.split())

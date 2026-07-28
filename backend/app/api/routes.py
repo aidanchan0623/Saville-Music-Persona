@@ -654,7 +654,7 @@ def spotify_callback(
     error: str | None = Query(None),
 ) -> RedirectResponse:
     if error:
-        return RedirectResponse(f"{settings.frontend_url}?source=spotify&spotify_error={error}")
+        return RedirectResponse(f"{settings.frontend_url}/settings?source=spotify&spotify_error={error}")
     if not code:
         raise HTTPException(status_code=400, detail={"error": "Spotify callback failed", "detail": "Spotify did not return an authorization code.", "code": "spotify_missing_code"})
     stored_state = repo.load_json("spotify_oauth_state") or {}
@@ -674,7 +674,7 @@ def spotify_callback(
                 "use_demo": False,
             },
         )
-    return RedirectResponse(f"{settings.frontend_url}?source=spotify")
+    return RedirectResponse(f"{settings.frontend_url}/settings?source=spotify&spotify_connected=1")
 
 
 @router.post("/spotify/disconnect")

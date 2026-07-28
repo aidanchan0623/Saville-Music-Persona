@@ -1,5 +1,7 @@
 import { ExternalLink, RefreshCw, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import type { ReactNode } from "react";
+import { MusicSourceModal } from "../components/settings/MusicSourceModal";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { StatusPill } from "../components/StatusPill";
@@ -12,12 +14,16 @@ interface Props {
   busy: boolean;
   onUseDemoChange: (value: boolean) => void;
   onCheckAuth: () => void;
-  onImportTakeout: (file: File) => void;
+  onImportTakeout: (file: File) => Promise<boolean>;
   spotifyStatus: SpotifyStatus | null;
   onConnectSpotify: () => void;
   onRefreshSpotify: () => void;
   onDisconnectSpotify: () => void;
   onImproveGenres: () => void;
+  message: string | null;
+  canRetryTakeout: boolean;
+  onRetryTakeout: () => void;
+  onViewOverview: () => void;
   titleAnimationKey: string;
 }
 
@@ -34,8 +40,13 @@ export function SettingsPage({
   onRefreshSpotify,
   onDisconnectSpotify,
   onImproveGenres,
+  message,
+  canRetryTakeout,
+  onRetryTakeout,
+  onViewOverview,
   titleAnimationKey,
 }: Props) {
+  const [sourceModalOpen, setSourceModalOpen] = useState(false);
   return (
     <div className="space-y-6">
       <PageTitlePanel
@@ -52,6 +63,21 @@ export function SettingsPage({
           </div>
         }
       />
+
+      <SettingsCard>
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Music data sources</p><h2 className="mt-2 text-2xl font-black text-white">Music Data Sources</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-mist">Connect a streaming service or import your listening history.</p></div>
+          <button className="btn-primary" type="button" onClick={() => setSourceModalOpen(true)}>Add or Change Music Source</button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <StatusSummary label="YouTube Music" value={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data available" : "Ready to connect"} ok={Boolean(auth?.connected || auth?.cached_data_available)} />
+          <StatusSummary label="Spotify" value={spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Not connected"} ok={Boolean(spotifyStatus?.connected)} />
+          <StatusSummary label="Google Takeout" value={busy && message?.toLowerCase().includes("takeout") ? "Importing" : auth?.cached_data_available ? "Import complete" : "Not imported"} ok={Boolean(auth?.cached_data_available)} />
+          <StatusSummary label="Demo data" value={useDemo ? "Demo mode active" : "Inactive"} ok={useDemo} />
+        </div>
+        {message?.toLowerCase().includes("takeout") ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-white/10 bg-black/20 p-3 text-sm text-mist" role="status"><span>{message}</span>{canRetryTakeout ? <button className="btn-secondary" type="button" onClick={onRetryTakeout}>Retry import</button> : null}</div> : null}
+        {auth?.cached_data_available && message?.includes("Imported") ? <button className="btn-secondary mt-4" type="button" onClick={onViewOverview}>View Updated Overview</button> : null}
+      </SettingsCard>
 
       <SettingsCard>
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
@@ -205,6 +231,8 @@ export function SettingsPage({
           </p>
         </div>
       </SettingsCard>
+
+      <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} busy={busy} message={message} spotifyConfigured={Boolean(spotifyStatus?.configured)} />
     </div>
   );
 }
