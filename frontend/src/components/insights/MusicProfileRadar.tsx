@@ -83,8 +83,8 @@ function RadarTooltip({ active, payload }: { active?: boolean; payload?: Array<{
       <strong>{axis.label}</strong>
       <span>{axis.value.toFixed(1)}% of detected plays</span>
       <span>{formatWeightedPlays(axis.detectedPlays)} classified play weight</span>
-      <span>{axis.confidence} confidence · {axis.metadataSource}</span>
-      {axis.contributingArtists.length ? <span>Artists: {axis.contributingArtists.join(", ")}</span> : null}
+      <span>{axis.confidence ?? "unknown"} confidence · {axis.metadataSource ?? "reliable genre metadata"}</span>
+      {axis.contributingArtists?.length ? <span>Artists: {axis.contributingArtists.join(", ")}</span> : null}
     </div>
   );
 }

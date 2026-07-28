@@ -423,9 +423,9 @@ export interface InsightsProfileAxis {
   label: string;
   value: number;
   detectedPlays: number;
-  contributingArtists: string[];
-  metadataSource: string;
-  confidence: string;
+  contributingArtists?: string[];
+  metadataSource?: string;
+  confidence?: string;
 }
 
 export interface InsightsRhythmPoint {
