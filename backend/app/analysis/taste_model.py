@@ -76,6 +76,10 @@ def source_genres_for_artist(
                 add_genres(genres)
     if normalise_artist_name(str(track.get("primary_artist") or "")) == target:
         add_genres(track.get("primary_artist_genres") or [])
+        # Recording-level evidence is a supplemental fallback. It is attached
+        # only after identity, evidence and taxonomy confidence clear the
+        # automatic-application threshold in the durable recording catalog.
+        add_genres(track.get("recording_genres") or [])
     metadata = (artist_metadata or {}).get(target)
     if isinstance(metadata, dict):
         add_genres(metadata.get("genres") or [])

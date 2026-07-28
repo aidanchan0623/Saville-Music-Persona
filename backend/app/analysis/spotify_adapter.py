@@ -140,6 +140,7 @@ def adapt_track(
         },
         "releaseDate": album.get("release_date"),
         "duration_seconds": round(int(track.get("duration_ms") or 0) / 1000) if track.get("duration_ms") else None,
+        "isrc": ((track.get("external_ids") or {}).get("isrc") if isinstance(track.get("external_ids"), dict) else None),
         "thumbnails": album.get("images") or [],
         "popularity": track.get("popularity"),
         "external_url": ((track.get("external_urls") or {}).get("spotify") if isinstance(track.get("external_urls"), dict) else None),

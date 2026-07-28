@@ -5,6 +5,8 @@ import unicodedata
 from functools import lru_cache
 from dataclasses import dataclass
 
+from app.data.genre_taxonomy import INTERNAL_BROAD_CLUSTERS, INTERNAL_GENRES
+
 
 @dataclass(frozen=True)
 class ArtistGenreProfile:
@@ -568,6 +570,13 @@ def clusters_for_genres(genres: list[str] | tuple[str, ...]) -> list[str]:
     for cluster, cluster_genres in BROAD_CLUSTER_GENRES.items():
         if lower_genres & {genre.casefold() for genre in cluster_genres}:
             clusters.append(cluster)
+    for genre in genres:
+        for internal_name, internal_clusters in INTERNAL_BROAD_CLUSTERS.items():
+            if " ".join(unicodedata.normalize("NFKC", str(genre)).casefold().split()) != internal_name.casefold():
+                continue
+            for cluster in internal_clusters:
+                if cluster not in clusters:
+                    clusters.append(cluster)
     return clusters
 
 
@@ -593,6 +602,13 @@ def normalise_genre(genre: str) -> tuple[str, str] | None:
     value = " ".join(unicodedata.normalize("NFKC", str(genre or "")).casefold().replace("/", " ").split())
     if not value:
         return None
+    internal_labels = {
+        " ".join(label.casefold().replace("/", " ").split()): label
+        for label in INTERNAL_GENRES
+    }
+    if value in internal_labels:
+        label = internal_labels[value]
+        return re.sub(r"[^a-z0-9]+", "-", value).strip("-"), label
     if value in GENRE_ALIASES:
         return GENRE_ALIASES[value]
     key = re.sub(r"[^a-z0-9]+", "-", value).strip("-")

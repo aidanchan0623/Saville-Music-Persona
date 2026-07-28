@@ -150,9 +150,11 @@ Rules:
 
 ## Durable genre metadata and repeated Takeout imports
 
-Genre coverage is built from conservative evidence rather than language or title guesses. Curated mappings take precedence, exact Spotify artist metadata can contribute when Spotify is connected, and MusicBrainz matches require a unique exact artist name or alias. Each accepted record stores its provider, provider artist ID, match method, confidence, genres, and lookup time. Agreement between independent providers raises confidence; disagreement remains visible as medium-confidence evidence.
+Genre coverage is built from conservative evidence rather than language or title guesses. Curated mappings take precedence, exact Spotify artist metadata can contribute when Spotify is connected, and MusicBrainz artist matching requires a unique exact name or alias. Tracks that remain unclassified then use the local recording catalog and a bounded MusicBrainz recording lookup. External labels map into a stable 30-genre taxonomy that includes Malay/Nusantara, Mandopop, Cantopop, K-pop, J-pop/J-rock, and Tamil/Indian film music.
 
-The genre cache is versioned and reapplied after every Takeout import, YouTube refresh, duration/release-year rebuild, and genre-enrichment batch. Completed MusicBrainz requests are checkpointed individually so a restart does not discard earlier results.
+Listening-event identity and recording identity are deliberately separate. Repeated plays remain repeated events; only overlapping-import copies are removed. Recordings reuse strong provider IDs first and require album or duration support for medium title/artist matching. Version markers such as live, remix, remaster, slowed, instrumental, or cover prevent accidental merging. Identity confidence, genre-evidence confidence, and taxonomy-normalisation confidence are stored separately and remain inspectable. See [the recording and genre architecture](docs/recording-and-genre-architecture.md).
+
+The artist cache and SQLite recording catalog are reapplied after every Takeout import, YouTube refresh, duration/release-year rebuild, and genre-enrichment batch. Completed MusicBrainz evidence is durable, failed lookups have retry metadata, and only assignments above the combined confidence gate affect analytics.
 
 Multiple Takeout JSON, HTML, or ZIP files can be imported sequentially. The backend merges them into the existing local history and deduplicates events using, in order, a source event ID, video ID plus timestamp, or title/artist plus timestamp. Entries with invalid timestamps are retained because merging them would risk deleting genuine separate plays.
 

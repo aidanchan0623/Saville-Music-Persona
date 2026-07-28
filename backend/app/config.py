@@ -40,6 +40,7 @@ class Settings:
         # every artist. A larger bounded batch materially improves a fresh
         # multi-user import while remaining below the five-minute job budget.
         self.genre_enrichment_limit = int(os.getenv("SMP_GENRE_ENRICHMENT_LIMIT", "100"))
+        self.recording_genre_enrichment_limit = int(os.getenv("SMP_RECORDING_GENRE_ENRICHMENT_LIMIT", "60"))
         self.genre_enrichment_timeout_seconds = int(os.getenv("SMP_GENRE_ENRICHMENT_TIMEOUT_SECONDS", "300"))
         self.release_year_enrichment_limit = int(os.getenv("SMP_RELEASE_YEAR_ENRICHMENT_LIMIT", "50"))
         self.takeout_max_upload_bytes = int(os.getenv("SMP_TAKEOUT_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))

@@ -46,6 +46,7 @@ from app.analysis.persona_report import build_persona_report_evidence, compose_p
 from app.analysis.spotify_adapter import SPOTIFY_LIMITATION_NOTE, spotify_raw_to_collection
 from app.config import settings
 from app.database.repository import JsonRepository
+from app.database.recording_catalog import RecordingCatalog
 from app.schemas.responses import (
     AuthStatusResponse,
     InsightsResponse,
@@ -89,6 +90,7 @@ from app.services.genre_enrichment_service import (
     seed_cache_from_source,
 )
 from app.services.ollama_service import OllamaService
+from app.services.recording_genre_service import MusicBrainzRecordingGenreService
 from app.services.refresh_jobs import RefreshAlreadyRunning, RefreshCoordinator
 from app.services.recommendations import generate_recommendations
 from app.services.spotify_service import SpotifyService
@@ -113,8 +115,14 @@ spotify = SpotifyService(settings)
 takeout_imports = TakeoutImportCoordinator(repo, settings.takeout_import_timeout_seconds)
 duration_enrichment = DurationEnrichmentCoordinator(repo, settings.duration_enrichment_timeout_seconds)
 genre_enrichment_service = MusicBrainzGenreService()
+recording_genre_enrichment_service = MusicBrainzRecordingGenreService()
 genre_enrichment = GenreEnrichmentCoordinator(repo, settings.genre_enrichment_timeout_seconds)
 refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
+
+
+def current_recording_catalog() -> RecordingCatalog:
+    """Follow the active repository so tests and alternate data roots stay isolated."""
+    return RecordingCatalog(repo.db_path)
 
 PERSONA_REPORT_SCHEMA_VERSION = 8
 PERSONA_REPORT_PROMPT_VERSION = 9
@@ -408,6 +416,11 @@ def normalise_with_duration_cache(
     applied_genres = apply_genre_cache(normalised, genre_cache)
     if applied_genres and warnings is not None:
         warnings.append(f"Reapplied durable genre metadata for {applied_genres} artist(s).")
+    catalog_stats = current_recording_catalog().sync_normalised(normalised)
+    if catalog_stats["recordingsLinked"] and warnings is not None:
+        warnings.append(
+            f"Linked {catalog_stats['recordingsLinked']} track(s) to reusable recording metadata without changing listening-event totals."
+        )
     return normalised
 
 
@@ -568,6 +581,7 @@ def rebuild_spotify_cache() -> dict[str, Any]:
     normalised = normalise_collection(collection)
     genre_cache, _ = seed_cache_from_source(durable_genre_cache(), normalised, provider="spotify")
     apply_genre_cache(normalised, genre_cache)
+    current_recording_catalog().sync_normalised(normalised, profile_source="spotify")
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
@@ -1099,6 +1113,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
     rebuilt_normalised = apply_release_year_cache(rebuilt_normalised, release_year_cache)
     apply_genre_cache(rebuilt_normalised, durable_genre_cache())
+    current_recording_catalog().sync_normalised(rebuilt_normalised)
     rebuilt_analysis = build_analysis(rebuilt_normalised)
     if "coverage" not in rebuilt_analysis:
         raise ValueError("duration rebuild produced an incomplete analysis")
@@ -1154,15 +1169,23 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
         return
 
     working_normalised = copy.deepcopy(cached_normalised)
+    recording_catalog = current_recording_catalog()
     cache = durable_genre_cache()
     apply_genre_cache(working_normalised, cache)
+    recording_catalog.sync_normalised(working_normalised)
     before_analysis = build_analysis(working_normalised)
     before_coverage = genre_coverage_payload(before_analysis)
     coordinator.stage(
         "resolving",
-        "Checking high-impact unclassified artists against MusicBrainz.",
+        "Checking high-impact unclassified recordings, then artists, against MusicBrainz.",
         provider="musicbrainz",
         beforeCoverage=before_coverage["genreCoveragePercent"],
+    )
+    recording_stats = recording_genre_enrichment_service.enrich(
+        working_normalised,
+        recording_catalog,
+        limit=settings.recording_genre_enrichment_limit,
+        deadline=deadline,
     )
     cache, stats = genre_enrichment_service.enrich(
         working_normalised,
@@ -1174,6 +1197,7 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
         # available and will be reapplied on the next rebuild.
         on_cache_update=lambda updated: repo.save_json("genre_metadata_cache", updated),
     )
+    stats.update(recording_stats)
 
     coordinator.stage(
         "rebuilding",
@@ -1188,6 +1212,7 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
         working_normalised = copy.deepcopy(latest_normalised)
     apply_genre_cache(working_normalised, cache)
+    recording_catalog.sync_normalised(working_normalised)
     rebuilt_analysis = build_analysis(working_normalised)
     after_coverage = genre_coverage_payload(rebuilt_analysis)
     repo.save_json_batch(
@@ -1239,6 +1264,20 @@ def genre_enrichment_status() -> GenreEnrichmentStatusResponse:
     if not job:
         return GenreEnrichmentStatusResponse(status="idle", progress=0, message="No genre enrichment is running.")
     return GenreEnrichmentStatusResponse.model_validate(job)
+
+
+@router.get("/data/genre-catalog")
+def genre_catalog_status() -> dict[str, Any]:
+    """Return local catalog diagnostics without exposing listening-history rows."""
+    return current_recording_catalog().summary()
+
+
+@router.get("/data/genre-catalog/{recording_id}")
+def genre_catalog_recording(recording_id: str) -> dict[str, Any]:
+    details = current_recording_catalog().details(recording_id)
+    if not details:
+        raise HTTPException(status_code=404, detail={"error": "Recording not found", "code": "recording_not_found"})
+    return details
 
 
 @router.get("/data/coverage")

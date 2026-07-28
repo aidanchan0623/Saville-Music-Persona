@@ -114,6 +114,12 @@ class GenreEnrichmentStatusResponse(BaseModel):
     appliedCached: int | None = None
     remainingCandidates: int | None = None
     unknownArtistCount: int | None = None
+    recordingAttempted: int | None = None
+    recordingMatched: int | None = None
+    recordingAppliedEventCount: int | None = None
+    recordingFailed: int | None = None
+    recordingRemainingCandidates: int | None = None
+    recordingProviderError: str | None = None
     beforeCoverage: float | None = None
     afterCoverage: float | None = None
     unknownEventCount: int | None = None
