@@ -53,9 +53,12 @@ class MusicBrainzGenreService:
 
         with httpx.Client(timeout=self.timeout_seconds) as client:
             for artist, plays in candidates[: max(0, limit)]:
-                self.check_deadline(deadline)
                 try:
+                    self.check_deadline(deadline)
                     record = self.resolve_artist(client, artist, deadline)
+                except TimeoutError:
+                    provider_error = "musicbrainz_time_limit_reached"
+                    break
                 except httpx.HTTPError:
                     failed += 1
                     provider_error = "musicbrainz_temporarily_unavailable"

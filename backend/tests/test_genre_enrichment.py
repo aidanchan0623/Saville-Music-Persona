@@ -151,6 +151,31 @@ def test_provider_failure_keeps_matches_completed_earlier_in_the_batch() -> None
     assert stats["failed"] == 1
     assert stats["providerError"] == "musicbrainz_temporarily_unavailable"
     assert cache["items"]["lonown"]["status"] == "matched"
+
+
+def test_time_limit_keeps_matches_completed_earlier_in_the_batch() -> None:
+    normalised = normalise_collection(
+        {"history": [
+            {"videoId": "one", "title": "One", "artists": [{"name": "LONOWN"}], "played": "2026-07-01"},
+            {"videoId": "two", "title": "Two", "artists": [{"name": "Second Artist"}], "played": "2026-07-01"},
+        ]},
+        today=date(2026, 7, 7),
+    )
+    service = FakeMusicBrainzGenreService([])
+    outcomes = iter([
+        {"artistName": "LONOWN", "status": "matched", "genres": ["electronic"], "providerArtistId": "lonown", "checkedAt": datetime.now(timezone.utc).isoformat()},
+        TimeoutError(),
+    ])
+    def resolve(_client: Any, _artist: str, _deadline: float) -> dict[str, Any]:
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+    service.resolve_artist = resolve  # type: ignore[method-assign]
+    cache, stats = service.enrich(normalised, None, limit=2, deadline=time.monotonic() + 10)
+    assert stats["matched"] == 1
+    assert stats["providerError"] == "musicbrainz_time_limit_reached"
+    assert cache["items"]["lonown"]["status"] == "matched"
     assert normalised["artist_metadata"]["LONOWN"]["genres"] == ["electronic"]
 
 

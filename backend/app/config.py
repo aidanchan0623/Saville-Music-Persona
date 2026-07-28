@@ -36,7 +36,7 @@ class Settings:
         self.duration_enrichment_limit = int(os.getenv("SMP_DURATION_ENRICHMENT_LIMIT", "1000"))
         self.youtube_data_api_key = os.getenv("YOUTUBE_DATA_API_KEY", "").strip()
         self.duration_enrichment_timeout_seconds = int(os.getenv("SMP_DURATION_ENRICHMENT_TIMEOUT_SECONDS", "300"))
-        self.genre_enrichment_limit = int(os.getenv("SMP_GENRE_ENRICHMENT_LIMIT", "100"))
+        self.genre_enrichment_limit = int(os.getenv("SMP_GENRE_ENRICHMENT_LIMIT", "40"))
         self.genre_enrichment_timeout_seconds = int(os.getenv("SMP_GENRE_ENRICHMENT_TIMEOUT_SECONDS", "300"))
         self.release_year_enrichment_limit = int(os.getenv("SMP_RELEASE_YEAR_ENRICHMENT_LIMIT", "50"))
         self.takeout_max_upload_bytes = int(os.getenv("SMP_TAKEOUT_MAX_UPLOAD_BYTES", str(256 * 1024 * 1024)))
