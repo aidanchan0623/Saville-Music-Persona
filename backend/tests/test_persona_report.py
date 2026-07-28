@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
@@ -9,11 +11,13 @@ from app.analysis.musical_age import AGE_CATEGORIES, age_category_catalogue
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.period_profile import ANALYTICS_VERSION, GENRE_MAP_VERSION
 from app.analysis.persona_report import (
+    build_persona_report_evidence,
     compose_persona_report,
     deterministic_roast_body,
     report_background_albums,
     report_genres,
 )
+from app.analysis.normalizer import normalise_collection
 from app.api.routes import (
     PERSONA_REPORT_PROMPT_VERSION,
     PERSONA_REPORT_SCHEMA_VERSION,
@@ -27,7 +31,7 @@ from app.schemas.responses import PersonaReportResponse
 from app.services.ollama_service import OllamaService
 
 
-def test_report_schema_is_v7_and_strict() -> None:
+def test_report_schema_is_v8_and_strict() -> None:
     payload = compose_persona_report(
         evidence(),
         fallback_language(),
@@ -40,11 +44,30 @@ def test_report_schema_is_v7_and_strict() -> None:
         cache_key="cache",
     )
     report = PersonaReportResponse.model_validate(payload)
-    assert report.schemaVersion == 7
+    assert report.schemaVersion == 8
     assert report.period.key == "rolling_year"
     assert report.musicalAge.age == 29
     with pytest.raises(ValidationError):
         PersonaReportResponse.model_validate({**payload, "legacyStory": {}})
+
+
+def test_persona_report_can_be_generated_for_current_month() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "july", "title": "July Song", "artists": [{"name": "Oasis"}], "played": "2026-07-05", "duration_seconds": 180},
+                {"videoId": "june", "title": "June Song", "artists": [{"name": "Oasis"}], "played": "2026-06-05", "duration_seconds": 180},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+
+    report = build_persona_report_evidence(normalised, "Asia/Kuala_Lumpur", "this_month")
+
+    assert report["period"]["key"] == "this_month"
+    assert report["topFive"]["songs"][0]["title"] == "July Song"
+    assert report["topFive"]["songs"][0]["detectedPlays"] == 1
+    assert report["musicalAge"]["sourcePeriod"]["key"] == "this_month"
 
 
 def test_report_explainers_are_public_catalogues_and_current_data_is_typed() -> None:

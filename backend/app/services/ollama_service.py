@@ -117,7 +117,7 @@ class OllamaService:
                     # the model warm removes repeated laptop-GPU load time and
                     # the smaller cap avoids waiting for unused tokens.
                     "keep_alive": "15m",
-                    "options": {"temperature": 0.15, "top_p": 0.8, "num_predict": 420},
+                    "options": {"temperature": 0.38, "top_p": 0.86, "num_predict": 420},
                 },
                 timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
             )
@@ -133,18 +133,20 @@ class OllamaService:
 
     def _build_persona_language_prompt(self, evidence: dict[str, Any], mode: str) -> str:
         return (
-            "You write playful, respectful music-persona prose from calculated evidence. Analytics already chose every fact. "
+            "You are a funny, affectionate friend roasting someone's music taste from calculated evidence. Analytics already chose every fact. "
             "Do not add or change artists, numbers, dates, ranks, genres, diagnoses, relationships, private-life claims, "
             "protected-trait insults, slurs, or scientific certainty. Do not include any digits. Only mention an artist if "
             "that exact artist appears in knownArtists. Return strict JSON with exactly one key named s, whose value is "
             "an array of exactly six strings in this order: openingDescription, personalityRoast, musicalAgeExplanation, "
             "finalRoastHeadline, finalRoastBody, finalLine. Do not use those names as keys. "
-            "openingDescription is at most sixty words. personalityRoast is one short sentence. musicalAgeExplanation is "
+            "Every field except musicalAgeExplanation should contain a clean joke, playful exaggeration, or vivid comparison; roast habits, never the person. "
+            "In serious mode use dry wit, in playful mode use warm teasing, and in roast mode be sharper but still kind. "
+            "openingDescription is at most fifty words. personalityRoast is one short punchline. musicalAgeExplanation is "
             "two short sentences about only the supplied release-year centre, dominant decade and confidence; it must not "
-            "mention habits, discovery, album depth, emotion, or personality. It does not restate the age. finalRoastHeadline is at most eighty characters. "
-            "finalRoastBody is seventy to one hundred thirty words and interprets personality, intensity, repetition, "
+            "mention habits, discovery, album depth, emotion, or personality. It does not restate the age. finalRoastHeadline is at most sixty-four characters. "
+            "finalRoastBody is seventy to one hundred fifteen words and interprets personality, intensity, repetition, "
             "discovery, reflective or cinematic taste, and favourite-artist patterns without listing metrics. finalLine is "
-            "at most one hundred characters. Tone mode: "
+            "at most ninety characters and lands as the final punchline. Tone mode: "
             f"{mode}. CALCULATED_EVIDENCE_JSON:{json.dumps(evidence, ensure_ascii=True, separators=(',', ':'))}"
         )
 
@@ -160,17 +162,17 @@ class OllamaService:
         fields = {
             key: self._clean_text(data.get(key), limit)
             for key, limit in {
-                "openingDescription": 430,
+                "openingDescription": 380,
                 "personalityRoast": 260,
                 "musicalAgeExplanation": 520,
-                "finalRoastHeadline": 80,
-                "finalRoastBody": 950,
-                "finalLine": 100,
+                "finalRoastHeadline": 64,
+                "finalRoastBody": 850,
+                "finalLine": 90,
             }.items()
         }
         if not all(fields.values()):
             raise ValueError("missing report language field")
-        if len(fields["openingDescription"].split()) > 60:
+        if len(fields["openingDescription"].split()) > 50:
             raise ValueError("opening description is too long")
         body_words = len(fields["finalRoastBody"].split())
         if body_words < 70:
@@ -180,7 +182,7 @@ class OllamaService:
             # summary for that one under-length field rather than throwing away
             # an otherwise valid local generation.
             fields["finalRoastBody"] = self.fallback_persona_language(evidence, "gemma_short_final_roast").finalRoastBody
-        elif body_words > 130:
+        elif body_words > 115:
             raise ValueError("final roast length is outside the accepted range")
         # The report renders Musical Age from deterministic data below.  A
         # supplied year/decade may appear in the discarded age prose, but no
@@ -221,18 +223,18 @@ class OllamaService:
             "More catalogue metadata is needed before the app should draw a conclusion."
         )
         return PersonaReportLanguage(
-            openingDescription=f"{title} turns familiar songs into places worth revisiting. The clearest signals are {signal_line}.",
-            personalityRoast="You do not replay songs; you renew their lease and let them rearrange the furniture.",
+            openingDescription=f"{title} turns familiar songs into a gated community. The bouncer checks for {signal_line}, and the repeat button owns the deed.",
+            personalityRoast="Your repeat button has better job security than most executives.",
             musicalAgeExplanation=age_explanation,
-            finalRoastHeadline="Your soundtrack has permanent residents",
+            finalRoastHeadline="Your shuffle button is purely decorative",
             finalRoastBody=(
-                "Your music taste treats atmosphere like a basic utility and the repeat button like a trusted advisor. "
-                "Intensity is welcome, but only when it arrives with melody, drama, and enough emotional architecture to hold up under another listen. "
-                "Discovery gets invited in, shown around politely, and then asked whether it can match the standards set by the established favourites. "
-                "There is a reflective, cinematic streak running through the whole profile, plus a suspicious talent for making an ordinary commute feel like the final scene of a film. "
-                "You call it curation; your most-played songs call it a long-term tenancy agreement."
+                "Your music taste treats atmosphere like a basic utility and the repeat button like a trusted legal adviser. "
+                "Intensity gets through the door only when it brings melody, drama, and enough emotional architecture to survive another inspection. "
+                "Discovery is invited in, offered one drink, and quietly compared with favourites that already have permanent parking spaces. "
+                "A reflective, cinematic streak runs through the profile, giving ordinary errands the production budget of a finale. "
+                "You call it curation; your most-played songs call it a rent-controlled apartment with no move-out date."
             ),
-            finalLine="Keep the soundtrack dramatic and the evidence local.",
+            finalLine="The playlist is evolving; the favourites have simply filed an injunction.",
             generationSource="fallback",
             fallbackReason=reason,
             durationMs=self._duration_ms(started) if started is not None else None,

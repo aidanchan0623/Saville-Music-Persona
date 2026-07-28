@@ -531,7 +531,7 @@ function AlbumCard({ album, selected, onViewSongs, source }: { album: TopAlbumIt
   return (
     <GlowPanel as="article" variant="row" selected={selected} className="p-4 transition" data-testid="top-album-card">
       <div className="grid gap-4 sm:grid-cols-[5rem_1fr] lg:grid-cols-[5rem_1fr_auto]">
-        <AlbumCover albumImageUrl={album.album_image_url ?? album.thumbnail} albumTitle={album.album} size="md" fallbackLabel={rank} fit="cover" />
+        <AlbumCover albumImageUrl={album.album_image_url ?? album.thumbnail} fallbackImageUrl={album.track_image_url} albumTitle={album.album} size="md" fallbackLabel={rank} fit="cover" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xl font-black text-red-200">{rank}</span>
@@ -582,7 +582,7 @@ function AlbumDrilldownPanel({ album, response, loading, onClose }: { album: Top
     <DrilldownShell
       title={`Songs from ${album.album} - ${response?.period_label ?? "Selected Period"}`}
       subtitle={album.artist}
-      visual={<AlbumCover albumImageUrl={album.album_image_url ?? album.thumbnail} albumTitle={album.album} size="lg" fallbackLabel={initials(album.album)} fit="cover" />}
+      visual={<AlbumCover albumImageUrl={album.album_image_url ?? album.thumbnail} fallbackImageUrl={album.track_image_url} albumTitle={album.album} size="lg" fallbackLabel={initials(album.album)} fit="cover" />}
       loading={loading}
       onClose={onClose}
       emptyMessage="Album data is unavailable for this period."

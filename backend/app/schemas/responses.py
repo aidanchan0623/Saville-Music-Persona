@@ -326,7 +326,7 @@ class InsightsResponse(BaseModel):
 class ReportRequest(BaseModel):
     mode: Literal["serious", "playful", "roast"] = "serious"
     source: Literal["youtube", "spotify"] = "youtube"
-    period: Literal["rolling_year"] = "rolling_year"
+    period: Literal["rolling_year", "this_month"] = "rolling_year"
 
 
 class StrictReportModel(BaseModel):
@@ -451,7 +451,7 @@ class ReportExplainers(StrictReportModel):
 
 
 class PersonaReportResponse(StrictReportModel):
-    schemaVersion: Literal[7] = 7
+    schemaVersion: Literal[8] = 8
     source: Literal["youtube", "spotify"]
     mode: Literal["serious", "playful", "roast"]
     period: ReportPeriod

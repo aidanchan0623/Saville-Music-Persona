@@ -166,9 +166,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ period, month, mode, source }),
     }),
-  latestReport: (source: MusicSource = "youtube") => request<PersonaReport>(`/report/latest?${paramsWithSource(source).toString()}`),
-  generateReport: (mode: "serious" | "playful" | "roast", source: MusicSource = "youtube") =>
-    request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source, period: "rolling_year" }) }),
+  latestReport: (source: MusicSource = "youtube", period: "rolling_year" | "this_month" = "rolling_year") =>
+    request<PersonaReport>(`/report/latest?${paramsWithSource(source, { period }).toString()}`),
+  generateReport: (mode: "serious" | "playful" | "roast", source: MusicSource = "youtube", period: "rolling_year" | "this_month" = "rolling_year") =>
+    request<PersonaReport>("/report/generate", { method: "POST", body: JSON.stringify({ mode, source, period }) }),
   recommendations: () => analyticsRequest<{ items: Recommendation[] }>("/v1/recommendations").then((data) => data.items),
   generateRecommendations: () => request<Recommendation[]>("/recommendations/generate", { method: "POST", body: "{}" }),
   createPlaylist: (title: string) =>

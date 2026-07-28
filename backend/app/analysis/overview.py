@@ -28,6 +28,7 @@ def build_overview_response(
     generation_source: str = "fallback",
     profile: dict[str, Any] | None = None,
     character: dict[str, Any] | None = None,
+    musical_age_period: str | None = None,
 ) -> dict[str, Any]:
     profile = profile or build_period_profile(normalised, period, month, timezone_name, today)
     selected_spec = profile["spec"]
@@ -38,7 +39,8 @@ def build_overview_response(
 
     musical_age = calculate_musical_age(
         normalised,
-        MUSICAL_AGE_SOURCE_PERIOD,
+        musical_age_period or MUSICAL_AGE_SOURCE_PERIOD,
+        month if (musical_age_period or MUSICAL_AGE_SOURCE_PERIOD) == "month" else None,
         timezone_name=selected_spec["timezone"],
         today=selected_spec["today"],
     )

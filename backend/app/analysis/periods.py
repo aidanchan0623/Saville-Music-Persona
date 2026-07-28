@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import calendar
+import re
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from functools import lru_cache
@@ -18,6 +20,7 @@ from app.analysis.media import (
 )
 from app.analysis.normalizer import UNKNOWN_ARTIST
 from app.analysis.taste_model import build_taste_model, profile_for_artist
+from app.data.artist_genres import canonical_artist_key
 from app.analysis.thumbnails import best_thumbnail_url
 
 
@@ -511,8 +514,8 @@ def artist_metadata_for(
 ) -> dict[str, Any]:
     if artist in artist_metadata:
         return artist_metadata[artist]
-    lookup = normalised_lookup if normalised_lookup is not None else {normalise_match_text(name): meta for name, meta in artist_metadata.items()}
-    return lookup.get(normalise_match_text(artist), {})
+    lookup = normalised_lookup if normalised_lookup is not None else {canonical_artist_key(name): meta for name, meta in artist_metadata.items()}
+    return lookup.get(canonical_artist_key(artist), {})
 
 
 def artist_names_for(track: dict[str, Any], event: dict[str, Any] | None = None) -> list[str]:
@@ -561,14 +564,35 @@ def album_group_for_track(track: dict[str, Any], event: dict[str, Any] | None = 
 
 
 def song_group_key(track: dict[str, Any], event: dict[str, Any]) -> str:
-    """Group exact song identities across official video/audio catalogue IDs."""
+    """Group the same recording across catalogue/video presentation variants."""
     title = str(track.get("title") or event.get("title") or "").strip()
     artist = primary_artist_for(track, event)
-    title_key = normalise_match_text(title)
-    artist_key = normalise_match_text(artist)
+    title_key = canonical_song_title(title)
+    artist_key = canonical_artist_key(artist)
     if title_key and artist_key:
         return f"song:{title_key}::artist:{artist_key}"
     return f"track:{event.get('track_id') or title_key or 'unknown'}"
+
+
+PRESENTATION_SUFFIX = re.compile(
+    r"(?:"
+    r"\s*[\(\[\u3010]\s*(?:(?:official\s+)?(?:music\s+)?video|official\s+audio|audio|lyrics?|lyric\s+video|visuali[sz]er|mv|m/v)\s*[\)\]\u3011]"
+    r"|\s*[-|\uFF5C]\s*(?:(?:official\s+)?(?:music\s+)?video|official\s+audio|audio|lyrics?|lyric\s+video|visuali[sz]er|mv|m/v)"
+    r")\s*$",
+    re.IGNORECASE,
+)
+
+
+def display_song_title(value: Any) -> str:
+    title = unicodedata.normalize("NFKC", str(value or "")).strip()
+    cleaned = PRESENTATION_SUFFIX.sub("", title).strip(" -|\uFF5C")
+    return cleaned or title
+
+
+def canonical_song_title(value: Any) -> str:
+    title = display_song_title(value).casefold()
+    title = re.sub(r"[^\w\s]", " ", title, flags=re.UNICODE)
+    return " ".join(title.split())
 
 
 def ranking_track_quality(track: dict[str, Any]) -> tuple[int, int, int, int]:
@@ -586,6 +610,8 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     seconds: Counter[str] = Counter()
     usable_counts: Counter[str] = Counter()
     unique_tracks: dict[str, set[str]] = defaultdict(set)
+    display_names: dict[str, Counter[str]] = defaultdict(Counter)
+    display_titles: dict[str, Counter[str]] = defaultdict(Counter)
     top_song: dict[str, Counter[str]] = defaultdict(Counter)
     last_played: dict[str, str] = {}
     active_days: dict[str, set[date]] = defaultdict(set)
@@ -595,7 +621,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         track = track_lookup.get(event.get("track_id"), {})
         keys = [song_group_key(track, event)]
         if kind == "artists":
-            keys = [primary_artist_for(track, event)]
+            keys = [canonical_artist_key(primary_artist_for(track, event))]
         weight = 1
         sec = usable_duration_seconds(event) or 0
         day = event_local_date(event)
@@ -611,7 +637,9 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             seconds[key] += sec * weight
             if sec:
                 usable_counts[key] += weight
-            unique_tracks[key].add(str(event.get("track_id")))
+            unique_tracks[key].add(song_group_key(track, event))
+            display_names[key][artist] += 1
+            display_titles[key][display_song_title(title)] += 1
             if day:
                 active_days[key].add(day)
             top_song[key][f"{title} - {artist}"] += 1
@@ -621,10 +649,10 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     ranked = sorted(counts, key=lambda key: (-counts[key], -len(active_days[key]), str(representative_tracks.get(key, {}).get("title") or track_lookup.get(key, {}).get("title") or key).casefold(), str(key).casefold()))
     result = []
     metadata = artist_metadata or {}
-    normalised_metadata_lookup = {normalise_match_text(name): meta for name, meta in metadata.items()} if kind == "artists" and metadata else {}
+    normalised_metadata_lookup = {canonical_artist_key(name): meta for name, meta in metadata.items()} if kind == "artists" and metadata else {}
     for key in ranked:
         if kind == "artists":
-            artist = key
+            artist = display_names[key].most_common(1)[0][0] if display_names[key] else key
             meta_track = None
             title = None
             artist_meta = artist_metadata_for(artist, metadata, normalised_metadata_lookup)
@@ -646,7 +674,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         else:
             meta_track = representative_tracks.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
-            title = str(meta_track.get("title") or "Unknown track")
+            title = display_titles[key].most_common(1)[0][0] if display_titles[key] else str(meta_track.get("title") or "Unknown track")
             track_art = resolve_track_image_url(meta_track)
             album_art = resolve_album_image_url(meta_track)
             image = album_art or track_art
@@ -711,11 +739,11 @@ def artist_songs_payload(
     spec = resolve_period(normalised, period, month, timezone_name, today)
     events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
     track_lookup = tracks_by_id(normalised)
-    target = normalise_match_text(artist)
+    target = canonical_artist_key(artist)
     matched = [
         event
         for event in events
-        if target and target in {normalise_match_text(name) for name in artist_names_for(track_lookup.get(event.get("track_id"), {}), event)}
+        if target and target in {canonical_artist_key(name) for name in artist_names_for(track_lookup.get(event.get("track_id"), {}), event)}
     ]
     ranked = rank_items(matched, track_lookup, "tracks")
     first_played = first_played_by_track(matched)
@@ -731,7 +759,7 @@ def artist_songs_payload(
         "period_label": spec["label"],
         "period": serialise_spec(spec),
         "total_plays": len(matched),
-        "unique_songs": len({event.get("track_id") for event in matched if event.get("track_id")}),
+        "unique_songs": len({song_group_key(track_lookup.get(event.get("track_id"), {}), event) for event in matched}),
         "detected_minutes": round_minutes(seconds_for_events(matched)),
         "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds_for_events(matched))),
         "duration_coverage_percent": duration_quality(matched)["duration_coverage_percent"],
@@ -805,11 +833,10 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
         stat["seconds"] += sec
         if sec:
             stat["usable"] += 1
-        track_id = str(event.get("track_id") or "")
-        if track_id:
-            stat["tracks"].add(track_id)
-            stat["song_counts"][track_id] += 1
-            stat["song_titles"][track_id] = str(track.get("title") or event.get("title") or "Unknown track")
+        song_key = song_group_key(track, event)
+        stat["tracks"].add(song_key)
+        stat["song_counts"][song_key] += 1
+        stat["song_titles"][song_key] = display_song_title(track.get("title") or event.get("title") or "Unknown track")
         played = str(event.get("played_at") or "")
         if played:
             stat["last_played"] = max(stat["last_played"], played)
@@ -834,6 +861,7 @@ def rank_albums(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
                 "thumbnail": display_thumbnail,
                 "album_image_url": item.get("album_image_url"),
                 "album_image_source": item.get("album_image_source"),
+                "track_image_url": item.get("track_art_fallback"),
                 "plays": play_count,
                 "detected_minutes": round_minutes(item["seconds"]),
                 "detected_minutes_formatted": format_detected_minutes(round_minutes(item["seconds"])),
@@ -904,7 +932,7 @@ def album_songs_payload(
         "period_label": spec["label"],
         "period": serialise_spec(spec),
         "total_plays": len(matched),
-        "unique_songs": len({event.get("track_id") for event in matched if event.get("track_id")}),
+        "unique_songs": len({song_group_key(track_lookup.get(event.get("track_id"), {}), event) for event in matched}),
         "detected_minutes": round_minutes(seconds_for_events(matched)),
         "detected_minutes_formatted": format_detected_minutes(round_minutes(seconds_for_events(matched))),
         "duration_coverage_percent": duration_quality(matched)["duration_coverage_percent"],

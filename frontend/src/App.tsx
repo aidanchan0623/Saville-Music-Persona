@@ -226,11 +226,11 @@ export default function App() {
     }
   };
 
-  const generateReport = async (): Promise<{ ok: boolean; message: string }> => {
+  const generateReport = async (period: "rolling_year" | "this_month" = "rolling_year"): Promise<{ ok: boolean; message: string }> => {
     setBusy(true);
     setMessage("Asking local Gemma to rewrite the deterministic Music Character profile...");
     try {
-      const nextReport = await api.generateReport("serious", source);
+      const nextReport = await api.generateReport("roast", source, period);
       setReport(nextReport);
       navigate("report");
       void loadStatus().catch(() => undefined);
@@ -557,7 +557,7 @@ export default function App() {
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
-          <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} />
+          {page !== "report" ? <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} /> : null}
           {message && page !== "report" ? (
             <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-mist">
               <span>{message}</span>

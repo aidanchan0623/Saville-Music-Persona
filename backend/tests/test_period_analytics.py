@@ -148,6 +148,48 @@ def test_duration_cache_reuse_marks_cached_tracks() -> None:
     assert duration_quality(cached["play_events"])["duration_coverage_percent"] == 100.0
 
 
+def test_exact_video_music_proof_promotes_quarantined_takeout_without_guessing() -> None:
+    normalised = normalise_collection(
+        {
+            "source": "google_takeout",
+            "history": [
+                {
+                    "videoId": "verified-music",
+                    "title": "Artist - Verified Song (Official Video)",
+                    "played": "2026-07-02",
+                    "source": "google_takeout",
+                    "takeoutMusicEvidence": "unverified_youtube_history",
+                    "sourceFormat": "html",
+                    "duration_seconds": 210,
+                }
+            ],
+        },
+        today=date(2026, 7, 7),
+    )
+    assert normalised["play_events"] == []
+
+    rebuilt = annotate_normalised_durations(
+        normalised,
+        {
+            "verified-music": {
+                "duration_seconds": 210,
+                "duration_source": "ytmusicapi.public.get_song",
+                "duration_confidence": "high",
+                "music_classification": "confirmed_music",
+                "music_classification_source": "ytmusicapi.public.get_song",
+                "media_title": "Verified Song",
+                "media_author": "Artist - Topic",
+                "identity_confidence": "high",
+            }
+        },
+    )
+
+    assert len(rebuilt["play_events"]) == 1
+    assert rebuilt["play_events"][0]["title"] == "Verified Song"
+    assert rebuilt["play_events"][0]["artist"] == "Artist"
+    assert rebuilt["excluded_play_events"] == []
+
+
 def test_long_videos_and_podcasts_are_not_counted_as_music_minutes() -> None:
     normalised = normalise_collection(
         {
@@ -473,6 +515,60 @@ def test_top_songs_merge_exact_title_artist_across_video_ids() -> None:
 
     assert [(item["title"], item["play_count"]) for item in ranked] == [("Same Song", 2), ("Same Song (Live)", 1)]
     assert ranked[0]["track_id"] in {"video:official-video", "video:official-audio"}
+
+
+def test_top_songs_strip_presentation_labels_but_keep_real_versions_separate() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "video", "title": "Same Song (Official Music Video)", "artists": [{"name": "Artist"}], "played": "2026-07-01"},
+                {"videoId": "lyrics", "title": "Same Song - Lyrics", "artists": [{"name": "Artist"}], "played": "2026-07-02"},
+                {"videoId": "live", "title": "Same Song (Live)", "artists": [{"name": "Artist"}], "played": "2026-07-03"},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+
+    ranked = rank_items(normalised["play_events"], tracks_by_id(normalised), "tracks")
+
+    assert [(item["title"], item["play_count"]) for item in ranked] == [("Same Song", 2), ("Same Song (Live)", 1)]
+
+
+def test_top_artists_merge_safe_aliases_and_count_canonical_unique_songs() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "one-video", "title": "One (Official Video)", "artists": [{"name": "Bring Me The Horizon"}], "played": "2026-07-01"},
+                {"videoId": "one-audio", "title": "One", "artists": [{"name": "BMTH"}], "played": "2026-07-02"},
+                {"videoId": "two", "title": "Two", "artists": [{"name": "Bring Me The Horizon"}], "played": "2026-07-03"},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+
+    ranked = rank_items(normalised["play_events"], tracks_by_id(normalised), "artists")
+
+    assert len(ranked) == 1
+    assert ranked[0]["artist"] == "Bring Me The Horizon"
+    assert ranked[0]["play_count"] == 3
+    assert ranked[0]["unique_songs"] == 2
+
+
+def test_top_artists_merge_known_bilingual_display_names() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "one", "title": "Song One", "artists": [{"name": "Jay Chou"}], "played": "2026-07-01"},
+                {"videoId": "two", "title": "Song Two", "artists": [{"name": "周杰倫 Jay Chou"}], "played": "2026-07-02"},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+
+    ranked = rank_items(normalised["play_events"], tracks_by_id(normalised), "artists")
+
+    assert len(ranked) == 1
+    assert ranked[0]["play_count"] == 2
 
 
 def test_duration_milliseconds_are_normalised_once() -> None:

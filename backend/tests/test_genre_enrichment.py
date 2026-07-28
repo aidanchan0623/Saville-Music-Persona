@@ -235,6 +235,30 @@ def test_regional_musicbrainz_tags_are_kept_and_count_as_classified() -> None:
     assert profile_for_artist("Regional Artist", ["k-pop", "mandopop"])["canonical_genres"]
 
 
+def test_musicbrainz_tags_fill_genres_when_the_genre_list_is_empty() -> None:
+    normalised = unknown_profile("Tag Only Artist", 2)
+    service = FakeMusicBrainzGenreService(
+        [
+            {"artists": [{"id": "tag-only", "name": "Tag Only Artist", "score": 100}]},
+            {"genres": [], "tags": [{"name": "japanese pop", "count": 12}, {"name": "rock", "count": 6}]},
+        ]
+    )
+
+    _, stats = service.enrich(normalised, None, limit=1, deadline=time.monotonic() + 10)
+
+    assert stats["matched"] == 1
+    assert normalised["artist_metadata"]["Tag Only Artist"]["genres"] == ["j-pop", "rock"]
+
+
+def test_v4_negative_cache_is_rechecked_for_new_musicbrainz_tag_support() -> None:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    migrated = ensure_genre_cache(
+        {"schemaVersion": 4, "items": {"tag artist": {"artistName": "Tag Artist", "status": "no_supported_genres", "genres": [], "checkedAt": checked_at}}}
+    )
+
+    assert migrated["items"]["tag artist"]["checkedAt"] is None
+
+
 def test_v3_musicbrainz_cache_migrates_without_losing_matches() -> None:
     checked_at = datetime.now(timezone.utc).isoformat()
     legacy = {

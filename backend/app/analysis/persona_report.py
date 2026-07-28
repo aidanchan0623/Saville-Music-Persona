@@ -13,20 +13,31 @@ from app.analysis.periods import albums_payload, listening_minutes_payload, tast
 REPORT_PERIOD = "rolling_year"
 
 
-def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str) -> dict[str, Any]:
+def build_persona_report_evidence(
+    normalised: dict[str, Any],
+    timezone_name: str,
+    period_key: str = REPORT_PERIOD,
+) -> dict[str, Any]:
     """Build every report fact from the same canonical period services."""
 
     # Build the expensive period analytics once.  Before this shared profile,
     # one report independently rebuilt the same 365-day taste and ranking data
     # through Overview, Character, Taste DNA, and Top endpoints.
-    profile = build_period_profile(normalised, REPORT_PERIOD, timezone_name=timezone_name)
-    taste = taste_dna_payload(normalised, REPORT_PERIOD, None, timezone_name, profile=profile)
-    character = character_payload(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, taste=taste)
-    overview = build_overview_response(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, character=character)
+    profile = build_period_profile(normalised, period_key, timezone_name=timezone_name)
+    taste = taste_dna_payload(normalised, period_key, None, timezone_name, profile=profile)
+    character = character_payload(normalised, period_key, timezone_name=timezone_name, profile=profile, taste=taste)
+    overview = build_overview_response(
+        normalised,
+        period_key,
+        timezone_name=timezone_name,
+        profile=profile,
+        character=character,
+        musical_age_period=period_key,
+    )
     listening = profile["minutes"]
     tracks = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_tracks"], 1)]}
     artists = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_artists"], 1)]}
-    albums = albums_payload(normalised, REPORT_PERIOD, None, timezone_name, limit=20, profile=profile)
+    albums = albums_payload(normalised, period_key, None, timezone_name, limit=20, profile=profile)
     period = overview["selectedPeriod"]
     primary = character["primary"]
     musical_age = overview["musicalAge"]
@@ -117,7 +128,7 @@ def compose_persona_report(
     personality = evidence["personality"]
     musical_age = evidence["musicalAge"]
     return {
-        "schemaVersion": 7,
+        "schemaVersion": 8,
         "source": source,
         "mode": mode,
         "period": evidence["period"],

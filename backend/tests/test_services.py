@@ -58,6 +58,53 @@ def test_duration_enrichment_uses_public_client_and_retries_legacy_negative_cach
     assert cache["played-often"]["status"] == "resolved"  # type: ignore[index]
 
 
+def test_duration_enrichment_verifies_unknown_exact_video_as_music() -> None:
+    fake = FakeYTMusic(
+        song_pages={
+            "unknown-video": {
+                "videoDetails": {
+                    "lengthSeconds": "201",
+                    "musicVideoType": "MUSIC_VIDEO_TYPE_OMV",
+                    "title": "Verified Song",
+                    "author": "Verified Artist - Topic",
+                }
+            }
+        }
+    )
+    service = fake_service(fake)
+    cache: dict[str, object] = {}
+    normalised = {
+        "tracks": [{"video_id": "unknown-video", "duration_seconds": 201}],
+        "play_events": [],
+        "excluded_play_events": [{"video_id": "unknown-video", "music_classification": "unknown"}] * 3,
+    }
+
+    stats = service.enrich_duration_cache(normalised, cache, limit=10)
+
+    assert stats["added"] == 1
+    assert cache["unknown-video"]["music_classification"] == "confirmed_music"  # type: ignore[index]
+    assert cache["unknown-video"]["media_author"] == "Verified Artist - Topic"  # type: ignore[index]
+
+
+def test_duration_enrichment_respects_unknown_identity_retry_window() -> None:
+    fake = FakeYTMusic(song_pages={})
+    service = fake_service(fake)
+    cache: dict[str, object] = {}
+    normalised = {
+        "tracks": [{"video_id": "unavailable-video", "duration_seconds": 201}],
+        "play_events": [],
+        "excluded_play_events": [{"video_id": "unavailable-video", "music_classification": "unknown"}],
+    }
+
+    first = service.enrich_duration_cache(normalised, cache, limit=10)
+    second = service.enrich_duration_cache(normalised, cache, limit=10)
+
+    assert first["attempted"] == 1
+    assert second["attempted"] == 0
+    assert fake.get_song_calls == ["unavailable-video"]
+    assert cache["unavailable-video"]["music_classification_next_retry_at"]  # type: ignore[index]
+
+
 def test_duration_enrichment_batches_exact_video_ids_through_official_api(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings()
     settings.youtube_data_api_key = "local-test-key"

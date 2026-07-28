@@ -116,9 +116,10 @@ genre_enrichment_service = MusicBrainzGenreService()
 genre_enrichment = GenreEnrichmentCoordinator(repo, settings.genre_enrichment_timeout_seconds)
 refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
 
-PERSONA_REPORT_SCHEMA_VERSION = 7
-PERSONA_REPORT_PROMPT_VERSION = 8
+PERSONA_REPORT_SCHEMA_VERSION = 8
+PERSONA_REPORT_PROMPT_VERSION = 9
 PERSONA_REPORT_PERIOD = "rolling_year"
+PERSONA_REPORT_PERIODS = {"rolling_year", "this_month"}
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
 INSIGHTS_RESPONSE_CACHE_LIMIT = 24
@@ -147,10 +148,10 @@ def persona_report_fingerprint(profile: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:20]
 
 
-def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str) -> str:
+def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str, period: str = PERSONA_REPORT_PERIOD) -> str:
     model_fingerprint = hashlib.sha256(settings.ollama_model.encode("utf-8")).hexdigest()[:8]
     return (
-        f"persona_report:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}:"
+        f"persona_report:{source}:{period}:v{PERSONA_REPORT_SCHEMA_VERSION}:"
         f"analytics{ANALYTICS_VERSION}:genre{GENRE_MAP_VERSION}:"
         f"calc{MUSICAL_AGE_CALCULATION_VERSION}:classifier{MUSIC_CHARACTER_CLASSIFIER_VERSION}:"
         f"prompt{PERSONA_REPORT_PROMPT_VERSION}:"
@@ -158,15 +159,15 @@ def persona_report_cache_key(source: str, mode: str, analytics_fingerprint: str)
     )
 
 
-def persona_report_pointer_key(source: str) -> str:
-    return f"persona_report_pointer:{source}:{PERSONA_REPORT_PERIOD}:v{PERSONA_REPORT_SCHEMA_VERSION}"
+def persona_report_pointer_key(source: str, period: str = PERSONA_REPORT_PERIOD) -> str:
+    return f"persona_report_pointer:{source}:{period}:v{PERSONA_REPORT_SCHEMA_VERSION}"
 
 
-def persona_report_pointer_is_current(pointer: Any, source: str, normalised_updated_at: str | None) -> bool:
+def persona_report_pointer_is_current(pointer: Any, source: str, normalised_updated_at: str | None, period: str = PERSONA_REPORT_PERIOD) -> bool:
     return (
         isinstance(pointer, dict)
         and pointer.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
-        and pointer.get("period") == PERSONA_REPORT_PERIOD
+        and pointer.get("period") == period
         and pointer.get("source") == source
         and pointer.get("promptVersion") == PERSONA_REPORT_PROMPT_VERSION
         and pointer.get("analyticsVersion") == ANALYTICS_VERSION
@@ -179,14 +180,14 @@ def persona_report_pointer_is_current(pointer: Any, source: str, normalised_upda
     )
 
 
-def save_persona_report_pointer(source: str, mode: str, analytics_fingerprint: str, report_cache_key: str, generated_at: str) -> None:
+def save_persona_report_pointer(source: str, mode: str, analytics_fingerprint: str, report_cache_key: str, generated_at: str, period: str = PERSONA_REPORT_PERIOD) -> None:
     repo.save_json(
-        persona_report_pointer_key(source),
+        persona_report_pointer_key(source, period),
         {
             "cacheKey": report_cache_key,
             "source": source,
             "mode": mode,
-            "period": PERSONA_REPORT_PERIOD,
+            "period": period,
             "schemaVersion": PERSONA_REPORT_SCHEMA_VERSION,
             "promptVersion": PERSONA_REPORT_PROMPT_VERSION,
             "analyticsVersion": ANALYTICS_VERSION,
@@ -1603,22 +1604,23 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
     return ollama.generate_character_rewrite(profile, mode)
 
 
-def report_profile_with_characters(source: str | None = "youtube") -> dict[str, Any]:
+def report_profile_with_characters(source: str | None = "youtube", period: str = PERSONA_REPORT_PERIOD) -> dict[str, Any]:
     resolved_source = normalise_source(source)
     normalised = require_cache("normalised") if resolved_source == "youtube" else require_source_cache("normalised", resolved_source)
-    return build_persona_report_evidence(normalised, settings.local_timezone)
+    return build_persona_report_evidence(normalised, settings.local_timezone, period)
 
 
 @router.post("/report/generate", response_model=PersonaReportResponse)
 def generate_report(request: ReportRequest) -> PersonaReportResponse:
     source = normalise_source(request.source)
+    period = request.period
     # A repeated click should never rebuild analytics and wake Gemma for the
     # exact same local dataset.  The pointer is invalidated whenever data that
     # changes report facts is persisted.
-    pointer = repo.load_json(persona_report_pointer_key(source))
+    pointer = repo.load_json(persona_report_pointer_key(source, period))
     normalised_updated_at = repo.updated_at(cache_key("normalised", source))
     if (
-        persona_report_pointer_is_current(pointer, source, normalised_updated_at)
+        persona_report_pointer_is_current(pointer, source, normalised_updated_at, period)
         and isinstance(pointer, dict)
         and pointer.get("mode") == request.mode
     ):
@@ -1629,9 +1631,9 @@ def generate_report(request: ReportRequest) -> PersonaReportResponse:
             and (cached.get("generation") or {}).get("source") in {"gemma", "cache-gemma"}
         ):
             return PersonaReportResponse.model_validate(cached)
-    profile = report_profile_with_characters(source)
+    profile = report_profile_with_characters(source, period)
     analytics_fingerprint = persona_report_fingerprint(profile)
-    report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint)
+    report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint, period)
     language = ollama.generate_persona_language(profile["languageEvidence"], request.mode).model_dump()
     generated_at = datetime.now(timezone.utc).isoformat()
     payload = compose_persona_report(
@@ -1647,16 +1649,18 @@ def generate_report(request: ReportRequest) -> PersonaReportResponse:
     )
     validated = PersonaReportResponse.model_validate(payload)
     repo.save_json(report_cache_key, payload)
-    save_persona_report_pointer(source, request.mode, analytics_fingerprint, report_cache_key, generated_at)
+    save_persona_report_pointer(source, request.mode, analytics_fingerprint, report_cache_key, generated_at, period)
     return validated
 
 
 @router.get("/report/latest", response_model=PersonaReportResponse)
-def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
+def latest_report(source: str = Query("youtube"), period: str = Query(PERSONA_REPORT_PERIOD)) -> PersonaReportResponse:
     resolved_source = normalise_source(source)
-    pointer = repo.load_json(persona_report_pointer_key(resolved_source))
+    if period not in PERSONA_REPORT_PERIODS:
+        raise HTTPException(status_code=400, detail={"error": "Unknown report period", "detail": "Use rolling_year or this_month.", "code": "unknown_report_period"})
+    pointer = repo.load_json(persona_report_pointer_key(resolved_source, period))
     normalised_updated_at = repo.updated_at(cache_key("normalised", resolved_source))
-    if persona_report_pointer_is_current(pointer, resolved_source, normalised_updated_at):
+    if persona_report_pointer_is_current(pointer, resolved_source, normalised_updated_at, period):
         cached = repo.load_json(str(pointer["cacheKey"]))
         if isinstance(cached, dict) and cached.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION:
             payload = dict(cached)
@@ -1666,12 +1670,12 @@ def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
                 payload["summary"] = {**payload["summary"], "generationSource": "cache-gemma"}
             return PersonaReportResponse.model_validate(payload)
 
-    profile = report_profile_with_characters(resolved_source)
+    profile = report_profile_with_characters(resolved_source, period)
     analytics_fingerprint = persona_report_fingerprint(profile)
-    mode = str(pointer.get("mode") or "serious") if isinstance(pointer, dict) else "serious"
+    mode = str(pointer.get("mode") or "roast") if isinstance(pointer, dict) else "roast"
     language = ollama.fallback_persona_language(profile["languageEvidence"], "no_matching_gemma_cache").model_dump()
     generated_at = datetime.now(timezone.utc).isoformat()
-    report_cache_key = persona_report_cache_key(resolved_source, mode, analytics_fingerprint)
+    report_cache_key = persona_report_cache_key(resolved_source, mode, analytics_fingerprint, period)
     fallback_payload = compose_persona_report(
         profile,
         language,
@@ -1685,15 +1689,17 @@ def latest_report(source: str = Query("youtube")) -> PersonaReportResponse:
     )
     validated = PersonaReportResponse.model_validate(fallback_payload)
     repo.save_json(report_cache_key, fallback_payload)
-    save_persona_report_pointer(resolved_source, mode, analytics_fingerprint, report_cache_key, generated_at)
+    save_persona_report_pointer(resolved_source, mode, analytics_fingerprint, report_cache_key, generated_at, period)
     return validated
 
 
 @router.get("/v1/report/latest", response_model=AnalyticsEnvelope[PersonaReportResponse])
-def contract_latest_report(source: str = Query("youtube")) -> AnalyticsEnvelope[PersonaReportResponse]:
+def contract_latest_report(source: str = Query("youtube"), period: str = Query(PERSONA_REPORT_PERIOD)) -> AnalyticsEnvelope[PersonaReportResponse]:
     resolved_source = normalise_source(source)
-    profile, normalised = canonical_period_profile(resolved_source, PERSONA_REPORT_PERIOD, None, settings.local_timezone)
-    return analytics_envelope(resolved_source, profile, normalised, latest_report(resolved_source))
+    if period not in PERSONA_REPORT_PERIODS:
+        raise HTTPException(status_code=400, detail={"error": "Unknown report period", "detail": "Use rolling_year or this_month.", "code": "unknown_report_period"})
+    profile, normalised = canonical_period_profile(resolved_source, period, None, settings.local_timezone)
+    return analytics_envelope(resolved_source, profile, normalised, latest_report(resolved_source, period))
 
 
 @router.get("/recommendations")

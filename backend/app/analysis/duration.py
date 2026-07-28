@@ -150,6 +150,11 @@ def annotate_normalised_durations(normalised: dict[str, Any], duration_cache: di
         duration = extract_duration_seconds(track.get("duration_seconds"))
         source = "source_item" if duration else None
         cache_duration, cache_source, cache_confidence = duration_from_cache(str(video_id) if video_id else None, duration_cache)
+        cached_identity = (duration_cache or {}).get(str(video_id)) if video_id else None
+        if isinstance(cached_identity, dict) and cached_identity.get("music_classification") == "confirmed_music":
+            apply_verified_track_identity(track, cached_identity)
+            track["verified_music_classification"] = "confirmed_music"
+            track["verified_music_classification_source"] = cached_identity.get("music_classification_source")
         if not duration and cache_duration:
             duration = cache_duration
             source = cache_source or "duration_cache"
@@ -162,6 +167,8 @@ def annotate_normalised_durations(normalised: dict[str, Any], duration_cache: di
         track["is_music_candidate"] = is_music_candidate
         track["excluded_from_minutes_reason"] = excluded_reason
         track_lookup[track.get("track_id")] = track
+
+    reconcile_verified_music_events(normalised, track_lookup, duration_cache or {})
 
     imported_at = normalised.get("refreshed_at") or datetime.now(timezone.utc).isoformat()
     all_events = [
@@ -199,6 +206,88 @@ def annotate_normalised_durations(normalised: dict[str, Any], duration_cache: di
 
     normalised["duration_quality"] = duration_quality(normalised.get("play_events") or [])
     return normalised
+
+
+def reconcile_verified_music_events(
+    normalised: dict[str, Any],
+    track_lookup: dict[str, dict[str, Any]],
+    duration_cache: dict[str, Any],
+) -> None:
+    """Promote quarantined Watch History only after exact-video music proof."""
+
+    original_play_events = [event for event in normalised.get("play_events") or [] if isinstance(event, dict)]
+    original_play_object_ids = {id(event) for event in original_play_events}
+    original_play_keys = {
+        str(event.get("event_id") or event.get("id") or event.get("dedupe_key") or "")
+        for event in original_play_events
+        if event.get("event_id") or event.get("id") or event.get("dedupe_key")
+    }
+    listening = [
+        event
+        for event in normalised.get("listening_events") or []
+        if isinstance(event, dict) and event.get("evidence_type") == "play_event"
+    ]
+    if not listening:
+        listening = [
+            event
+            for event in [*(normalised.get("play_events") or []), *(normalised.get("excluded_play_events") or [])]
+            if isinstance(event, dict)
+        ]
+    accepted: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for event in listening:
+        track = track_lookup.get(event.get("track_id"), {})
+        video_id = str(event.get("video_id") or track.get("video_id") or "")
+        cached = duration_cache.get(video_id)
+        if isinstance(cached, dict) and cached.get("music_classification") == "confirmed_music":
+            apply_verified_track_identity(track, cached)
+            event.update(
+                {
+                    "title": track.get("title") or event.get("title"),
+                    "artist": track.get("primary_artist") or event.get("artist"),
+                    "artists": list(track.get("artists") or event.get("artists") or []),
+                    "music_classification": "confirmed_music",
+                    "music_classification_source": cached.get("music_classification_source"),
+                }
+            )
+        event_key = str(event.get("event_id") or event.get("id") or event.get("dedupe_key") or "")
+        was_previously_accepted = id(event) in original_play_object_ids or bool(event_key and event_key in original_play_keys)
+        if event.get("music_classification") in {"confirmed_music", "probable_music"} or (event.get("music_classification") in {None, ""} and was_previously_accepted):
+            accepted.append(event)
+        else:
+            excluded.append(event)
+    normalised["play_events"] = accepted
+    normalised["excluded_play_events"] = excluded
+    metadata = normalised.get("metadata")
+    if isinstance(metadata, dict):
+        metadata["play_count"] = len(accepted)
+    diagnostics = normalised.get("import_diagnostics")
+    if isinstance(diagnostics, dict):
+        diagnostics["accepted_music_plays"] = len(accepted)
+        diagnostics["unknown_classifications"] = sum(event.get("music_classification") == "unknown" for event in listening)
+
+
+def apply_verified_track_identity(track: dict[str, Any], cached: dict[str, Any]) -> None:
+    media_title = str(cached.get("media_title") or "").strip()
+    media_author = re.sub(r"\s*-\s*Topic$", "", str(cached.get("media_author") or "").strip(), flags=re.IGNORECASE).strip()
+    current_artist = str(track.get("primary_artist") or "").strip()
+    is_unknown = current_artist.casefold() in {"", "unknown", "unknown artist", "unavailable artist"}
+    confidence = str(cached.get("identity_confidence") or "")
+    if confidence == "high" and media_author and is_unknown:
+        track["primary_artist"] = media_author
+        track["artists"] = [media_author]
+    elif confidence == "medium" and media_author and media_title and is_unknown:
+        prefix = re.split(r"\s+[-\u2013\u2014|]\s+", media_title, maxsplit=1)
+        if len(prefix) == 2 and simple_identity(prefix[0]) == simple_identity(media_author):
+            track["primary_artist"] = media_author
+            track["artists"] = [media_author]
+            media_title = prefix[1]
+    if media_title and confidence == "high":
+        track["title"] = media_title
+
+
+def simple_identity(value: Any) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", str(value or "").casefold(), flags=re.UNICODE).split())
 
 
 def usable_duration_seconds(event: dict[str, Any]) -> int | None:

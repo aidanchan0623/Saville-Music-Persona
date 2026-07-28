@@ -15,13 +15,16 @@ from app.analysis.periods import (
     rank_items,
     resolve_period,
     serialise_spec,
+    song_group_key,
     tracks_by_id,
 )
 from app.analysis.scoring import build_analysis
+from app.analysis.taste_model import weighted_cluster_counts
+from app.data.artist_genres import canonical_artist_key
 
 
-ANALYTICS_VERSION = 3
-GENRE_MAP_VERSION = 4
+ANALYTICS_VERSION = 4
+GENRE_MAP_VERSION = 5
 
 
 def build_period_profile(
@@ -50,7 +53,7 @@ def build_period_profile(
             1,
         )
     ]
-    genres = genre_shares(events, lookup)
+    genres = genre_shares(events, lookup, normalised.get("artist_metadata") or {})
     raw_diagnostics = normalised.get("import_diagnostics") or {}
     duration = duration_quality(events)
     active_days = {
@@ -87,8 +90,8 @@ def build_period_profile(
             "raw_event_count": reconciliation["raw_rows"],
             "accepted_play_count": len(events),
             "active_days": len(active_days),
-            "unique_track_count": len({event.get("track_id") for event in events if event.get("track_id")}),
-            "unique_artist_count": len({artist for event in events for artist in event_artists(event, lookup)}),
+            "unique_track_count": len({song_group_key(lookup.get(event.get("track_id"), {}), event) for event in events}),
+            "unique_artist_count": len({canonical_artist_key(artist) for event in events for artist in event_artists(event, lookup)}),
             "detected_minutes": minutes["metrics"]["selected_period_total_minutes"],
             "duration_coverage": duration["duration_coverage_percent"],
             "timestamp_coverage": timestamp_coverage(events),
@@ -104,18 +107,19 @@ def event_artists(event: dict[str, Any], lookup: dict[str, dict[str, Any]]) -> l
     return [str(artist).strip() for artist in artists if str(artist).strip() and str(artist).strip() != "Unknown Artist"]
 
 
-def genre_shares(events: list[dict[str, Any]], lookup: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    weights: Counter[str] = Counter()
-    classified = 0
-    for event in events:
-        genres = [str(value).strip() for value in lookup.get(event.get("track_id"), {}).get("genre_clusters") or [] if value and value != "unknown"]
-        if not genres:
-            weights["Other / Unclassified"] += 1
-            continue
-        classified += 1
-        for genre in genres:
-            weights[genre] += 1 / len(genres)
-    total = sum(weights.values())
+def genre_shares(
+    events: list[dict[str, Any]],
+    lookup: dict[str, dict[str, Any]],
+    artist_metadata: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Project the same trusted genre evidence used by Insights and reports."""
+
+    _, genre_counts, _, coverage_counts, _, _, _ = weighted_cluster_counts(events, lookup, artist_metadata)
+    classified = int(coverage_counts.get("curated", 0) + coverage_counts.get("inferred", 0))
+    weights: Counter[str] = Counter(genre_counts)
+    if len(events) > classified:
+        weights["Other / Unclassified"] = len(events) - classified
+    total = float(len(events))
     items = [{"name": name, "value": round(value / total * 100, 1)} for name, value in sorted(weights.items(), key=lambda item: (-item[1], item[0]))] if total else []
     if items:
         items[0]["value"] = round(items[0]["value"] + 100 - sum(item["value"] for item in items), 1)

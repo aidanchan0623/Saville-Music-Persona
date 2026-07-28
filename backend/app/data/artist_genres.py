@@ -521,13 +521,45 @@ def normalise_artist_name(name: str) -> str:
     return " ".join(value.strip().split())
 
 
+def canonical_artist_key(name: str) -> str:
+    """Return a stable artist identity while keeping alias matching conservative."""
+
+    key = normalise_artist_name(name)
+    original = key
+    seen: set[str] = set()
+    while key and key not in seen:
+        seen.add(key)
+        target = ARTIST_ALIASES.get(key)
+        if not target:
+            break
+        key = normalise_artist_name(target)
+    if key != original or key in ARTIST_GENRES:
+        return key
+
+    # Exports commonly carry a bilingual display name such as
+    # "周杰倫 Jay Chou". Merge it only when one side is a known exact artist
+    # identity and the other side contains non-ASCII script; ordinary
+    # collaborations and similarly named Latin artists remain untouched.
+    if any(ord(character) > 127 for character in original):
+        for candidate in sorted({*ARTIST_GENRES, *ARTIST_ALIASES}, key=len, reverse=True):
+            if original == candidate or not (original.startswith(f"{candidate} ") or original.endswith(f" {candidate}")):
+                continue
+            resolved = candidate
+            alias_seen: set[str] = set()
+            while resolved not in alias_seen and ARTIST_ALIASES.get(resolved):
+                alias_seen.add(resolved)
+                resolved = normalise_artist_name(ARTIST_ALIASES[resolved])
+            if resolved in ARTIST_GENRES:
+                return resolved
+    return key
+
+
 def get_exact_curated_artist_profile(name: str) -> ArtistGenreProfile | None:
     return ARTIST_GENRES.get(_normalise_punctuation_and_spacing(name))
 
 
 def get_curated_artist_profile(name: str) -> ArtistGenreProfile | None:
-    normalised = normalise_artist_name(name)
-    return ARTIST_GENRES.get(ARTIST_ALIASES.get(normalised, normalised))
+    return ARTIST_GENRES.get(canonical_artist_key(name))
 
 
 def clusters_for_genres(genres: list[str] | tuple[str, ...]) -> list[str]:

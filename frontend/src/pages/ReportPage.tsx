@@ -1,11 +1,11 @@
-import type { MusicSource, PersonaReport } from "../types/api";
+import type { MusicSource, PersonaReport, PersonaReportPeriodKey } from "../types/api";
 import { PersonaStoryExperience } from "./report/PersonaStoryExperience";
 import "./ReportPage.css";
 
 interface Props {
   report: PersonaReport | null;
   busy: boolean;
-  onGenerate: () => Promise<{ ok: boolean; message: string }>;
+  onGenerate: (period: PersonaReportPeriodKey) => Promise<{ ok: boolean; message: string }>;
   source: MusicSource;
   titleAnimationKey: string;
 }

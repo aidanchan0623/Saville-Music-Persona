@@ -551,6 +551,7 @@ export interface TopAlbumItem {
   thumbnail: string | null;
   album_image_url?: string | null;
   album_image_source?: string | null;
+  track_image_url?: string | null;
   plays: number;
   detected_minutes: number;
   detected_minutes_formatted: string;
@@ -746,7 +747,7 @@ export interface AuthStatus {
 }
 
 export interface PersonaReport {
-  schemaVersion: 7;
+  schemaVersion: 8;
   source: MusicSource;
   mode: "serious" | "playful" | "roast";
   period: PersonaReportPeriod;
@@ -761,6 +762,8 @@ export interface PersonaReport {
   analyticsFingerprint: string;
   cacheKey: string;
 }
+
+export type PersonaReportPeriodKey = "rolling_year" | "this_month";
 
 export interface PersonaReportExplainers {
   musicalAges: PersonaAgeExplainer[];

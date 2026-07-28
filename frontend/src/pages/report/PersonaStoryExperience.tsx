@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Crown } from "lucide-react";
 import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
-import type { PersonaGenre, PersonaReport, PersonaTopArtist, PersonaTopSong } from "../../types/api";
+import type { PersonaGenre, PersonaReport, PersonaReportPeriodKey, PersonaTopArtist, PersonaTopSong } from "../../types/api";
 import { PersonaAlbumDome } from "./PersonaAlbumDome";
 
 interface Props {
   report: PersonaReport;
   busy: boolean;
-  onGenerate: () => Promise<{ ok: boolean; message: string }>;
+  onGenerate: (period: PersonaReportPeriodKey) => Promise<{ ok: boolean; message: string }>;
   titleAnimationKey: string;
 }
 
@@ -19,7 +19,9 @@ export function PersonaStoryExperience({ report, busy, onGenerate, titleAnimatio
   const albumList = useMemo(() => report.backgroundAlbums, [report.backgroundAlbums]);
   const [explainer, setExplainer] = useState<"ages" | "personalities" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const regenerate = async () => setNotice((await onGenerate()).message);
+  const [selectedPeriod, setSelectedPeriod] = useState<PersonaReportPeriodKey>(report.period.key === "this_month" ? "this_month" : "rolling_year");
+  useEffect(() => setSelectedPeriod(report.period.key === "this_month" ? "this_month" : "rolling_year"), [report.period.key]);
+  const regenerate = async () => setNotice((await onGenerate(selectedPeriod)).message);
 
   return (
     <div ref={rootRef} className="persona-report-page">
@@ -27,12 +29,17 @@ export function PersonaStoryExperience({ report, busy, onGenerate, titleAnimatio
       <div className="persona-report-scrim" aria-hidden="true" />
       <main className="persona-scroll-story">
         <header className="persona-report__masthead">
-          <div>
+          <div className="persona-report__heading">
             <p className="persona-report__eyebrow">Persona Report</p>
-            <p className="persona-report__meta">{report.period.label} &middot; {report.period.timezone}</p>
+            <h1>Your listening habits, professionally overanalysed.</h1>
+            <p className="persona-report__meta">{report.source === "spotify" ? "Spotify" : "YouTube Music"} &middot; showing {report.period.label.toLowerCase()} &middot; {report.period.timezone}</p>
           </div>
           <div className="persona-report__actions">
-            <button type="button" disabled={busy} className="persona-tone persona-tone--active" onClick={regenerate}>{busy ? "Regenerating..." : "Regenerate report"}</button>
+            <div className="persona-period-picker" role="group" aria-label="Report generation period">
+              <button type="button" className={`persona-tone${selectedPeriod === "rolling_year" ? " persona-tone--active" : ""}`} disabled={busy} onClick={() => setSelectedPeriod("rolling_year")}>Rolling year</button>
+              <button type="button" className={`persona-tone${selectedPeriod === "this_month" ? " persona-tone--active" : ""}`} disabled={busy} onClick={() => setSelectedPeriod("this_month")}>This month</button>
+            </div>
+            <button type="button" disabled={busy} className="persona-generate-button" onClick={regenerate}>{busy ? "Writing the roast..." : report.period.key === selectedPeriod ? "Regenerate" : `Generate ${selectedPeriod === "this_month" ? "this month" : "rolling year"}`}</button>
             {notice && <span className="persona-generation-notice" role="status">{notice}</span>}
           </div>
         </header>
@@ -158,7 +165,7 @@ function TopFiveScene({ report }: { report: PersonaReport }) {
 }
 
 function RankingPanel({ title, period, side, children }: { title: string; period: string; side: string; children: React.ReactNode }) {
-  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">Top Artists and Songs</p><h2>{title}</h2><p>{period}</p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
+  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">The five-repeat hall of fame</p><h2>{title}</h2><p>{period}</p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
 }
 
 function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArtist[] } | { kind: "songs"; items: PersonaTopSong[] }) {
@@ -188,7 +195,7 @@ function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArti
               {rank === 1 ? <span className="persona-podium-crown" aria-label="First place"><Crown aria-hidden="true" /></span> : null}
               {artist
                 ? <ArtistAvatar artistImageUrl={artist.artistImageUrl} artistName={artist.name} size={rank === 1 ? "hero" : "lg"} shape="rounded" priority={rank <= 2} />
-                : <AlbumCover albumImageUrl={song?.albumImageUrl || song?.trackImageUrl} albumTitle={song?.album || song?.title || "Song"} size={rank === 1 ? "hero" : "lg"} priority={rank <= 2} />}
+                : <AlbumCover albumImageUrl={song?.albumImageUrl} fallbackImageUrl={song?.trackImageUrl} albumTitle={song?.album || song?.title || "Song"} size={rank === 1 ? "hero" : "lg"} priority={rank <= 2} />}
               <h3 title={title}>{title}</h3>
               <p>{subtitle}</p>
               {song?.detectedMinutes ? <small>{song.formattedMinutes} detected</small> : null}

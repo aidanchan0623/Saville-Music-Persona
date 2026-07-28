@@ -13,7 +13,7 @@ from app.data.artist_genres import normalise_artist_name, normalise_genre
 
 
 MUSICBRAINZ_API_URL = "https://musicbrainz.org/ws/2"
-GENRE_METADATA_CACHE_VERSION = 4
+GENRE_METADATA_CACHE_VERSION = 5
 NEGATIVE_CACHE_TTL_DAYS = 30
 POSITIVE_CACHE_TTL_DAYS = 180
 
@@ -35,7 +35,7 @@ class MusicBrainzGenreService:
         deadline: float,
         on_cache_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        if not isinstance(cache, dict) or cache.get("schemaVersion") not in {3, GENRE_METADATA_CACHE_VERSION}:
+        if not isinstance(cache, dict) or cache.get("schemaVersion") not in {3, 4, GENRE_METADATA_CACHE_VERSION}:
             clear_musicbrainz_genres(normalised)
         prepared_cache = ensure_genre_cache(cache)
         items = prepared_cache["items"]
@@ -119,10 +119,15 @@ class MusicBrainzGenreService:
         detail = self._get_json(
             client,
             f"{MUSICBRAINZ_API_URL}/artist/{artist_id}",
-            {"inc": "genres", "fmt": "json"},
+            {"inc": "genres+tags", "fmt": "json"},
             deadline,
         )
-        genres = supported_genres(detail.get("genres"))
+        # MusicBrainz exposes both its genre list and community tags. Both are
+        # attached to the exact MBID resolved above; unsupported labels are
+        # still rejected by Saville's canonical genre map.
+        genre_rows = detail.get("genres") if isinstance(detail.get("genres"), list) else []
+        tag_rows = detail.get("tags") if isinstance(detail.get("tags"), list) else []
+        genres = supported_genres([*genre_rows, *tag_rows])
         if not genres:
             return cache_record(
                 artist,
@@ -184,7 +189,7 @@ class MusicBrainzGenreService:
 
 
 def ensure_genre_cache(value: Any) -> dict[str, Any]:
-    if not isinstance(value, dict) or value.get("schemaVersion") not in {3, GENRE_METADATA_CACHE_VERSION}:
+    if not isinstance(value, dict) or value.get("schemaVersion") not in {3, 4, GENRE_METADATA_CACHE_VERSION}:
         return {
             "schemaVersion": GENRE_METADATA_CACHE_VERSION,
             "provider": "multi_source",
@@ -197,9 +202,16 @@ def ensure_genre_cache(value: Any) -> dict[str, Any]:
         "updatedAt": value.get("updatedAt"),
         "items": {},
     }
+    previous_version = int(value.get("schemaVersion") or 0)
     for key, record in (value.get("items") or {}).items():
         if isinstance(record, dict):
-            migrated["items"][str(key)] = normalise_cache_record(record)
+            prepared = normalise_cache_record(record)
+            # v5 started reading exact-artist MusicBrainz tags in addition to
+            # genres. Recheck only old negative results; durable positive
+            # evidence remains valid and offline-capable.
+            if previous_version < 5 and prepared.get("status") != "matched":
+                prepared["checkedAt"] = None
+            migrated["items"][str(key)] = prepared
     return migrated
 
 

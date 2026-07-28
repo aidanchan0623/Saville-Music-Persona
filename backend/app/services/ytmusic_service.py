@@ -363,25 +363,37 @@ class YTMusicService:
                     response = httpx.get(
                         "https://www.googleapis.com/youtube/v3/videos",
                         params={
-                            "part": "contentDetails",
+                            "part": "contentDetails,snippet",
                             "id": ",".join(batch),
                             "key": self.settings.youtube_data_api_key,
-                            "fields": "items(id,contentDetails(duration))",
+                            "fields": "items(id,contentDetails(duration),snippet(categoryId,title,channelTitle))",
                         },
                         timeout=10.0,
                     )
                     response.raise_for_status()
                     payload = response.json()
                     items = payload.get("items") if isinstance(payload, dict) else []
-                    durations = {
-                        str(item.get("id")): _parse_iso8601_duration(item.get("contentDetails", {}).get("duration"))
+                    indexed_items = {
+                        str(item.get("id")): item
                         for item in items or []
-                        if isinstance(item, dict) and isinstance(item.get("contentDetails"), dict)
+                        if isinstance(item, dict) and item.get("id")
                     }
                     for video_id in batch:
-                        seconds = durations.get(video_id)
+                        item = indexed_items.get(video_id) or {}
+                        seconds = _parse_iso8601_duration((item.get("contentDetails") or {}).get("duration"))
                         if seconds:
-                            _set_duration_cache_success(duration_cache, video_id, seconds, "youtube_data_api.videos.list", now)
+                            snippet = item.get("snippet") if isinstance(item.get("snippet"), dict) else {}
+                            _set_duration_cache_success(
+                                duration_cache,
+                                video_id,
+                                seconds,
+                                "youtube_data_api.videos.list",
+                                now,
+                                music_classification="confirmed_music" if str(snippet.get("categoryId") or "") == "10" else None,
+                                media_title=snippet.get("title"),
+                                media_author=snippet.get("channelTitle"),
+                                identity_confidence="medium",
+                            )
                             added += 1
                         else:
                             unresolved.append(video_id)
@@ -403,7 +415,19 @@ class YTMusicService:
                 except Exception:
                     seconds = None
                 if seconds:
-                    _set_duration_cache_success(duration_cache, video_id, seconds, "ytmusicapi.public.get_song", now)
+                    details = payload.get("videoDetails") if isinstance(payload, dict) and isinstance(payload.get("videoDetails"), dict) else {}
+                    music_video_type = str(details.get("musicVideoType") or "")
+                    _set_duration_cache_success(
+                        duration_cache,
+                        video_id,
+                        seconds,
+                        "ytmusicapi.public.get_song",
+                        now,
+                        music_classification="confirmed_music" if music_video_type.startswith("MUSIC_VIDEO_TYPE_") and "PODCAST" not in music_video_type else None,
+                        media_title=details.get("title"),
+                        media_author=details.get("author"),
+                        identity_confidence="high",
+                    )
                     added += 1
                 else:
                     _set_duration_cache_retry(duration_cache, video_id, "ytmusicapi.public.get_song", now)
@@ -986,16 +1010,24 @@ def artist_cache_failure_entry(artist: str, artist_id: Any, reason: str) -> dict
 def _duration_targets(normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int) -> list[str]:
     plays = Counter(
         str(event.get("video_id"))
-        for event in normalised.get("play_events") or []
+        for event in [*(normalised.get("play_events") or []), *(normalised.get("excluded_play_events") or [])]
         if isinstance(event, dict) and event.get("video_id")
     )
+    unknown_video_ids = {
+        str(event.get("video_id"))
+        for event in normalised.get("excluded_play_events") or []
+        if isinstance(event, dict) and event.get("video_id") and event.get("music_classification") == "unknown"
+    }
     now = datetime.now(timezone.utc)
     candidates: list[tuple[int, str]] = []
     for track in normalised.get("tracks") or []:
-        if not isinstance(track, dict) or extract_duration_seconds(track.get("duration_seconds")):
+        if not isinstance(track, dict):
             continue
         video_id = str(track.get("video_id") or "").strip()
-        if not video_id or not _duration_cache_needs_refresh(duration_cache.get(video_id), now):
+        cached = duration_cache.get(video_id)
+        needs_duration = not extract_duration_seconds(track.get("duration_seconds")) and _duration_cache_needs_refresh(cached, now)
+        needs_music_identity = video_id in unknown_video_ids and _music_identity_needs_refresh(cached, now)
+        if not video_id or not (needs_duration or needs_music_identity):
             continue
         candidates.append((plays.get(video_id, 0), video_id))
     candidates.sort(key=lambda candidate: (-candidate[0], candidate[1]))
@@ -1012,6 +1044,16 @@ def _duration_cache_needs_refresh(entry: Any, now: datetime) -> bool:
     return retry_at is None or retry_at <= now
 
 
+def _music_identity_needs_refresh(entry: Any, now: datetime) -> bool:
+    """Respect a separate retry window when an exact video is not confirmed as music."""
+    if not isinstance(entry, dict):
+        return True
+    if entry.get("music_classification"):
+        return False
+    retry_at = _parse_cache_timestamp(entry.get("music_classification_next_retry_at") or entry.get("next_retry_at"))
+    return retry_at is None or retry_at <= now
+
+
 def _parse_cache_timestamp(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -1022,8 +1064,21 @@ def _parse_cache_timestamp(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def _set_duration_cache_success(cache: dict[str, Any], video_id: str, seconds: int, source: str, now: datetime) -> None:
+def _set_duration_cache_success(
+    cache: dict[str, Any],
+    video_id: str,
+    seconds: int,
+    source: str,
+    now: datetime,
+    *,
+    music_classification: str | None = None,
+    media_title: Any = None,
+    media_author: Any = None,
+    identity_confidence: str | None = None,
+) -> None:
+    existing = cache.get(video_id) if isinstance(cache.get(video_id), dict) else {}
     cache[video_id] = {
+        **existing,
         "duration_seconds": seconds,
         "duration_source": source,
         "duration_confidence": "high",
@@ -1032,17 +1087,30 @@ def _set_duration_cache_success(cache: dict[str, Any], video_id: str, seconds: i
         "expires_at": (now + timedelta(days=30)).isoformat(),
         "next_retry_at": None,
         "schema_version": 2,
+        "music_classification": music_classification or existing.get("music_classification"),
+        "music_classification_source": source if music_classification else existing.get("music_classification_source"),
+        "music_classification_status": "confirmed_music" if music_classification else "not_confirmed",
+        "music_classification_checked_at": now.isoformat(),
+        "music_classification_next_retry_at": None if music_classification else (now + timedelta(days=30)).isoformat(),
+        "media_title": str(media_title).strip() if media_title else existing.get("media_title"),
+        "media_author": str(media_author).strip() if media_author else existing.get("media_author"),
+        "identity_confidence": identity_confidence if music_classification else existing.get("identity_confidence"),
     }
 
 
 def _set_duration_cache_retry(cache: dict[str, Any], video_id: str, source: str, now: datetime) -> None:
+    existing = cache.get(video_id) if isinstance(cache.get(video_id), dict) else {}
+    existing_seconds = extract_duration_seconds(existing.get("duration_seconds"))
     cache[video_id] = {
-        "duration_seconds": None,
-        "duration_source": source,
-        "duration_confidence": "missing",
-        "status": "transient_error",
+        **existing,
+        "duration_seconds": existing_seconds,
+        "duration_source": existing.get("duration_source") if existing_seconds else source,
+        "duration_confidence": existing.get("duration_confidence") if existing_seconds else "missing",
+        "status": "resolved" if existing_seconds else "transient_error",
         "fetched_at": now.isoformat(),
         "next_retry_at": (now + timedelta(hours=6)).isoformat(),
+        "music_classification_checked_at": now.isoformat(),
+        "music_classification_next_retry_at": (now + timedelta(hours=6)).isoformat(),
         "schema_version": 2,
     }
 

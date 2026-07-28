@@ -4,6 +4,7 @@ import "./Artwork.css";
 
 export type ArtworkProps = {
   src?: string | null;
+  sources?: Array<string | null | undefined>;
   alt: string;
   kind: "song" | "track" | "artist" | "album";
   size?: "sm" | "md" | "lg" | "hero";
@@ -14,28 +15,27 @@ export type ArtworkProps = {
   fit?: "cover" | "contain";
 };
 
-export function Artwork({ src, alt, kind, size = "md", priority = false, className = "", fallbackLabel, shape, fit = "cover" }: ArtworkProps) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+export function Artwork({ src, sources = [], alt, kind, size = "md", priority = false, className = "", fallbackLabel, shape, fit = "cover" }: ArtworkProps) {
+  const candidates = artworkCandidates(src, sources);
+  const candidatesKey = candidates.join("\n");
+  const [candidateIndex, setCandidateIndex] = useState(0);
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
-  const [naturalRatio, setNaturalRatio] = useState<number | null>(() => initialArtworkRatio(src, kind));
-  const previousSrcRef = useRef(src);
-  const usableSrc = src && src !== failedSrc ? src : null;
+  const previousCandidatesRef = useRef(candidatesKey);
+  const usableSrc = candidates[candidateIndex] ?? null;
   const loading = Boolean(usableSrc && loadedSrc !== usableSrc);
   const Icon = kind === "artist" ? UserRound : kind === "album" ? Disc3 : Music2;
   const resolvedShape = shape ?? (kind === "artist" ? "circle" : "rounded");
 
   useEffect(() => {
-    if (previousSrcRef.current === src) return;
-    previousSrcRef.current = src;
-    setFailedSrc(null);
+    if (previousCandidatesRef.current === candidatesKey) return;
+    previousCandidatesRef.current = candidatesKey;
+    setCandidateIndex(0);
     setLoadedSrc(null);
-    setNaturalRatio(initialArtworkRatio(src, kind));
-  }, [src, kind]);
+  }, [candidatesKey]);
 
   return (
     <div
       className={`artwork-frame artwork-frame--${kind} artwork-frame--${size} artwork-frame--${resolvedShape} artwork-frame--fit-${fit}${className ? ` ${className}` : ""}`}
-      style={naturalRatio ? { aspectRatio: naturalRatio } : undefined}
     >
       {usableSrc ? (
         <>
@@ -46,14 +46,11 @@ export function Artwork({ src, alt, kind, size = "md", priority = false, classNa
             loading={priority ? "eager" : "lazy"}
             decoding="async"
             data-loaded={loading ? "false" : "true"}
-            onLoad={(event) => {
+            onLoad={() => {
               setLoadedSrc(usableSrc);
-              if (kind === "track" && event.currentTarget.naturalWidth && event.currentTarget.naturalHeight) {
-                setNaturalRatio(event.currentTarget.naturalWidth / event.currentTarget.naturalHeight);
-              }
             }}
             onError={() => {
-              setFailedSrc(usableSrc);
+              setCandidateIndex((index) => index + 1);
               setLoadedSrc(null);
             }}
           />
@@ -113,20 +110,22 @@ export function TrackArtwork({
   // A track thumbnail is often a widescreen video still. Prefer the resolved
   // album cover so song cards retain the same square, cover-art treatment as
   // album and artist cards, then fall back to the video thumbnail if needed.
-  return <Artwork src={albumArtUrl ?? trackImageUrl ?? null} alt={`${title} track artwork`} kind="track" fallbackLabel={fallbackLabel} shape="rounded" {...props} />;
+  return <Artwork sources={[albumArtUrl, trackImageUrl]} alt={`${title} track artwork`} kind="track" fallbackLabel={fallbackLabel} shape="rounded" {...props} />;
 }
 
 export function AlbumCover({
   albumImageUrl,
   albumTitle,
+  fallbackImageUrl,
   fallbackLabel,
   ...props
 }: StrictArtworkProps & {
   albumImageUrl?: string | null;
+  fallbackImageUrl?: string | null;
   albumTitle: string;
   fallbackLabel?: string;
 }) {
-  return <Artwork src={albumImageUrl ?? null} alt={`${albumTitle} album cover`} kind="album" fallbackLabel={fallbackLabel ?? initials(albumTitle)} shape="rounded" {...props} />;
+  return <Artwork sources={[albumImageUrl, fallbackImageUrl]} alt={`${albumTitle} album cover`} kind="album" fallbackLabel={fallbackLabel ?? initials(albumTitle)} shape="rounded" {...props} />;
 }
 
 export type PersonaBackgroundImage = {
@@ -168,6 +167,6 @@ function initials(value: string) {
   return `${parts[0]?.[0] ?? "?"}${parts[1]?.[0] ?? ""}`.toUpperCase();
 }
 
-function initialArtworkRatio(_src: string | null | undefined, _kind: ArtworkProps["kind"]) {
-  return null;
+function artworkCandidates(primary: string | null | undefined, alternatives: Array<string | null | undefined>) {
+  return Array.from(new Set([primary, ...alternatives].map((value) => String(value ?? "").trim()).filter(Boolean)));
 }
