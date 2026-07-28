@@ -113,11 +113,10 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
 
     total = len(events)
     ranked_keys = sorted(genre_weights, key=lambda key: (-genre_weights[key], labels[key].casefold()))
-    # Preserve 4--8 real genres where the metadata supports them.  Never add
-    # placeholder categories; "Other" is only shown for a meaningful tail.
-    selected_keys = ranked_keys[:8]
-    remaining = ranked_keys[8:]
-    other_weight = sum(genre_weights[key] for key in remaining)
+    # The chart is deliberately a compact top-six view.  Coverage remains
+    # visible separately, so an aggregated "Other" slice cannot overwhelm
+    # the specific genres a listener actually wants to compare.
+    selected_keys = ranked_keys[:6]
     axes = [
         {
             "key": key,
@@ -130,20 +129,13 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
         }
         for key in selected_keys
     ]
-    if total and other_weight / total >= 0.03:
-        axes.append({"key": "other", "label": "Other classified genres", "value": round(other_weight / total * 100, 1), "detectedPlays": round(other_weight, 1), "contributingArtists": [], "metadataSource": "combined reliable metadata", "confidence": "mixed"})
-    target_share = round(classified_plays / total * 100, 1) if total else 0.0
-    displayed_share = round(sum(axis["value"] for axis in axes), 1)
-    if axes and displayed_share != target_share:
-        strongest = max(range(len(axes)), key=lambda index: axes[index]["value"])
-        axes[strongest]["value"] = round(axes[strongest]["value"] + target_share - displayed_share, 1)
     return {
         "coverage": round(classified_plays / total, 4) if total else 0.0,
         "classifiedPlays": classified_plays,
         "unclassifiedPlays": max(total - classified_plays, 0),
         "totalPlays": total,
         "axes": axes,
-        "methodology": "Each classified play is split evenly across up to three reliable, normalised artist genres. The chart contains only genres present in this source and period; unknown artists remain unclassified and displayed shares sum to measured classification coverage.",
+        "methodology": "Each classified play is split evenly across up to three reliable, normalised artist genres. The chart shows the top six genres for this source and period; classification coverage remains visible separately and unknown artists remain unclassified.",
     }
 
 

@@ -33,3 +33,12 @@ def test_low_coverage_does_not_fabricate_axes() -> None:
     profile = _insights([{"videoId": "unknown", "title": "Song", "artists": [{"name": "Unknown artist"}], "played": "2026-07-01"}])
     assert profile["axes"] == []
     assert profile["coverage"] == 0
+
+
+def test_profile_is_limited_to_six_specific_genres_without_other_bucket() -> None:
+    profile = _insights([
+        {"videoId": f"song-{index}", "title": "Song", "artists": [{"name": artist}], "played": "2026-07-01"}
+        for index, artist in enumerate(["Bring Me The Horizon", "My Chemical Romance", "Wisp", "Oasis", "Deftones", "Hans Zimmer", "Radiohead"])
+    ])
+    assert len(profile["axes"]) <= 6
+    assert all(axis["key"] != "other" for axis in profile["axes"])
