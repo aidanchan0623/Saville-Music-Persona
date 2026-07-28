@@ -17,11 +17,25 @@ class TakeoutParseError(ValueError):
     pass
 
 
-TAKEOUT_PARSER_SCHEMA_VERSION = 3
+TAKEOUT_PARSER_SCHEMA_VERSION = 4
 TAKEOUT_SOURCE = "google_takeout"
 SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
 DEFAULT_MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_TOTAL_BYTES = 1024 * 1024 * 1024
+MUSIC_TITLE_MARKER_PATTERN = re.compile(
+    r"(?:"
+    r"official\s+(?:music\s+)?video|official\s+m/?v|official\s+audio|"
+    r"music\s+video|lyric(?:s)?\s+video|audio\s+only|visuali[sz]er|"
+    r"official\s+lyric(?:s)?|"
+    r"官方(?:音樂錄影帶|音乐视频|音樂視頻|MV|M／V|M/V)|"
+    r"뮤직\s*비디오|공식\s*(?:뮤직\s*)?비디오|"
+    r"ミュージックビデオ|公式(?:ミュージック)?ビデオ"
+    r")",
+    flags=re.I,
+)
+TITLE_WRAPPERS = (("【", "】"), ("〈", "〉"), ("《", "》"), ("「", "」"), ("『", "』"))
+TITLE_SEPARATOR_PATTERN = re.compile(r"\s+[\-‐‑‒–—―]\s+")
+TAKEOUT_AD_MARKERS = ("viewed ads", "from google ads")
 HISTORY_FILENAME_PATTERN = r"(watch[- ]?history|historial|historique|chronik|verlauf|cronolog[ií]a|chronologia).*\.(json|html?)$"
 
 
@@ -245,6 +259,8 @@ def normalise_takeout_items(
         products = " ".join(str(product) for product in item.get("products", []) if product)
         if "youtube" not in f"{header} {products}".lower():
             continue
+        if takeout_item_is_ad(item):
+            continue
         raw_title = str(item.get("title") or "").strip()
         if not raw_title or raw_title.lower().startswith("visited "):
             continue
@@ -317,11 +333,71 @@ def clean_channel_artist(channel: str) -> str:
     return artist or channel.strip()
 
 
+def takeout_item_is_ad(item: dict[str, Any]) -> bool:
+    """Detect explicit Google Takeout ad activity without title heuristics."""
+    values: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+        elif value is not None:
+            values.append(str(value).casefold())
+
+    collect(item)
+    combined = " ".join(values)
+    return any(marker in combined for marker in TAKEOUT_AD_MARKERS)
+
+
+def html_block_is_ad(text_nodes: list[str], links: list[dict[str, Any]]) -> bool:
+    combined = " ".join([*text_nodes, *(str(link.get("text") or "") for link in links)]).casefold()
+    # Takeout renders the explicit "From Google Ads" detail in a sibling cell;
+    # its corresponding history block consistently carries "Watched at …".
+    return any(marker in combined for marker in TAKEOUT_AD_MARKERS) or any(
+        node.casefold().startswith("watched at ") for node in text_nodes
+    )
+
+
+def is_youtube_music_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").casefold()
+    return host == "music.youtube.com" or host.endswith(".music.youtube.com")
+
+
+def has_explicit_music_marker(title: str) -> bool:
+    return bool(MUSIC_TITLE_MARKER_PATTERN.search(title))
+
+
+def split_structured_music_title(title: str) -> tuple[str | None, str]:
+    """Extract artist/title from common Unicode-safe music title layouts."""
+    for opening, closing in TITLE_WRAPPERS:
+        start = title.find(opening)
+        end = title.find(closing, start + 1) if start >= 0 else -1
+        if start > 0 and end > start + 1:
+            artist = normalise_spaces(title[:start]).strip(" -–—:：")
+            song = normalise_spaces(title[start + 1 : end]).strip(" -–—")
+            if artist and song:
+                return artist, song
+    parts = TITLE_SEPARATOR_PATTERN.split(title, maxsplit=1)
+    if len(parts) == 2 and all(normalise_spaces(part) for part in parts):
+        return normalise_spaces(parts[0]), clean_official_video_title(parts[1])
+    if has_explicit_music_marker(title):
+        colon = re.match(r"^(.+?)\s*[:：]\s*(.+)$", title)
+        if colon:
+            artist = normalise_spaces(colon.group(1)).strip(" -–—")
+            song = clean_official_video_title(colon.group(2))
+            if artist and song:
+                return artist, song
+    return None, clean_official_video_title(title)
+
+
 def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
     text_nodes = [normalise_spaces(str(value)) for value in block.get("text_nodes", []) if normalise_spaces(str(value))]
     text = " ".join(text_nodes)
     links = [link for link in block.get("links", []) if isinstance(link, dict)]
-    if "Viewed Ads" in text or "YouTube Homepage" in text:
+    if html_block_is_ad(text_nodes, links) or "YouTube Homepage" in text:
         return None
     if not links:
         return normalise_legacy_html_text(text)
@@ -340,23 +416,27 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         artist_names = [artist["name"] for artist in library_item.get("artists", []) if artist.get("name")]
         album = library_item.get("album")
         music_evidence = "music_library"
+    elif is_youtube_music_url(href):
+        music_evidence = "youtube_music_product"
     elif channel.lower().endswith(" - topic") or "vevo" in channel.lower():
         music_evidence = "official_music_channel"
-    elif " - " in title:
+    elif has_explicit_music_marker(title):
+        music_evidence = "explicit_music_metadata"
+    elif TITLE_SEPARATOR_PATTERN.search(title):
         music_evidence = "artist_title_pattern"
     else:
         music_evidence = "unverified_youtube_history"
     if not artist_names and channel.lower().endswith(" - topic"):
         artist_names = [clean_channel_artist(channel)]
-    if not artist_names and " - " in title:
-        possible_artist, possible_title = title.split(" - ", 1)
-        if possible_artist.strip() and possible_title.strip():
-            artist_names = [possible_artist.strip()]
-            title = clean_official_video_title(possible_title)
+    if not artist_names and music_evidence in {"youtube_music_product", "explicit_music_metadata", "artist_title_pattern"}:
+        possible_artist, possible_title = split_structured_music_title(title)
+        if possible_artist:
+            artist_names = [possible_artist]
+            title = possible_title
     if not artist_names and "vevo" in channel.lower():
         artist_names = [clean_channel_artist(channel)]
-    if not artist_names:
-        return None
+    if not artist_names and music_evidence in {"youtube_music_product", "explicit_music_metadata"} and channel:
+        artist_names = [clean_channel_artist(channel)]
     return {
         "videoId": video_id,
         "title": title[:240],
@@ -411,7 +491,8 @@ def normalise_legacy_html_text(text: str) -> dict[str, Any] | None:
 
 
 def clean_official_video_title(title: str) -> str:
-    cleaned = re.sub(r"\s*\((?:Official|Music|Lyric|Audio|Visualizer)[^)]+\)\s*", " ", title, flags=re.I)
+    cleaned = re.sub(r"\s*[\[(](?:official|music|lyric|lyrics|audio|visuali[sz]er)[^\])]*[\])]\s*", " ", title, flags=re.I)
+    cleaned = MUSIC_TITLE_MARKER_PATTERN.sub(" ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
     return cleaned or title.strip()
 
@@ -517,9 +598,17 @@ def dedupe_takeout_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def takeout_diagnostics(raw_count: int, entries_before_dedupe: list[dict[str, Any]], accepted: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(accepted)
+    music_evidence = {
+        "music_library",
+        "official_music_channel",
+        "youtube_music_product",
+        "explicit_music_metadata",
+        "artist_title_pattern",
+    }
     return {
         "raw_events": raw_count,
-        "accepted_music_plays": total,
+        "retained_non_ad_events": total,
+        "accepted_music_plays": sum(1 for entry in accepted if entry.get("takeoutMusicEvidence") in music_evidence),
         "duplicates": max(0, len(entries_before_dedupe) - total),
         "invalid_timestamps": sum(1 for entry in accepted if entry.get("timestampInvalid")),
         "missing_ids": sum(1 for entry in accepted if not entry.get("videoId")),

@@ -90,7 +90,7 @@ def test_large_valid_takeout_file_keeps_all_events(tmp_path: Path) -> None:
     assert len(result.entries) == 5000
 
 
-def test_sequential_takeout_files_merge_and_deduplicate_history(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_new_takeout_replaces_previous_profile_without_cross_user_contamination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repository = JsonRepository(tmp_path / "merged-takeouts.db")
     coordinator = TakeoutImportCoordinator(repository, timeout_seconds=30)
     monkeypatch.setattr(routes, "repo", repository)
@@ -102,16 +102,21 @@ def test_sequential_takeout_files_merge_and_deduplicate_history(tmp_path: Path, 
     routes.process_takeout_import("first", first, coordinator, time.monotonic() + 30)
 
     second = tmp_path / "watch-history-second.json"
-    second.write_text(json.dumps(json_history(4)), encoding="utf-8")
+    replacement = json_history(1)
+    replacement[0]["title"] = "Watched Replacement Song"
+    replacement[0]["titleUrl"] = "https://www.youtube.com/watch?v=replacement1"
+    replacement[0]["subtitles"] = [{"name": "Replacement Artist"}]
+    second.write_text(json.dumps(replacement), encoding="utf-8")
     coordinator.stage("second", "queued", "queued")
     routes.process_takeout_import("second", second, coordinator, time.monotonic() + 30)
 
     history = repository.load_json("takeout_history")
     job = coordinator.get("second")
-    assert len(history) == 4
-    assert repository.load_json("normalised")["metadata"]["play_count"] == 4
-    assert job["totalImportedCount"] == 4
-    assert job["duplicateCount"] == 3
+    assert len(history) == 1
+    assert repository.load_json("normalised")["metadata"]["play_count"] == 1
+    assert repository.load_json("analysis")["top_tracks"][0]["title"] == "Replacement Song"
+    assert job["totalImportedCount"] == 1
+    assert job["duplicateCount"] == 0
 
 
 def test_malformed_parser_input_has_a_safe_error(tmp_path: Path) -> None:

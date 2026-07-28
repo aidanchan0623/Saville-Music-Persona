@@ -30,6 +30,16 @@ from app.models.listening_event import (
 
 UNKNOWN_ARTIST = "Unknown Artist"
 NORMALISED_DATA_SCHEMA_VERSION = 3
+TAKEOUT_EVIDENCE_PRIORITY = {
+    None: 0,
+    "": 0,
+    "unverified_youtube_history": 1,
+    "artist_title_pattern": 2,
+    "explicit_music_metadata": 3,
+    "official_music_channel": 4,
+    "youtube_music_product": 5,
+    "music_library": 6,
+}
 
 
 GENRE_KEYWORDS: dict[str, set[str]] = {
@@ -191,13 +201,15 @@ def classify_music(track: dict[str, Any]) -> str:
     _, is_music_candidate, _ = content_type_for(track.get("title"), track.get("duration_seconds"))
     if not is_music_candidate:
         return "non_music"
-    if not track.get("title") or track.get("primary_artist") == UNKNOWN_ARTIST:
+    if not track.get("title"):
         return "unknown"
     if track.get("source") == "google_takeout":
         evidence = str(track.get("takeout_music_evidence") or "").strip()
         if evidence in {"music_library", "official_music_channel", "youtube_music_product"}:
             return "confirmed_music"
-        if evidence == "artist_title_pattern":
+        if track.get("primary_artist") == UNKNOWN_ARTIST:
+            return "unknown"
+        if evidence in {"artist_title_pattern", "explicit_music_metadata"}:
             return "probable_music"
         # Parsed generic Watch History rows expose a channel name, not a
         # reliable artist identity.  Keep them available for later metadata
@@ -206,6 +218,8 @@ def classify_music(track: dict[str, Any]) -> str:
         # marker and retain the previous probable-music behaviour.
         if evidence == "unverified_youtube_history":
             return "unknown"
+    if track.get("primary_artist") == UNKNOWN_ARTIST:
+        return "unknown"
     if track.get("video_id") or track.get("source_track_id"):
         return "confirmed_music"
     return "probable_music"
@@ -455,6 +469,18 @@ def normalise_track_item(
 
 
 def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    existing_evidence = str(existing.get("takeout_music_evidence") or "")
+    incoming_evidence = str(incoming.get("takeout_music_evidence") or "")
+    incoming_is_stronger = TAKEOUT_EVIDENCE_PRIORITY.get(incoming_evidence, 0) > TAKEOUT_EVIDENCE_PRIORITY.get(existing_evidence, 0)
+    incoming_has_artist = incoming.get("primary_artist") not in (None, "", UNKNOWN_ARTIST)
+    if incoming_is_stronger:
+        existing["takeout_music_evidence"] = incoming_evidence
+        existing["takeout_source_format"] = incoming.get("takeout_source_format") or existing.get("takeout_source_format")
+    if incoming_has_artist and (incoming_is_stronger or existing.get("primary_artist") == UNKNOWN_ARTIST):
+        existing["title"] = incoming.get("title") or existing.get("title")
+        existing["artists"] = list(incoming.get("artists") or [])
+        existing["primary_artist"] = incoming["primary_artist"]
+        existing["primary_artist_genres"] = list(incoming.get("primary_artist_genres") or [])
     for source in incoming["source_types"]:
         if source not in existing["source_types"]:
             existing["source_types"].append(source)
@@ -685,6 +711,32 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
                 track["last_played"] = played_date_iso
             if track["first_played_in_period"] is None or played_date_iso < track["first_played_in_period"]:
                 track["first_played_in_period"] = played_date_iso
+        if event["music_classification"] in {"confirmed_music", "probable_music"}:
+            track["play_count_in_period"] += 1
+            play_events.append(event)
+        else:
+            excluded_play_events.append(event)
+
+    # A video can appear through several YouTube surfaces with different
+    # metadata quality.  Reconcile every play against the strongest metadata
+    # observed for that stable video ID so file order cannot change totals.
+    for track in tracks.values():
+        track["play_count_in_period"] = 0
+    play_events.clear()
+    excluded_play_events.clear()
+    for event in listening_events:
+        if event.get("evidence_type") != "play_event":
+            continue
+        track = tracks.get(str(event.get("track_id") or ""))
+        if not track:
+            continue
+        event["title"] = track["title"]
+        event["artist"] = track["primary_artist"]
+        event["artists"] = list(track["artists"])
+        event["album"] = track.get("album")
+        event["genre_clusters"] = list(track.get("genre_clusters") or [])
+        event["release_year"] = track.get("release_year")
+        event["music_classification"] = classify_music(track)
         if event["music_classification"] in {"confirmed_music", "probable_music"}:
             track["play_count_in_period"] += 1
             play_events.append(event)

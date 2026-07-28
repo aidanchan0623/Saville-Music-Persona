@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from app.analysis.normalizer import normalise_collection
 from app.analysis.scoring import build_analysis
 from app.services.takeout_service import (
@@ -52,6 +54,21 @@ def test_generic_youtube_history_is_not_counted_as_confirmed_music() -> None:
     assert normalised["excluded_play_events"][0]["music_classification"] == "unknown"
 
 
+def test_youtube_music_product_counts_song_even_when_artist_metadata_is_missing() -> None:
+    entries = normalise_takeout_items(
+        [{
+            "header": "YouTube Music",
+            "title": "Watched เพลงที่ไม่มีข้อมูลศิลปิน",
+            "titleUrl": "https://music.youtube.com/watch?v=thai123456",
+            "time": "2026-07-10T08:01:02Z",
+            "products": ["YouTube"],
+        }]
+    )
+    normalised = normalise_collection({"takeout_history": entries})
+    assert normalised["metadata"]["play_count"] == 1
+    assert normalised["play_events"][0]["artist"] == "Unknown Artist"
+
+
 def test_takeout_history_drives_repeat_counts_when_present() -> None:
     raw = {
         "history": [{"videoId": "recent", "title": "Recent", "artists": [{"name": "Artist"}], "played": "Today"}],
@@ -96,6 +113,97 @@ def test_takeout_html_splits_artist_dash_title_music_video() -> None:
     entries = parse_takeout_html(html)
     assert entries[0]["title"] == "Aura"
     assert entries[0]["artists"][0]["name"] == "Avoure"
+
+
+@pytest.mark.parametrize(
+    ("title", "channel", "expected_artist", "expected_title"),
+    [
+        ("周杰倫 Jay Chou【晴天 Sunny Day】Official Music Video", "周杰倫 Jay Chou", "周杰倫 Jay Chou", "晴天 Sunny Day"),
+        ("아이유『밤편지』공식 뮤직비디오", "이지금 [IU Official]", "아이유", "밤편지"),
+        ("米津玄師「Lemon」公式ミュージックビデオ", "Kenshi Yonezu", "米津玄師", "Lemon"),
+    ],
+)
+def test_takeout_html_parses_multilingual_official_music_titles(
+    title: str,
+    channel: str,
+    expected_artist: str,
+    expected_title: str,
+) -> None:
+    html = f"""
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched <a href="https://www.youtube.com/watch?v=multi12345">{title}</a><br>
+      <a href="https://www.youtube.com/channel/example">{channel}</a><br>
+      Jul 10, 2026, 10:32:18 PM GMT+08:00
+    </div>
+    """
+    entry = parse_takeout_html(html)[0]
+    assert entry["artists"][0]["name"] == expected_artist
+    assert entry["title"] == expected_title
+    assert entry["takeoutMusicEvidence"] == "explicit_music_metadata"
+
+
+def test_music_youtube_source_is_language_neutral_positive_evidence() -> None:
+    html = """
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched <a href="https://music.youtube.com/watch?v=arabic1234">نسم علينا الهوى</a><br>
+      <a href="https://www.youtube.com/channel/example">Fairuz</a><br>
+      Jul 10, 2026, 10:32:18 PM GMT+08:00
+    </div>
+    """
+    entry = parse_takeout_html(html)[0]
+    assert entry["artists"][0]["name"] == "Fairuz"
+    assert entry["takeoutMusicEvidence"] == "youtube_music_product"
+    assert normalise_collection({"takeout_history": [entry]})["metadata"]["play_count"] == 1
+
+
+def test_unverified_html_row_is_retained_but_not_ranked() -> None:
+    html = """
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched <a href="https://www.youtube.com/watch?v=generic1234">A general documentary</a><br>
+      <a href="https://www.youtube.com/channel/example">General Channel</a><br>
+      Jul 10, 2026, 10:32:18 PM GMT+08:00
+    </div>
+    """
+    entries = parse_takeout_html(html)
+    assert len(entries) == 1
+    assert entries[0]["artists"] == []
+    normalised = normalise_collection({"takeout_history": entries})
+    assert len(normalised["listening_events"]) == 1
+    assert normalised["metadata"]["play_count"] == 0
+
+
+def test_strongest_video_metadata_is_applied_to_every_play_regardless_of_order() -> None:
+    weak = {
+        "videoId": "samevideo1",
+        "title": "晴天 Sunny Day",
+        "artists": [],
+        "played": "2026-07-11T10:00:00+00:00",
+        "source": "google_takeout",
+        "sourceFormat": "html",
+        "takeoutMusicEvidence": "unverified_youtube_history",
+    }
+    strong = {
+        **weak,
+        "title": "晴天 Sunny Day",
+        "artists": [{"name": "周杰倫 Jay Chou"}],
+        "played": "2026-07-10T10:00:00+00:00",
+        "takeoutMusicEvidence": "youtube_music_product",
+    }
+    normalised = normalise_collection({"takeout_history": [weak, strong]})
+    assert normalised["metadata"]["play_count"] == 2
+    assert len(normalised["excluded_play_events"]) == 0
+    assert {event["artist"] for event in normalised["play_events"]} == {"周杰倫 Jay Chou"}
+
+
+def test_takeout_html_explicit_ad_row_is_discarded() -> None:
+    html = """
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched <a href="https://www.youtube.com/watch?v=advert12345">Brand - Summer Song</a><br>
+      Watched at 10:32 PM<br>
+      Jul 10, 2026, 10:32:18 PM GMT+08:00
+    </div>
+    """
+    assert parse_takeout_html(html) == []
 
 
 def test_three_same_day_plays_remain_three_plays() -> None:
@@ -228,7 +336,7 @@ def test_html_parser_tolerates_class_order_and_keeps_timestamp_out_of_link_text(
     assert entries[0]["title"] == "Structured Song"
     assert entries[0]["artists"][0]["name"] == "Structured Artist"
     assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"
-    assert entries[0]["parserSchemaVersion"] == 3
+    assert entries[0]["parserSchemaVersion"] == 4
 
 
 def test_html_parser_accepts_narrow_nonbreaking_timestamp_whitespace() -> None:

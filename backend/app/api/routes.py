@@ -100,7 +100,6 @@ from app.services.takeout_import_jobs import (
 from app.services.takeout_service import (
     TAKEOUT_PARSER_SCHEMA_VERSION,
     TakeoutParseError,
-    dedupe_takeout_entries,
     parse_takeout_file,
 )
 from app.services.ytmusic_service import YTMusicService
@@ -938,9 +937,11 @@ def process_takeout_import(
     else:
         raw = dict(previous_raw)
         raw["source"] = "google_takeout"
-    previous_takeout = repo.load_json("takeout_history")
-    previous_entries = previous_takeout if isinstance(previous_takeout, list) else []
-    combined_entries = dedupe_takeout_entries([*previous_entries, *parsed.entries])
+    # One local profile represents one Takeout dataset. Replacing it on upload
+    # prevents stale rows (or a previous tester's history) from contaminating
+    # the next user's totals. A Google Takeout ZIP already contains all matching
+    # watch-history files from that export.
+    combined_entries = list(parsed.entries)
     raw["takeout_history"] = combined_entries
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
     raw["takeout_import_batch_id"] = job_id
@@ -1055,7 +1056,7 @@ def process_takeout_import(
         "Google Takeout history imported. Overview is ready.",
         importedCount=len(parsed.entries),
         totalImportedCount=len(combined_entries),
-        duplicateCount=max(0, len(previous_entries) + len(parsed.entries) - len(combined_entries)),
+        duplicateCount=int(parsed.diagnostics.get("duplicates") or 0),
         trackCount=normalised["metadata"]["track_count"],
         playCount=normalised["metadata"]["play_count"],
     )

@@ -295,7 +295,7 @@ def listening_minutes_payload(
     today: date | None = None,
 ) -> dict[str, Any]:
     spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = filter_events(normalised, spec)
+    events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
     daily_seconds: dict[date, int] = {day: 0 for day in date_range(spec["start_date"], spec["end_date"])}
     active_play_days: set[date] = set()
     for event in events:

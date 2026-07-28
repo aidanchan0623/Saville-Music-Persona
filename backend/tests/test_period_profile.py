@@ -25,3 +25,24 @@ def test_golden_reconciliation_and_cross_page_facts() -> None:
     assert profile["top_artists"][0]["artist"] == "Artist A"
     assert profile["top_artists"][0]["play_count"] == 2
     assert round(sum(item["value"] for item in profile["genre_shares"]["items"]), 1) == 100.0
+
+
+def test_period_profile_excludes_duration_rejected_events_from_every_stat() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "song", "title": "Real Song", "artists": [{"name": "Artist"}], "played": "2026-07-01T01:00:00+00:00", "duration_seconds": 180},
+                {"videoId": "ad", "title": "Brand Jingle", "artists": [{"name": "Brand"}], "played": "2026-07-01T02:00:00+00:00", "duration_seconds": 10},
+            ]
+        }
+    )
+    # Simulate an older cached profile where duration enrichment rejected an
+    # event after it had already entered play_events.
+    normalised["play_events"].append(normalised["excluded_play_events"][0])
+    profile = build_period_profile(normalised, "month", "2026-07", "Asia/Kuala_Lumpur", today=date(2026, 7, 2))
+    assert profile["reconciliation"]["events_in_period"] == 2
+    assert profile["reconciliation"]["ranked_music_events_in_period"] == 1
+    assert profile["figures"]["accepted_play_count"] == 1
+    assert profile["figures"]["unique_track_count"] == 1
+    assert [item["title"] for item in profile["top_tracks"]] == ["Real Song"]
+    assert profile["minutes"]["metrics"]["selected_period_total_minutes"] == 3.0

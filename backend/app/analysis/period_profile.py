@@ -33,7 +33,8 @@ def build_period_profile(
 ) -> dict[str, Any]:
     """The sole deterministic source for a source/period's dashboard facts."""
     spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = filter_events(normalised, spec)
+    period_events = filter_events(normalised, spec)
+    events = [event for event in period_events if event.get("is_music_candidate") is not False]
     period_normalised = normalised_for_events(normalised, events, spec)
     analysis = build_analysis(period_normalised)
     lookup = tracks_by_id(normalised)
@@ -66,7 +67,8 @@ def build_period_profile(
         "non_music_excluded": sum(1 for event in normalised.get("excluded_play_events") or [] if event.get("music_classification") == "non_music"),
         "unknown_music_excluded": sum(1 for event in normalised.get("excluded_play_events") or [] if event.get("music_classification") == "unknown"),
         "invalid_timestamps": int(raw_diagnostics.get("invalid_timestamps") or 0),
-        "events_in_period": len(events),
+        "events_in_period": len(period_events),
+        "ranked_music_events_in_period": len(events),
     }
     return {
         "analyticsVersion": ANALYTICS_VERSION,
