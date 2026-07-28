@@ -18,6 +18,19 @@ from app.config import Settings
 # common laptop GPUs, which made a healthy model look offline to the report.
 REPORT_GENERATE_TIMEOUT_SECONDS = 90.0
 OVERVIEW_GENERATE_TIMEOUT_SECONDS = 12.0
+PERSONA_LANGUAGE_FORMAT = {
+    "type": "object",
+    "properties": {
+        "s": {
+            "type": "array",
+            "items": {"type": "string"},
+            "minItems": 6,
+            "maxItems": 6,
+        }
+    },
+    "required": ["s"],
+    "additionalProperties": False,
+}
 
 
 class PersonaReportLanguage(BaseModel):
@@ -112,7 +125,10 @@ class OllamaService:
                     "model": self.settings.ollama_model,
                     "prompt": prompt,
                     "stream": False,
-                    "format": "json",
+                    # Gemma 3 can return an empty object when merely asked for
+                    # JSON. Ollama's JSON-schema mode constrains decoding to
+                    # the exact six report fields the validator expects.
+                    "format": PERSONA_LANGUAGE_FORMAT,
                     # The response is bounded to six short fields.  Keeping
                     # the model warm removes repeated laptop-GPU load time and
                     # the smaller cap avoids waiting for unused tokens.

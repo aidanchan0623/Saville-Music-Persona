@@ -7,12 +7,13 @@ Each reusable recording can have several strong identifiers (YouTube video ID, S
 Genre enrichment uses a strict hierarchy:
 
 1. Use Saville's existing curated or trusted provider genres immediately.
-2. Check the local recording catalog for an already approved assignment.
-3. Only for still-unclassified high-impact tracks, query MusicBrainz at recording level.
-4. Preserve the provider's raw labels as evidence and map them into Saville's stable 30-genre taxonomy.
-5. Automatically apply a result only when recording identity, evidence quality, and taxonomy-normalisation confidence clear the safety threshold.
+2. Reuse durable exact-artist and recording assignments from the local caches.
+3. Resolve still-unclassified artists through a bounded exact MusicBrainz artist lookup; this has the highest coverage per request.
+4. Use recording-level MusicBrainz identity only for high-impact tracks whose artist still has no trusted genres.
+5. Preserve the provider's raw labels as evidence and map them into Saville's stable 30-genre taxonomy.
+6. Automatically apply a result only when recording identity, evidence quality, and taxonomy-normalisation confidence clear the safety threshold.
 
-The three confidence values remain separate and inspectable. Their product is an application gate, not a replacement for the components. A result can therefore be retained for review without affecting analytics. Provider failures are cached with retry metadata so repeated Takeout imports do not keep issuing the same failed lookup.
+The three confidence values remain separate and inspectable. Their product is an application gate, not a replacement for the components. A result can therefore be retained for review without affecting analytics. Provider failures are cached with retry metadata and loaded once per batch, so repeated Takeout imports do not keep issuing the same failed lookup. Provider tag vote order is retained when several internal genres have equal mapping confidence.
 
 The catalog is stored in the existing local SQLite database in `recordings`, `recording_identifiers`, `recording_aliases`, `listening_events`, `genre_evidence`, `genre_assignments`, and `lookup_failures`. New Takeout files reuse strong identifiers and approved assignments. Growth is proportional to unique recordings and evidence, not play count; listening-event rows are a replaceable index of the current local profile. `GET /api/data/genre-catalog` exposes safe aggregate diagnostics, while `GET /api/data/genre-catalog/{recording_id}` exposes the separate confidence and evidence fields for one recording without returning its listening history.
 

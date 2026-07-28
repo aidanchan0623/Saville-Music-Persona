@@ -4,6 +4,7 @@ import copy
 import shutil
 import hashlib
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -125,7 +126,7 @@ def current_recording_catalog() -> RecordingCatalog:
     return RecordingCatalog(repo.db_path)
 
 PERSONA_REPORT_SCHEMA_VERSION = 8
-PERSONA_REPORT_PROMPT_VERSION = 9
+PERSONA_REPORT_PROMPT_VERSION = 10
 PERSONA_REPORT_PERIOD = "rolling_year"
 PERSONA_REPORT_PERIODS = {"rolling_year", "this_month"}
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
@@ -1177,25 +1178,39 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     before_coverage = genre_coverage_payload(before_analysis)
     coordinator.stage(
         "resolving",
-        "Checking high-impact unclassified recordings, then artists, against MusicBrainz.",
+        "Checking high-impact unclassified artists, then recordings, against MusicBrainz.",
         provider="musicbrainz",
         beforeCoverage=before_coverage["genreCoveragePercent"],
+    )
+    # Exact artist evidence has much higher coverage per request. Give it the
+    # first three minutes, then use recording identity as the narrow fallback
+    # for tracks whose artist still has no trusted genres. Keep rebuild time
+    # outside both provider budgets.
+    resolution_deadline = max(time.monotonic(), deadline - 20)
+    artist_deadline = min(resolution_deadline, time.monotonic() + 180)
+    cache, stats = genre_enrichment_service.enrich(
+        working_normalised,
+        cache,
+        limit=settings.genre_enrichment_limit,
+        deadline=artist_deadline,
+        # Persist provider evidence after every resolved artist. If the laptop
+        # sleeps or the backend restarts, the completed requests are still
+        # available and will be reapplied on the next rebuild.
+        on_cache_update=lambda updated: repo.save_json("genre_metadata_cache", updated),
+    )
+    apply_genre_cache(working_normalised, cache)
+    coordinator.stage(
+        "resolving",
+        "Artist evidence applied; checking the remaining high-impact recordings.",
+        provider="musicbrainz",
+        beforeCoverage=before_coverage["genreCoveragePercent"],
+        **stats,
     )
     recording_stats = recording_genre_enrichment_service.enrich(
         working_normalised,
         recording_catalog,
         limit=settings.recording_genre_enrichment_limit,
-        deadline=deadline,
-    )
-    cache, stats = genre_enrichment_service.enrich(
-        working_normalised,
-        cache,
-        limit=settings.genre_enrichment_limit,
-        deadline=deadline,
-        # Persist provider evidence after every resolved artist. If the laptop
-        # sleeps or the backend restarts, the completed requests are still
-        # available and will be reapplied on the next rebuild.
-        on_cache_update=lambda updated: repo.save_json("genre_metadata_cache", updated),
+        deadline=resolution_deadline,
     )
     stats.update(recording_stats)
 
@@ -1226,7 +1241,13 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     )
     clear_analytics_memory_caches()
     gain = round(after_coverage["genreCoveragePercent"] - before_coverage["genreCoveragePercent"], 1)
-    provider_note = " MusicBrainz was temporarily unavailable before the full batch finished; completed matches were kept." if stats.get("providerError") else ""
+    provider_errors = {stats.get("providerError"), stats.get("recordingProviderError")}
+    if "musicbrainz_temporarily_unavailable" in provider_errors:
+        provider_note = " MusicBrainz became temporarily unavailable; completed matches were kept."
+    elif "musicbrainz_time_limit_reached" in provider_errors:
+        provider_note = " The bounded lookup window ended; completed matches were kept for the next batch."
+    else:
+        provider_note = ""
     coordinator.stage(
         "complete",
         f"Genre enrichment complete. Coverage is {after_coverage['genreCoveragePercent']:.1f}% ({gain:+.1f} points).{provider_note}",

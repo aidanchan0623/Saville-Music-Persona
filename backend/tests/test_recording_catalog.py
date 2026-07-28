@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
+from datetime import datetime, timedelta, timezone
+import sqlite3
 
 from app.analysis.normalizer import normalise_collection
 from app.analysis.taste_model import source_genres_for_artist
@@ -139,6 +141,55 @@ def test_low_identity_evidence_is_saved_but_not_applied(tmp_path) -> None:
     assert assignment["autoApplied"] is False
 
 
+def test_stale_taxonomy_assignment_is_rebuilt_from_durable_evidence(tmp_path) -> None:
+    db_path = tmp_path / "catalog.db"
+    catalog = RecordingCatalog(db_path)
+    resolution = catalog.resolve_track({"video_id": "post-punk", "title": "Song", "primary_artist": "Artist"})
+    assert resolution
+    catalog.save_evidence(
+        resolution.recording_id,
+        provider="musicbrainz",
+        provider_recording_id="mbid",
+        raw_genres=["new wave", "rock", "post-punk"],
+        identity_confidence=0.95,
+        evidence_confidence=0.92,
+    )
+    catalog.save_assignment(
+        resolution.recording_id,
+        primary_genre="Classic Rock / Hard Rock",
+        secondary_genres=[],
+        identity_confidence=0.95,
+        evidence_confidence=0.92,
+        normalisation_confidence=0.98,
+        source_summary=["musicbrainz"],
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE genre_assignments SET taxonomy_version = 1 WHERE recording_id = ?", (resolution.recording_id,))
+
+    assert catalog.rebuild_stale_assignments() == 1
+    assert catalog.assignment(resolution.recording_id)["primaryGenre"] == "Post-Punk / Goth / Darkwave"
+
+
+def test_lookup_failure_backoff_skips_immediate_retries(tmp_path) -> None:
+    catalog = RecordingCatalog(tmp_path / "catalog.db")
+    future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    catalog.record_failure("recording:artist:song", None, "musicbrainz", "not_found", future)
+
+    assert catalog.can_retry("recording:artist:song") is False
+    assert catalog.can_retry("recording:artist:different-song") is True
+    assert catalog.blocked_lookup_keys() == {"recording:artist:song"}
+
+
+def test_unknown_duration_alias_does_not_grow_on_every_sync(tmp_path) -> None:
+    catalog = RecordingCatalog(tmp_path / "catalog.db")
+    track = {"video_id": "same", "title": "Song", "primary_artist": "Artist"}
+    catalog.resolve_track(track)
+    catalog.resolve_track(track)
+    catalog.resolve_track(track)
+
+    assert catalog.summary()["recording_aliases"] == 1
+
+
 def test_supplemental_assignment_flows_to_track_genres(tmp_path) -> None:
     catalog = RecordingCatalog(tmp_path / "catalog.db")
     normalised = normalise_collection(
@@ -170,6 +221,8 @@ def test_taxonomy_has_thirty_stable_buckets_and_regional_coverage() -> None:
     assert normalise_external_genres(["kollywood soundtrack"]).primary_genre == "Tamil / Indian Film & Pop"
     assert normalise_external_genres(["melodic house & techno"]).primary_genre == "House"
     assert normalise_external_genres(["pop rock"]).primary_genre == "Pop Rock"
+    assert normalise_external_genres(["new wave", "rock", "post-punk"]).primary_genre == "Post-Punk / Goth / Darkwave"
+    assert normalise_external_genres(["alternative rock", "pop"]).primary_genre == "Alternative / Indie Rock"
 
 
 def test_musicbrainz_candidate_requires_version_and_uses_duration_for_identity() -> None:

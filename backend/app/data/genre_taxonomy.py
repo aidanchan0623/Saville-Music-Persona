@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
-TAXONOMY_VERSION = 1
+TAXONOMY_VERSION = 2
 
 # Stable product-facing buckets. External provider labels remain available as
 # evidence; these names are deliberately broad enough to work across users.
@@ -128,8 +128,9 @@ def _clean(value: str) -> str:
 def normalise_external_genres(labels: Iterable[str]) -> TaxonomyMatch | None:
     cleaned = tuple(dict.fromkeys(_clean(label) for label in labels if _clean(label)))
     scores: dict[str, float] = {}
+    first_seen: dict[str, int] = {}
     matched: list[str] = []
-    for label in cleaned:
+    for label_index, label in enumerate(cleaned):
         candidates: list[tuple[bool, int, int, str]] = []
         for rule_index, (genre, aliases) in enumerate(RULES):
             for alias in aliases:
@@ -141,10 +142,13 @@ def normalise_external_genres(labels: Iterable[str]) -> TaxonomyMatch | None:
         exact, _, _, genre = max(candidates, key=lambda item: (item[0], item[1], item[2]))
         score = 0.98 if exact else 0.84
         scores[genre] = max(scores.get(genre, 0.0), score)
+        first_seen.setdefault(genre, label_index)
         matched.append(label)
     if not scores:
         return None
-    ordered = sorted(scores, key=lambda genre: (-scores[genre], INTERNAL_GENRES.index(genre)))
+    # Provider order carries evidence weight (MusicBrainz sorts tags by vote
+    # count). Do not let the product taxonomy's display order overturn it.
+    ordered = sorted(scores, key=lambda genre: (-scores[genre], first_seen[genre], INTERNAL_GENRES.index(genre)))
     primary = ordered[0]
     return TaxonomyMatch(
         primary_genre=primary,

@@ -35,7 +35,7 @@ class MusicBrainzRecordingGenreService:
         on_update: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         catalog.sync_normalised(normalised)
-        candidates = unresolved_track_play_counts(normalised)
+        candidates = unresolved_track_play_counts(normalised, catalog)
         attempted = matched = applied = failed = 0
         provider_error: str | None = None
         with httpx.Client(timeout=self.timeout_seconds) as client:
@@ -170,10 +170,11 @@ class MusicBrainzRecordingGenreService:
             raise TimeoutError
 
 
-def unresolved_track_play_counts(normalised: dict[str, Any]) -> list[tuple[dict[str, Any], int]]:
+def unresolved_track_play_counts(normalised: dict[str, Any], catalog: RecordingCatalog) -> list[tuple[dict[str, Any], int]]:
     tracks = {str(track.get("track_id")): track for track in normalised.get("tracks") or [] if isinstance(track, dict)}
     metadata = normalised.get("artist_metadata") if isinstance(normalised.get("artist_metadata"), dict) else {}
     counts: Counter[str] = Counter()
+    blocked_lookup_keys = catalog.blocked_lookup_keys()
     for event in normalised.get("play_events") or []:
         if isinstance(event, dict) and event.get("track_id") in tracks:
             counts[str(event["track_id"])] += 1
@@ -182,6 +183,8 @@ def unresolved_track_play_counts(normalised: dict[str, Any]) -> list[tuple[dict[
         track = tracks[track_id]
         artist = str(track.get("primary_artist") or "")
         if not has_usable_artist(artist) or not track.get("recording_id"):
+            continue
+        if lookup_key_for(track) in blocked_lookup_keys:
             continue
         genres = source_genres_for_artist(track, metadata, artist)
         if profile_for_artist(artist, genres).get("canonical_genres"):

@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from app.data.genre_taxonomy import TAXONOMY_VERSION
+from app.data.genre_taxonomy import TAXONOMY_VERSION, normalise_external_genres
 
 
 RECORDING_CATALOG_SCHEMA_VERSION = 1
@@ -200,6 +200,29 @@ class RecordingCatalog:
             if "profile_source" not in event_columns:
                 conn.execute("ALTER TABLE listening_events ADD COLUMN profile_source TEXT NOT NULL DEFAULT 'youtube'")
             conn.execute("CREATE INDEX IF NOT EXISTS listening_event_profile_source ON listening_events(profile_source)")
+            migrated = conn.execute(
+                "SELECT 1 FROM recording_catalog_meta WHERE key = 'alias_null_cleanup_v1'"
+            ).fetchone()
+            if not migrated:
+                # SQLite treats NULL values as distinct in UNIQUE constraints.
+                # Collapse legacy duplicates once and store 0 as the unknown
+                # duration sentinel for all future aliases.
+                conn.execute(
+                    """
+                    DELETE FROM recording_aliases
+                    WHERE id NOT IN (
+                        SELECT MIN(id) FROM recording_aliases
+                        GROUP BY recording_id, normalised_title, normalised_artist,
+                                 normalised_album, COALESCE(duration_seconds, 0), version_signature
+                    )
+                    """
+                )
+                conn.execute("UPDATE OR IGNORE recording_aliases SET duration_seconds = 0 WHERE duration_seconds IS NULL")
+                conn.execute("DELETE FROM recording_aliases WHERE duration_seconds IS NULL")
+                conn.execute(
+                    "INSERT INTO recording_catalog_meta(key, value) VALUES ('alias_null_cleanup_v1', ?)",
+                    (utc_now(),),
+                )
 
     def resolve_track(self, track: dict[str, Any], *, create: bool = True) -> RecordingResolution | None:
         with self.connect() as conn:
@@ -334,7 +357,7 @@ class RecordingCatalog:
             return
         conn.execute(
             "INSERT OR IGNORE INTO recording_aliases(recording_id, normalised_title, normalised_artist, normalised_album, duration_seconds, version_signature, identity_confidence, match_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (recording_id, title, artist, album, duration, signature, confidence, method),
+            (recording_id, title, artist, album, duration or 0, signature, confidence, method),
         )
 
     @staticmethod
@@ -342,6 +365,7 @@ class RecordingCatalog:
         conn.execute("UPDATE recordings SET last_seen_at = ?, updated_at = ? WHERE id = ?", (now, now, recording_id))
 
     def sync_normalised(self, normalised: dict[str, Any], *, profile_source: str | None = None) -> dict[str, int]:
+        self.rebuild_stale_assignments()
         tracks = {str(track.get("track_id")): track for track in normalised.get("tracks") or [] if isinstance(track, dict)}
         resolutions: dict[str, RecordingResolution] = {}
         now = utc_now()
@@ -469,8 +493,74 @@ class RecordingCatalog:
             "combinedConfidence": row["combined_confidence"],
             "sourceSummary": json.loads(row["source_summary"]),
             "taxonomyVersion": row["taxonomy_version"],
-            "autoApplied": bool(row["auto_applied"]),
+            "autoApplied": bool(row["auto_applied"]) and int(row["taxonomy_version"]) == TAXONOMY_VERSION,
         }
+
+    def rebuild_stale_assignments(self) -> int:
+        """Re-map durable raw evidence after taxonomy logic changes, offline."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT e.recording_id, e.provider, e.raw_genres,
+                       e.identity_confidence, e.evidence_confidence
+                FROM genre_evidence e
+                JOIN genre_assignments a ON a.recording_id = e.recording_id
+                WHERE a.taxonomy_version != ?
+                ORDER BY (e.identity_confidence * e.evidence_confidence) DESC, e.fetched_at DESC
+                """,
+                (TAXONOMY_VERSION,),
+            ).fetchall()
+        rebuilt = 0
+        seen: set[str] = set()
+        for row in rows:
+            recording_id = str(row["recording_id"])
+            if recording_id in seen:
+                continue
+            seen.add(recording_id)
+            taxonomy = normalise_external_genres(json.loads(row["raw_genres"]))
+            if not taxonomy:
+                continue
+            self.save_assignment(
+                recording_id,
+                primary_genre=taxonomy.primary_genre,
+                secondary_genres=taxonomy.secondary_genres,
+                identity_confidence=float(row["identity_confidence"]),
+                evidence_confidence=float(row["evidence_confidence"]),
+                normalisation_confidence=taxonomy.normalisation_confidence,
+                source_summary=[str(row["provider"])],
+            )
+            rebuilt += 1
+        return rebuilt
+
+    def can_retry(self, lookup_key: str) -> bool:
+        with self.connect() as conn:
+            row = conn.execute("SELECT next_retry_at FROM lookup_failures WHERE lookup_key = ?", (lookup_key,)).fetchone()
+        if not row or not row["next_retry_at"]:
+            return True
+        try:
+            retry_at = datetime.fromisoformat(str(row["next_retry_at"]).replace("Z", "+00:00"))
+        except ValueError:
+            return True
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        return retry_at <= datetime.now(timezone.utc)
+
+    def blocked_lookup_keys(self) -> set[str]:
+        """Load active negative-cache keys once for a whole enrichment batch."""
+        now = datetime.now(timezone.utc)
+        with self.connect() as conn:
+            rows = conn.execute("SELECT lookup_key, next_retry_at FROM lookup_failures WHERE next_retry_at IS NOT NULL").fetchall()
+        blocked: set[str] = set()
+        for row in rows:
+            try:
+                retry_at = datetime.fromisoformat(str(row["next_retry_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            if retry_at > now:
+                blocked.add(str(row["lookup_key"]))
+        return blocked
 
     def record_failure(self, lookup_key: str, recording_id: str | None, provider: str, reason: str, next_retry_at: str | None = None) -> None:
         with self.connect() as conn:
@@ -489,7 +579,7 @@ class RecordingCatalog:
                 table: int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
                 for table in ("recordings", "recording_identifiers", "recording_aliases", "listening_events", "genre_evidence", "genre_assignments", "lookup_failures")
             }
-            auto = int(conn.execute("SELECT COUNT(*) FROM genre_assignments WHERE auto_applied = 1").fetchone()[0])
+            auto = int(conn.execute("SELECT COUNT(*) FROM genre_assignments WHERE auto_applied = 1 AND taxonomy_version = ?", (TAXONOMY_VERSION,)).fetchone()[0])
             confidence = conn.execute("SELECT AVG(identity_confidence), AVG(evidence_confidence), AVG(normalisation_confidence), AVG(combined_confidence) FROM genre_assignments").fetchone()
         return {
             "schemaVersion": RECORDING_CATALOG_SCHEMA_VERSION,

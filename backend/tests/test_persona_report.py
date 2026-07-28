@@ -28,7 +28,7 @@ from app.api.routes import (
 )
 from app.config import Settings
 from app.schemas.responses import PersonaReportResponse
-from app.services.ollama_service import OllamaService
+from app.services.ollama_service import OllamaService, PERSONA_LANGUAGE_FORMAT
 
 
 def test_report_schema_is_v8_and_strict() -> None:
@@ -200,6 +200,21 @@ def test_gemma_unavailable_and_malformed_json_have_complete_fallbacks() -> None:
     report = malformed.generate_persona_language(evidence()["languageEvidence"])
     assert report.generationSource == "fallback"
     assert report.fallbackReason == "invalid_language_json"
+
+
+def test_gemma_persona_generation_uses_constrained_json_schema() -> None:
+    class CapturingLanguageService(FakeLanguageService):
+        payload: dict[str, object] | None = None
+
+        def _request_json(self, method: str, path: str, payload: dict[str, object] | None = None, timeout: float = 10.0) -> dict[str, object]:
+            self.payload = payload
+            return self.response
+
+    service = CapturingLanguageService()
+    report = service.generate_persona_language(evidence()["languageEvidence"])
+
+    assert report.generationSource == "gemma"
+    assert service.payload and service.payload["format"] == PERSONA_LANGUAGE_FORMAT
 
 
 def test_stalled_gemma_returns_the_complete_report_fallback() -> None:
