@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from dataclasses import dataclass
 
 
@@ -482,12 +483,14 @@ ARTIST_ALIASES: dict[str, str] = {
 }
 
 
+@lru_cache(maxsize=16_384)
 def _normalise_punctuation_and_spacing(name: str) -> str:
     value = unicodedata.normalize("NFKC", str(name or "")).casefold()
     value = value.replace("’", "'").replace("‘", "'").replace("–", "-").replace("—", "-").replace("−", "-")
     return " ".join(value.strip().split())
 
 
+@lru_cache(maxsize=16_384)
 def normalise_artist_name(name: str) -> str:
     value = _normalise_punctuation_and_spacing(name)
     value = re.sub(r"\s*-\s*topic$", "", value)

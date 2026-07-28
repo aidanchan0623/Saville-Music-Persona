@@ -35,6 +35,23 @@ def test_takeout_json_import_extracts_history_entries() -> None:
     assert entries[0]["timestampInvalid"] is False
 
 
+def test_generic_youtube_history_is_not_counted_as_confirmed_music() -> None:
+    entries = normalise_takeout_items(
+        [{
+            "header": "YouTube",
+            "title": "Watched a general video",
+            "titleUrl": "https://www.youtube.com/watch?v=general123",
+            "subtitles": [{"name": "A channel rather than a music artist"}],
+            "time": "2026-07-10T08:01:02Z",
+            "products": ["YouTube"],
+        }]
+    )
+    normalised = normalise_collection({"takeout_history": entries})
+    assert entries[0]["takeoutMusicEvidence"] == "unverified_youtube_history"
+    assert normalised["metadata"]["play_count"] == 0
+    assert normalised["excluded_play_events"][0]["music_classification"] == "unknown"
+
+
 def test_takeout_history_drives_repeat_counts_when_present() -> None:
     raw = {
         "history": [{"videoId": "recent", "title": "Recent", "artists": [{"name": "Artist"}], "played": "Today"}],

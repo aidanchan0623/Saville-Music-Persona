@@ -113,7 +113,10 @@ def content_type_for(title: str | None, duration_seconds: int | None) -> tuple[s
     if duration_seconds <= 0:
         return "music_candidate", True, "invalid_duration"
     if duration_seconds < MIN_TRACK_DURATION_SECONDS:
-        return "music_candidate", True, "duration_too_short"
+        # Short ads, clips and UI sounds are common in Watch History.  They
+        # should not affect song rankings or personality merely because they
+        # have a title and channel attribution.
+        return "non_music_or_shortform", False, "duration_too_short"
     if duration_seconds > MAX_TRACK_DURATION_SECONDS:
         return "longform_video", False, "too_long_for_track"
     return "music_track", True, None

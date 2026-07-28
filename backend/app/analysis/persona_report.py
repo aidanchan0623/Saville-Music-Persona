@@ -6,6 +6,7 @@ from typing import Any
 from app.analysis.music_character import character_payload, personality_catalogue
 from app.analysis.musical_age import age_category_catalogue
 from app.analysis.overview import build_overview_response
+from app.analysis.period_profile import build_period_profile
 from app.analysis.periods import albums_payload, listening_minutes_payload, taste_dna_payload, top_payload
 
 
@@ -15,13 +16,17 @@ REPORT_PERIOD = "rolling_year"
 def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str) -> dict[str, Any]:
     """Build every report fact from the same canonical period services."""
 
-    overview = build_overview_response(normalised, REPORT_PERIOD, timezone_name=timezone_name)
-    character = character_payload(normalised, REPORT_PERIOD, timezone_name=timezone_name)
-    listening = listening_minutes_payload(normalised, REPORT_PERIOD, None, timezone_name)
-    taste = taste_dna_payload(normalised, REPORT_PERIOD, None, timezone_name)
-    tracks = top_payload(normalised, "tracks", REPORT_PERIOD, None, timezone_name)
-    artists = top_payload(normalised, "artists", REPORT_PERIOD, None, timezone_name)
-    albums = albums_payload(normalised, REPORT_PERIOD, None, timezone_name, limit=20)
+    # Build the expensive period analytics once.  Before this shared profile,
+    # one report independently rebuilt the same 365-day taste and ranking data
+    # through Overview, Character, Taste DNA, and Top endpoints.
+    profile = build_period_profile(normalised, REPORT_PERIOD, timezone_name=timezone_name)
+    taste = taste_dna_payload(normalised, REPORT_PERIOD, None, timezone_name, profile=profile)
+    character = character_payload(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, taste=taste)
+    overview = build_overview_response(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, character=character)
+    listening = profile["minutes"]
+    tracks = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_tracks"], 1)]}
+    artists = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_artists"], 1)]}
+    albums = albums_payload(normalised, REPORT_PERIOD, None, timezone_name, limit=20, profile=profile)
     period = overview["selectedPeriod"]
     primary = character["primary"]
     musical_age = overview["musicalAge"]
@@ -42,8 +47,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
             "fallbackDescription": str(primary.get("profile") or "Your listening profile is still gathering enough evidence to settle into one clear character."),
             "fallbackRoast": str(primary.get("roast") or "Your taste is still warming up, but the repeat button already has opinions."),
             "confidence": round(float(primary.get("match_score") or 0) / 100, 2),
-            "evidenceKeys": [slug(value) for value in primary.get("evidence", [])[:3]],
-            "evidenceLabels": [str(value) for value in primary.get("evidence", [])[:3]],
+            "habits": [str(value) for value in character.get("habits", [])[:3]],
         },
         "listeningWorld": {
             "detectedMinutes": float(listening["metrics"].get("selected_period_total_minutes") or 0),
@@ -61,7 +65,10 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
             "confidence": float(musical_age.get("confidence") or 0),
             "confidenceLabel": str(musical_age.get("confidenceLabel") or "Limited confidence"),
             "fallbackExplanation": str(musical_age.get("explanation") or musical_age.get("summary") or "The estimate is based on the available rolling-year listening profile."),
-            "strongestFactors": [str(value) for value in musical_age.get("strongestFactors", [])[:3]],
+            "typicalRange": [int(musical_age.get("likelyMin") or 0), int(musical_age.get("likelyMax") or 0)],
+            "weightedMedianReleaseYear": int(musical_age.get("weightedMedianReleaseYear") or 0),
+            "dominantDecade": str(musical_age.get("dominantDecade") or "Unknown"),
+            "releaseYearCoverage": float(musical_age.get("releaseYearCoverage") or 0),
             "sourcePeriod": report_period(musical_age.get("sourcePeriod") or period),
         },
         "topFive": {"songs": top_songs, "artists": top_artists},
@@ -76,6 +83,10 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "age": musical_age.get("age"),
                 "title": musical_age.get("title"),
                 "confidence": musical_age.get("confidenceLabel"),
+                "isResolved": musical_age.get("isResolved", True),
+                "weightedMedianReleaseYear": musical_age.get("weightedMedianReleaseYear"),
+                "dominantDecade": musical_age.get("dominantDecade"),
+                "releaseYearCoverage": musical_age.get("releaseYearCoverage"),
                 "strongestFactors": musical_age.get("strongestFactors", [])[:3],
             },
             "behaviour": {
@@ -83,7 +94,7 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "discovery": character.get("key_scores", {}).get("discovery"),
                 "sonicTraits": character.get("sonic_traits", [])[:6],
                 "secondaryCharacter": (character.get("secondary") or {}).get("name"),
-                "modifier": (character.get("modifier") or {}).get("name"),
+                "habits": character.get("habits", []),
             },
         },
         "explainers": {"musicalAges": age_category_catalogue(), "personalities": personality_catalogue()},
@@ -106,7 +117,7 @@ def compose_persona_report(
     personality = evidence["personality"]
     musical_age = evidence["musicalAge"]
     return {
-        "schemaVersion": 6,
+        "schemaVersion": 7,
         "source": source,
         "mode": mode,
         "period": evidence["period"],
@@ -116,13 +127,16 @@ def compose_persona_report(
             "shortDescription": language.get("openingDescription") or personality["fallbackDescription"],
             "roastDescription": language.get("personalityRoast") or personality["fallbackRoast"],
             "confidence": personality["confidence"],
-            "evidenceKeys": personality["evidenceKeys"],
+            "habits": personality["habits"],
             "generationSource": generation_source,
         },
         "listeningWorld": evidence["listeningWorld"],
         "musicalAge": {
             **{key: value for key, value in musical_age.items() if key != "fallbackExplanation"},
-            "explanation": language.get("musicalAgeExplanation") or musical_age["fallbackExplanation"],
+            # Musical Age is a factual release-year calculation.  Keep its
+            # explanatory prose deterministic so a language model cannot turn
+            # metadata confidence into a generic personality claim.
+            "explanation": musical_age["fallbackExplanation"],
         },
         "topFive": evidence["topFive"],
         "summary": {
@@ -233,10 +247,25 @@ def report_background_albums(albums: list[Any], tracks: list[Any], limit: int = 
 
     for item in albums:
         if isinstance(item, dict):
-            add(item.get("album_id"), item.get("album"), item.get("artist"), item.get("album_image_url"), item.get("plays"))
+            add(
+                item.get("album_id"),
+                item.get("album"),
+                item.get("artist"),
+                item.get("album_image_url") or item.get("thumbnail") or item.get("track_art_fallback"),
+                item.get("plays"),
+            )
     for item in tracks:
         if isinstance(item, dict):
-            add(None, item.get("album"), item.get("artist"), item.get("album_art_url"), item.get("play_count"))
+            # Takeout records often have a video thumbnail before an album cover
+            # has been resolved. It is still useful as a visual in the ambient
+            # album dome, and later enrichment replaces it with the proper cover.
+            add(
+                None,
+                item.get("album"),
+                item.get("artist"),
+                item.get("album_art_url") or item.get("track_image_url"),
+                item.get("play_count"),
+            )
     return result
 
 
@@ -244,11 +273,11 @@ def deterministic_roast_body(evidence: dict[str, Any]) -> str:
     personality = evidence["personality"]
     genres = [item["label"] for item in evidence["listeningWorld"]["genres"] if item["key"] != "other_unclassified"]
     top_artist = evidence["topFive"]["artists"][0]["name"] if evidence["topFive"]["artists"] else "your favourite artists"
-    factor = personality["evidenceLabels"][0].lower() if personality["evidenceLabels"] else "repeat listening"
+    habit = (personality.get("habits") or ["repeat listening"])[0]
     genre = genres[0].lower() if genres else "carefully chosen sound"
     return (
         f"Your listening taste treats {genre} less like a genre and more like a climate system. "
-        f"The strongest clue is {factor}, while {top_artist} sits near the centre of a rotation that clearly believes favourites should earn permanent residency. "
+        f"The strongest clue is {habit.lower()}, while {top_artist} sits near the centre of a rotation that clearly believes favourites should earn permanent residency. "
         "You leave just enough room for discovery to claim this is a living ecosystem, then return to the trusted songs with the confidence of someone reopening a book at the best chapter. "
         "It is dramatic, curated, and remarkably committed to making an ordinary day feel like it has closing credits."
     )

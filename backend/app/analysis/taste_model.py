@@ -75,10 +75,14 @@ def source_genres_for_artist(
                 add_genres(genres)
     if normalise_artist_name(str(track.get("primary_artist") or "")) == target:
         add_genres(track.get("primary_artist_genres") or [])
-    for name, metadata in (artist_metadata or {}).items():
-        if normalise_artist_name(str(name)) != target or not isinstance(metadata, dict):
-            continue
+    metadata = (artist_metadata or {}).get(target)
+    if isinstance(metadata, dict):
         add_genres(metadata.get("genres") or [])
+    else:
+        # Callers outside the hot aggregation path may pass display-name keys.
+        for name, candidate in (artist_metadata or {}).items():
+            if normalise_artist_name(str(name)) == target and isinstance(candidate, dict):
+                add_genres(candidate.get("genres") or [])
     return collected
 
 
@@ -130,14 +134,35 @@ def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str
     unknown_artists: Counter[str] = Counter()
     invalid_artist_events = 0
     unmatched_variants: Counter[str] = Counter()
+    # This function is called for every dashboard/report projection.  The
+    # metadata is static for a period, so normalising and scanning it for every
+    # listening event was the dominant report-generation cost on large Takeout
+    # profiles.
+    metadata_by_artist = {
+        normalise_artist_name(str(name)): value
+        for name, value in (artist_metadata or {}).items()
+        if isinstance(value, dict)
+    }
+    source_genre_cache: dict[tuple[str, str], tuple[str, ...]] = {}
+    profile_cache: dict[tuple[str, tuple[str, ...]], dict[str, Any]] = {}
     for event in events:
         track = tracks_by_id.get(event["track_id"], {})
         artist = track.get("primary_artist", event.get("primary_artist", "Unknown Artist"))
         if not has_usable_artist(artist):
             invalid_artist_events += 1
             continue
-        source_genres = source_genres_for_artist(track, artist_metadata, str(artist))
-        profile = profile_for_artist(artist, source_genres)
+        artist_key = normalise_artist_name(str(artist))
+        track_key = str(track.get("track_id") or event.get("track_id") or "")
+        cache_key = (track_key, artist_key)
+        source_genres = source_genre_cache.get(cache_key)
+        if source_genres is None:
+            source_genres = tuple(source_genres_for_artist(track, metadata_by_artist, str(artist)))
+            source_genre_cache[cache_key] = source_genres
+        profile_key = (artist_key, source_genres)
+        profile = profile_cache.get(profile_key)
+        if profile is None:
+            profile = profile_for_artist(artist, source_genres)
+            profile_cache[profile_key] = profile
         if profile["is_curated"]:
             coverage_counts["curated"] += 1
         elif profile["canonical_genres"]:

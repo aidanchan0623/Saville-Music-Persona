@@ -131,7 +131,12 @@ export default function App() {
   }, [useDemo]);
 
   useEffect(() => {
-    void loadStatus().catch((error) => setMessage(error.message));
+    const refreshStatus = () => {
+      void loadStatus().catch((error) => setMessage(error.message));
+    };
+    refreshStatus();
+    const interval = window.setInterval(refreshStatus, 30_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -222,7 +227,8 @@ export default function App() {
       const nextReport = await api.generateReport("serious", source);
       setReport(nextReport);
       navigate("report");
-      const message = nextReport.generation.source === "fallback" ? "Gemma is offline; the report was regenerated from the local fallback." : "Persona report regenerated locally.";
+      void loadStatus().catch(() => undefined);
+      const message = reportGenerationMessage(nextReport.generation.source, nextReport.generation.fallbackReason);
       setMessage(message);
       return { ok: true, message };
     } catch (error) {
@@ -552,6 +558,14 @@ export default function App() {
       </div>
     </div>
   );
+}
+
+function reportGenerationMessage(source: PersonaReport["generation"]["source"], fallbackReason: string | null) {
+  if (source !== "fallback") return "Persona report regenerated locally with Gemma.";
+  if (fallbackReason === "ollama_timeout") return "Gemma is available but did not finish in time; the report uses the local fallback.";
+  if (fallbackReason === "model_not_installed") return "Gemma is not installed; the report uses the local fallback.";
+  if (fallbackReason === "ollama_unavailable") return "Ollama is unavailable; the report uses the local fallback.";
+  return "Gemma could not produce a valid report this time; the local fallback was used.";
 }
 
 function SourceSwitcher({

@@ -27,6 +27,7 @@ def build_overview_response(
     language: dict[str, Any] | None = None,
     generation_source: str = "fallback",
     profile: dict[str, Any] | None = None,
+    character: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     profile = profile or build_period_profile(normalised, period, month, timezone_name, today)
     selected_spec = profile["spec"]
@@ -42,12 +43,13 @@ def build_overview_response(
         today=selected_spec["today"],
     )
     musical_age["sourcePeriod"] = _overview_period_from_payload(musical_age["sourcePeriod"])
-    selected_character = character_payload(
+    selected_character = character or character_payload(
         normalised,
         selected_spec["period"],
         selected_spec.get("month"),
         selected_spec["timezone"],
         today=selected_spec["today"],
+        profile=profile,
     )
     identity_evidence = build_identity_evidence(overview, selected_character, musical_age)
     language_identity = language.get("identity") if isinstance(language, dict) else None

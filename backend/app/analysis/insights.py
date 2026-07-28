@@ -211,7 +211,7 @@ def compact_track(item: dict[str, Any]) -> dict[str, Any]:
         "rank": item.get("rank"),
         "title": item.get("title") or "Unknown track",
         "artist": item.get("artist") or UNKNOWN_ARTIST,
-        "imageUrl": item.get("track_image_url") or item.get("album_art_url") or item.get("thumbnail"),
+        "imageUrl": item.get("album_art_url") or item.get("track_image_url") or item.get("thumbnail"),
         "detectedPlays": item.get("play_count", 0),
         "share": item.get("share_of_period", 0),
     }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from app.analysis.media import album_cache_set, empty_album_image_cache
 from app.analysis.normalizer import normalise_collection, parse_played_date
 
 
@@ -25,6 +26,24 @@ def test_missing_release_year_and_artist_are_safe() -> None:
     track = result["tracks"][0]
     assert track["primary_artist"] == "Unknown Artist"
     assert track["release_year"] is None
+
+
+def test_persistent_album_metadata_supplies_missing_release_year() -> None:
+    cache = empty_album_image_cache()
+    album_cache_set(
+        cache,
+        {"schemaVersion": 1, "mediaType": "album", "entityId": "album-1", "album_id": "album-1", "album": "Album", "artist": "Artist", "release_year": 2004},
+        album_id="album-1",
+        album="Album",
+        artist="Artist",
+    )
+    result = normalise_collection(
+        {
+            "history": [{"videoId": "release-year", "title": "Song", "artists": [{"name": "Artist"}], "album": {"name": "Album", "id": "album-1"}}],
+            "album_image_cache_v1": cache,
+        }
+    )
+    assert result["tracks"][0]["release_year"] == 2004
 
 
 def test_partial_history_coverage_is_not_full_year() -> None:
