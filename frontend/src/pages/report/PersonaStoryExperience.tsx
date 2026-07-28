@@ -165,7 +165,9 @@ function TopFiveScene({ report }: { report: PersonaReport }) {
 }
 
 function RankingPanel({ title, period, side, children }: { title: string; period: string; side: string; children: React.ReactNode }) {
-  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">The five-repeat hall of fame</p><h2>{title}</h2><p>{period}</p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
+  const [scope, ...dateParts] = period.split("·");
+  const dates = dateParts.join("·").trim();
+  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">The five-repeat hall of fame</p><h2>{title}</h2><p className="persona-ranking-period"><span>{dates ? scope.trim() : "Listening period"}</span><b>{dates || scope.trim()}</b></p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
 }
 
 function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArtist[] } | { kind: "songs"; items: PersonaTopSong[] }) {

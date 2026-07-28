@@ -90,23 +90,25 @@
 .persona-age-orbit::before, .persona-age-orbit::after { position: absolute; inset: 12%; content: ""; border: 1px solid rgb(255 255 255 / 10%); border-radius: 50%; }
 .persona-age-orbit::after { inset: 28%; border-color: rgb(251 113 133 / 18%); }
 
-.persona-scene-track--rankings { min-height: 240vh; }
-.persona-ranking-viewport { width: 100%; max-width: none; padding-inline: 0; overflow: hidden; }
+.persona-scene-track--rankings { min-height: 220vh; }
+.persona-ranking-viewport { width: 100%; max-width: none; height: 100vh; min-height: 100vh; box-sizing: border-box; padding-block: 0; padding-inline: 0; overflow: hidden; }
 .persona-ranking-panels { display: flex; width: 200%; min-width: 0; }
-.persona-ranking-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); align-items: stretch; gap: 1rem; width: 50%; min-width: 0; padding: clamp(2.5rem, 5vh, 4rem) var(--report-gutter) 0; }
+.persona-ranking-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); align-items: stretch; gap: clamp(.35rem, 1vh, .7rem); width: 50%; min-width: 0; height: 100vh; box-sizing: border-box; padding: clamp(1.1rem, 2.8vh, 2.2rem) var(--report-gutter) clamp(.8rem, 1.5vh, 1.2rem); }
 .persona-ranking-heading { width: 100%; max-width: none; align-self: start; padding: 0; text-align: center; }
-.persona-ranking-heading h2 { font-size: clamp(3rem, 6vw, 5.7rem); }
-.persona-ranking-heading > p:last-child { color: #aaa6b1; }
-.persona-ranking-podium-shell { position: relative; width: 100%; min-width: 0; }
+.persona-ranking-heading h2 { margin-top: .35rem; font-size: clamp(2.7rem, 5.2vw, 4.8rem); }
+.persona-ranking-period { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: .35rem .65rem; margin: .32rem 0 0; color: #aaa6b1; font-size: clamp(.75rem, 1vw, .92rem); }
+.persona-ranking-period span { color: #f7a2a6; font-size: .78em; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.persona-ranking-period b { color: #cbc6d0; font-weight: 600; }
+.persona-ranking-podium-shell { position: relative; display: grid; min-width: 0; min-height: 0; width: 100%; align-items: end; }
 .persona-ranking-podium-shell::before { position: absolute; z-index: -1; inset: -2rem -2.5rem; content: ""; background: radial-gradient(ellipse at 54% 58%, rgb(54 13 18 / 45%) 0%, rgb(5 5 6 / 64%) 50%, transparent 82%); pointer-events: none; }
-.persona-podium { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); align-items: end; gap: clamp(.55rem, 1.2vw, 1rem); min-height: 620px; padding: 4.8rem 0 0; }
+.persona-podium { display: grid; grid-template-columns: repeat(5, minmax(100px, 1fr)); align-items: end; gap: clamp(.55rem, 1.2vw, 1rem); width: 100%; min-height: 0; height: 100%; box-sizing: border-box; padding: clamp(2.2rem, 4.5vh, 3.4rem) 0 0; }
 .persona-podium-entry { position: relative; display: flex; min-width: 0; flex-direction: column; justify-content: flex-end; text-align: center; }
 .persona-podium-entry--rank-1 { grid-column: 3; grid-row: 1; z-index: 3; }
 .persona-podium-entry--rank-2 { grid-column: 2; grid-row: 1; z-index: 2; }
 .persona-podium-entry--rank-3 { grid-column: 4; grid-row: 1; z-index: 2; }
 .persona-podium-entry--rank-4 { grid-column: 1; grid-row: 1; }
 .persona-podium-entry--rank-5 { grid-column: 5; grid-row: 1; }
-.persona-podium-profile { position: relative; display: flex; min-height: 230px; flex-direction: column; align-items: center; justify-content: flex-end; padding: 0 .35rem 1rem; }
+.persona-podium-profile { position: relative; display: flex; min-height: clamp(178px, 24vh, 210px); flex-direction: column; align-items: center; justify-content: flex-end; padding: 0 .35rem .7rem; }
 .persona-podium-profile .artwork-frame { width: clamp(82px, 8.5vw, 118px); height: clamp(82px, 8.5vw, 118px); flex: none; border-color: rgb(255 255 255 / 20%); box-shadow: 0 16px 34px rgb(0 0 0 / 42%); }
 .persona-podium-entry--rank-1 .artwork-frame { width: clamp(108px, 10.5vw, 148px); height: clamp(108px, 10.5vw, 148px); border-color: rgb(255 216 77 / 65%); box-shadow: 0 0 0 1px rgb(255 216 77 / 18%), 0 18px 40px rgb(0 0 0 / 55%), 0 0 34px rgb(255 196 61 / 13%); }
 .persona-podium-profile h3 { display: -webkit-box; overflow: hidden; margin: .75rem 0 0; color: #fff; font-size: clamp(.84rem, 1.2vw, 1.08rem); line-height: 1.18; text-wrap: balance; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
@@ -155,7 +157,7 @@
   .persona-age-orbit { width: 78vw; left: 11vw; top: 5rem; }
   .persona-ranking-viewport { overflow: visible; padding: 0; }
   .persona-ranking-panels { display: block; width: 100%; transform: none !important; }
-  .persona-ranking-panel { display: block; width: 100%; padding: 5.5rem 1.25rem; }
+  .persona-ranking-panel { display: block; width: 100%; height: auto; padding: 5.5rem 1.25rem; }
   .persona-ranking-panel + .persona-ranking-panel { padding-top: 3rem; }
   .persona-ranking-heading { margin-bottom: 1.5rem; }
   .persona-ranking-podium-shell { margin-inline: -1.25rem; overflow-x: auto; padding: 0 1.25rem; scrollbar-width: thin; }
