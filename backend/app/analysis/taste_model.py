@@ -97,9 +97,21 @@ def has_usable_artist(artist: Any) -> bool:
 
 
 def profile_payload(profile: ArtistGenreProfile) -> dict[str, Any]:
+    derived_clusters = clusters_for_genres(profile.canonical_genres)
+    regional_keys = {
+        "malay / nusantara pop", "malay / nusantara rock & indie", "dangdut",
+        "mandopop", "c-pop", "cantopop", "k-pop", "j-pop", "j-rock",
+        "j-pop / j-rock", "tamil / indian film & pop",
+    }
+    has_regional_genre = any(
+        " ".join(str(genre).casefold().split()) in regional_keys
+        for genre in profile.canonical_genres
+    )
     return {
         "canonical_genres": list(profile.canonical_genres),
-        "broad_clusters": list(profile.broad_clusters or tuple(clusters_for_genres(profile.canonical_genres))),
+        # Re-project curated genres through the current taxonomy so older
+        # hand-written clusters cannot hide regional genres under generic Pop.
+        "broad_clusters": list(derived_clusters if has_regional_genre and derived_clusters else profile.broad_clusters or derived_clusters),
         "sonic_traits": list(profile.sonic_traits),
         "confidence": profile.confidence,
         "confidence_label": "High - curated genre mapping" if profile.confidence == "high" else profile.confidence.title(),

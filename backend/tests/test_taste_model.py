@@ -48,6 +48,26 @@ def test_regional_and_non_cluster_source_genres_are_retained_when_normalised() -
     assert profile["canonical_genres"] == ["K-pop", "Mandopop"]
 
 
+def test_regional_pop_remains_visible_in_broad_report_clusters() -> None:
+    gem = profile_for_artist("G.E.M.")
+
+    assert "Mandopop / C-pop" in gem["broad_clusters"]
+    assert "Pop / Pop Rock Crossover" not in gem["broad_clusters"]
+    assert "R&B / Soul / Funk" in gem["broad_clusters"]
+
+
+def test_verified_regional_aliases_keep_distinct_genres() -> None:
+    nick = profile_for_artist("周湯豪 NICKTHEREAL")
+    skai = profile_for_artist("攬佬SKAI ISYOURGOD")
+    mayday = profile_for_artist("五月天 (Mayday)")
+
+    assert "mandopop" in nick["canonical_genres"]
+    assert "Mandopop / C-pop" in nick["broad_clusters"]
+    assert "hip-hop" in skai["canonical_genres"]
+    assert "mandopop" not in skai["canonical_genres"]
+    assert "mandopop" in mayday["canonical_genres"]
+
+
 def test_spotify_track_genres_reach_event_weighted_taste_classification() -> None:
     normalised = normalise_collection(
         {

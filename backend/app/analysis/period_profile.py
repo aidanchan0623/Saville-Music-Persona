@@ -24,7 +24,7 @@ from app.data.artist_genres import canonical_artist_key
 
 
 ANALYTICS_VERSION = 4
-GENRE_MAP_VERSION = 5
+GENRE_MAP_VERSION = 6
 
 
 def build_period_profile(

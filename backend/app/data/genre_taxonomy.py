@@ -66,14 +66,16 @@ INTERNAL_BROAD_CLUSTERS: dict[str, tuple[str, ...]] = {
     "Country / Folk": ("Folk / Country / Acoustic",),
     "Jazz / Blues / Funk": ("Jazz / Classical", "R&B / Soul / Funk"),
     "Classical / Cinematic / Soundtrack": ("Cinematic / Soundtrack", "Jazz / Classical"),
-    "Malay / Nusantara Pop": ("Pop / Pop Rock Crossover",),
-    "Malay / Nusantara Rock & Indie": ("Alternative / Indie Rock",),
-    "Dangdut": ("Pop / Pop Rock Crossover",),
-    "Mandopop": ("Pop / Pop Rock Crossover",),
-    "Cantopop": ("Pop / Pop Rock Crossover",),
-    "K-pop": ("Pop / Pop Rock Crossover",),
-    "J-Pop / J-Rock": ("Pop / Pop Rock Crossover", "Alternative / Indie Rock"),
-    "Tamil / Indian Film & Pop": ("Pop / Pop Rock Crossover", "Cinematic / Soundtrack"),
+    # Regional identity is analytically meaningful for Saville's audience.
+    # Do not collapse it into a generic Western pop bucket in reports.
+    "Malay / Nusantara Pop": ("Malay / Nusantara Pop",),
+    "Malay / Nusantara Rock & Indie": ("Malay / Nusantara Rock & Indie",),
+    "Dangdut": ("Dangdut",),
+    "Mandopop": ("Mandopop / C-pop",),
+    "Cantopop": ("Cantopop",),
+    "K-pop": ("K-pop",),
+    "J-Pop / J-Rock": ("J-Pop / J-Rock",),
+    "Tamil / Indian Film & Pop": ("Tamil / Indian Film & Pop",),
 }
 
 
@@ -91,7 +93,7 @@ RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Tamil / Indian Film & Pop", ("tamil", "kollywood", "indian film", "filmi", "bollywood", "desi pop", "indian pop")),
     ("Mandopop", ("mandopop", "mandarin pop", "chinese pop", "c-pop")),
     ("Cantopop", ("cantopop", "cantonese pop", "hong kong pop")),
-    ("K-Pop", ("k-pop", "k pop", "korean pop")),
+    ("K-pop", ("k-pop", "k pop", "korean pop")),
     ("J-Pop / J-Rock", ("j-pop", "j pop", "j-rock", "j rock", "japanese pop", "japanese rock", "anime song")),
     ("Dangdut", ("dangdut", "koplo")),
     ("Emo / Post-Hardcore", ("post-hardcore", "post hardcore", "screamo", "emo")),

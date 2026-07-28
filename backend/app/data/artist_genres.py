@@ -68,16 +68,19 @@ BROAD_CLUSTER_GENRES: dict[str, set[str]] = {
         "indie pop",
         "pop",
         "pop rap",
-        "c-pop",
-        "mandopop",
-        "cantopop",
-        "j-pop",
-        "k-pop",
         "dance-pop",
         "teen pop",
         "art pop",
         "europop",
     },
+    "Malay / Nusantara Pop": {"malay pop", "malaysian pop", "indo pop", "indonesian pop", "nusantara pop"},
+    "Malay / Nusantara Rock & Indie": {"malay rock", "malaysian rock", "indo rock", "indonesian rock", "nusantara rock", "malay indie", "indonesian indie"},
+    "Dangdut": {"dangdut", "koplo"},
+    "Mandopop / C-pop": {"mandopop", "mandarin pop", "c-pop", "chinese pop"},
+    "Cantopop": {"cantopop", "cantonese pop", "hong kong pop"},
+    "K-pop": {"k-pop", "k pop", "korean pop"},
+    "J-Pop / J-Rock": {"j-pop", "j pop", "j-rock", "j rock", "japanese pop", "japanese rock"},
+    "Tamil / Indian Film & Pop": {"tamil", "kollywood", "indian film", "filmi", "bollywood", "desi pop", "indian pop"},
     "Cinematic / Soundtrack": {
         "film score",
         "orchestral soundtrack",
@@ -451,6 +454,116 @@ ARTIST_GENRES: dict[str, ArtistGenreProfile] = {
         broad_clusters=("Pop / Pop Rock Crossover",),
         sonic_traits=("narrative", "melodic", "polished", "songwriting-led"),
     ),
+    "robbie doherty": ArtistGenreProfile(
+        canonical_genres=("deep house", "minimal house", "house"),
+        broad_clusters=("Electronic / Atmospheric",),
+        sonic_traits=("club-focused", "groove-led", "minimal"),
+    ),
+    "clovis reyes": ArtistGenreProfile(
+        canonical_genres=("electronic", "dance pop", "edm"),
+        broad_clusters=("Electronic / Atmospheric", "Pop / Pop Rock Crossover"),
+        sonic_traits=("melodic", "danceable", "polished"),
+    ),
+    "fifa sound": ArtistGenreProfile(
+        canonical_genres=("film score", "soundtrack", "cinematic orchestral"),
+        broad_clusters=("Cinematic / Soundtrack",),
+        sonic_traits=("cinematic", "anthemic", "orchestral"),
+    ),
+    "guns n' roses": ArtistGenreProfile(
+        canonical_genres=("hard rock", "classic rock", "glam metal"),
+        broad_clusters=("Rock / Classic Rock", "Heavy Alternative / Metalcore"),
+        sonic_traits=("guitar-driven", "arena-sized", "dramatic"),
+    ),
+    "empire of the sun": ArtistGenreProfile(
+        canonical_genres=("synth-pop", "indie pop", "electronic"),
+        broad_clusters=("Pop / Pop Rock Crossover", "Electronic / Atmospheric"),
+        sonic_traits=("glossy", "psychedelic", "danceable"),
+    ),
+    "don miguelo": ArtistGenreProfile(
+        canonical_genres=("dembow", "reggaeton", "latin urban"),
+        broad_clusters=("Latin / Reggaeton",),
+        sonic_traits=("rhythmic", "club-focused", "high-energy"),
+    ),
+    "skai isyourgod": ArtistGenreProfile(
+        canonical_genres=("chinese hip-hop", "hip-hop", "memphis rap", "trap"),
+        broad_clusters=("Hip-Hop / Rap",),
+        sonic_traits=("bass-heavy", "rhythmic", "dark"),
+    ),
+    "nickthereal": ArtistGenreProfile(
+        canonical_genres=("mandopop", "dance pop", "edm"),
+        broad_clusters=("Mandopop / C-pop", "Electronic / Atmospheric"),
+        sonic_traits=("danceable", "polished", "high-energy"),
+    ),
+    "gareth.t": ArtistGenreProfile(
+        canonical_genres=("cantopop", "r&b", "pop"),
+        broad_clusters=("Cantopop", "R&B / Soul / Funk"),
+        sonic_traits=("melodic", "intimate", "smooth"),
+    ),
+    "mayday": ArtistGenreProfile(
+        canonical_genres=("mandopop", "pop rock", "rock"),
+        broad_clusters=("Mandopop / C-pop", "Rock / Classic Rock"),
+        sonic_traits=("anthemic", "melodic", "guitar-driven"),
+    ),
+    "eric chou": ArtistGenreProfile(
+        canonical_genres=("mandopop", "pop", "r&b"),
+        broad_clusters=("Mandopop / C-pop", "R&B / Soul / Funk"),
+        sonic_traits=("romantic", "melodic", "vocal-led"),
+    ),
+    "wanting": ArtistGenreProfile(
+        canonical_genres=("mandopop", "pop", "singer-songwriter"),
+        broad_clusters=("Mandopop / C-pop",),
+        sonic_traits=("melodic", "piano-led", "introspective"),
+    ),
+    "firdhaus": ArtistGenreProfile(
+        canonical_genres=("mandopop", "pop"),
+        broad_clusters=("Mandopop / C-pop",),
+        sonic_traits=("melodic", "romantic", "vocal-led"),
+    ),
+    "lane 8 & massane": ArtistGenreProfile(
+        canonical_genres=("melodic house", "progressive house", "electronic"),
+        broad_clusters=("Electronic / Atmospheric",),
+        sonic_traits=("atmospheric", "melodic", "patient"),
+    ),
+    "lane 8 & yotto": ArtistGenreProfile(
+        canonical_genres=("melodic house", "progressive house", "electronic"),
+        broad_clusters=("Electronic / Atmospheric",),
+        sonic_traits=("atmospheric", "melodic", "driving"),
+    ),
+    "vegedream": ArtistGenreProfile(
+        canonical_genres=("french hip-hop", "hip-hop", "afro-trap"),
+        broad_clusters=("Hip-Hop / Rap",),
+        sonic_traits=("rhythmic", "anthemic", "celebratory"),
+    ),
+    "mc l da vinte": ArtistGenreProfile(
+        canonical_genres=("baile funk", "funk carioca", "latin urban"),
+        broad_clusters=("Latin / Reggaeton",),
+        sonic_traits=("percussive", "club-focused", "high-energy"),
+    ),
+    "aaron hibell": ArtistGenreProfile(
+        canonical_genres=("electronica", "trance", "ambient"),
+        broad_clusters=("Electronic / Atmospheric",),
+        sonic_traits=("cinematic", "atmospheric", "building"),
+    ),
+    "gala": ArtistGenreProfile(
+        canonical_genres=("eurodance", "dance pop", "house"),
+        broad_clusters=("Electronic / Atmospheric", "Pop / Pop Rock Crossover"),
+        sonic_traits=("danceable", "anthemic", "high-energy"),
+    ),
+    "the beatles": ArtistGenreProfile(
+        canonical_genres=("pop rock", "classic rock", "psychedelic rock"),
+        broad_clusters=("Rock / Classic Rock", "Pop / Pop Rock Crossover"),
+        sonic_traits=("melodic", "songwriting-led", "classic"),
+    ),
+    "mr.kitty": ArtistGenreProfile(
+        canonical_genres=("synthwave", "darkwave", "synth-pop"),
+        broad_clusters=("Electronic / Atmospheric", "Alternative / Indie Rock"),
+        sonic_traits=("dark", "atmospheric", "synth-led"),
+    ),
+    "pastel ghost": ArtistGenreProfile(
+        canonical_genres=("synth-pop", "darkwave", "electronic"),
+        broad_clusters=("Electronic / Atmospheric", "Alternative / Indie Rock"),
+        sonic_traits=("ethereal", "dark", "synth-led"),
+    ),
     "g.e.m.": ArtistGenreProfile(
         canonical_genres=("mandopop", "c-pop", "pop", "r&b"),
         broad_clusters=("Pop / Pop Rock Crossover",),
@@ -499,6 +612,16 @@ ARTIST_ALIASES: dict[str, str] = {
     "one republic": "onerepublic",
     "sawano hiroyuki": "hiroyuki sawano",
     "gem tang": "g.e.m.",
+    "周湯豪": "nickthereal",
+    "周湯豪 nickthereal": "nickthereal",
+    "揽佬skai isyourgod": "skai isyourgod",
+    "攬佬skai isyourgod": "skai isyourgod",
+    "五月天": "mayday",
+    "五月天 (mayday)": "mayday",
+    "周興哲": "eric chou",
+    "曲婉婷": "wanting",
+    "菲道尔": "firdhaus",
+    "菲道尔 firdhaus": "firdhaus",
     "邓紫棋": "g.e.m.",
     "周杰倫": "jay chou",
     "周杰伦": "jay chou",
@@ -567,6 +690,18 @@ def get_curated_artist_profile(name: str) -> ArtistGenreProfile | None:
 def clusters_for_genres(genres: list[str] | tuple[str, ...]) -> list[str]:
     clusters: list[str] = []
     lower_genres = {" ".join(unicodedata.normalize("NFKC", str(genre)).casefold().split()) for genre in genres if genre}
+    regional_genres = {
+        "malay pop", "malaysian pop", "indo pop", "indonesian pop", "nusantara pop",
+        "malay rock", "malaysian rock", "indo rock", "indonesian rock", "nusantara rock", "malay indie", "indonesian indie",
+        "dangdut", "koplo", "mandopop", "mandarin pop", "c-pop", "chinese pop",
+        "cantopop", "cantonese pop", "hong kong pop", "k-pop", "k pop", "korean pop",
+        "j-pop", "j pop", "j-rock", "j rock", "japanese pop", "japanese rock",
+        "tamil", "kollywood", "indian film", "filmi", "bollywood", "desi pop", "indian pop",
+    }
+    # Providers commonly add generic Pop/Dance Pop beside a regional label.
+    # Preserve the more informative regional identity in report clusters.
+    if lower_genres & regional_genres:
+        lower_genres -= {"pop", "dance pop", "dance-pop", "pop rock", "pop-rock"}
     for cluster, cluster_genres in BROAD_CLUSTER_GENRES.items():
         if lower_genres & {genre.casefold() for genre in cluster_genres}:
             clusters.append(cluster)
