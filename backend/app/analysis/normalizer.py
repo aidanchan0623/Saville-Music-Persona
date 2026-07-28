@@ -193,6 +193,19 @@ def classify_music(track: dict[str, Any]) -> str:
         return "non_music"
     if not track.get("title") or track.get("primary_artist") == UNKNOWN_ARTIST:
         return "unknown"
+    if track.get("source") == "google_takeout":
+        evidence = str(track.get("takeout_music_evidence") or "").strip()
+        if evidence in {"music_library", "official_music_channel", "youtube_music_product"}:
+            return "confirmed_music"
+        if evidence == "artist_title_pattern":
+            return "probable_music"
+        # Parsed generic Watch History rows expose a channel name, not a
+        # reliable artist identity.  Keep them available for later metadata
+        # resolution, but do not turn arbitrary YouTube viewing into music
+        # analytics by default.  Legacy direct imports have no source-format
+        # marker and retain the previous probable-music behaviour.
+        if evidence == "unverified_youtube_history":
+            return "unknown"
     if track.get("video_id") or track.get("source_track_id"):
         return "confirmed_music"
     return "probable_music"
@@ -387,15 +400,23 @@ def normalise_track_item(
     resolved_track_image = track_image_url(item)
     resolved_album_art = album_image_url(item) or (resolved_track_image if source == "spotify" else None)
     resolved_album_source = album_image_source(item) or ("spotify_album_image" if source == "spotify" and resolved_album_art else None)
-    if not resolved_album_art and album_image_cache and (album_id or album):
+    cached_album = None
+    if album_image_cache and (album_id or album):
         cached_album = album_cache_lookup(album_image_cache, album_id=album_id, album=album, artist=primary_artist)
         if cached_album:
-            resolved_album_art = album_image_url(cached_album)
-            resolved_album_source = album_image_source(cached_album)
+            if not resolved_album_art:
+                resolved_album_art = album_image_url(cached_album)
+                resolved_album_source = album_image_source(cached_album)
+            # Album lookup metadata is persisted in the local cache and is the
+            # best available source for Takeout rows that carry no release
+            # information of their own.
+            year = year or parse_release_year(cached_album.get("release_year"))
     return {
         "track_id": track_id,
         "video_id": str(video_id) if video_id else None,
         "source": source or "youtube",
+        "takeout_music_evidence": item.get("takeoutMusicEvidence") or item.get("takeout_music_evidence"),
+        "takeout_source_format": item.get("sourceFormat") or item.get("source_format"),
         "source_track_id": source_track_id,
         "title": title,
         "artists": artists,
@@ -712,6 +733,16 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     if dated_dates and not full_365:
         notes.append("Available dated history does not cover approximately 365 days, so the report is labelled as partial coverage.")
 
+    release_cache = raw.get("release_year_cache_v1") or {}
+    if isinstance(release_cache, dict):
+        for track in tracks.values():
+            cached = release_cache.get(str(track.get("track_id") or ""))
+            if not track.get("release_year") and isinstance(cached, dict):
+                track["release_year"] = parse_release_year(cached.get("release_year"))
+        release_year_by_track = {str(track_id): track.get("release_year") for track_id, track in tracks.items()}
+        for event in listening_events:
+            event["release_year"] = release_year_by_track.get(str(event.get("track_id") or ""))
+
     artist_metadata = build_artist_metadata(raw)
     by_artist: dict[str, list[str]] = defaultdict(list)
     for track in tracks.values():
@@ -762,6 +793,21 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         })
     payload["import_diagnostics"] = diagnostics
     return annotate_normalised_durations(payload)
+
+
+def apply_release_year_cache(normalised: dict[str, Any], release_cache: dict[str, Any] | None) -> dict[str, Any]:
+    """Apply durable track-level release metadata to an existing profile."""
+    if not isinstance(release_cache, dict):
+        return normalised
+    by_track = {str(track.get("track_id") or ""): track for track in normalised.get("tracks") or [] if isinstance(track, dict)}
+    for track_id, track in by_track.items():
+        cached = release_cache.get(track_id)
+        if not track.get("release_year") and isinstance(cached, dict):
+            track["release_year"] = parse_release_year(cached.get("release_year"))
+    for event in [*(normalised.get("play_events") or []), *(normalised.get("excluded_play_events") or []), *(normalised.get("listening_events") or [])]:
+        if isinstance(event, dict):
+            event["release_year"] = by_track.get(str(event.get("track_id") or ""), {}).get("release_year")
+    return normalised
 
 
 def listening_event_diagnostics(events: list[dict[str, Any]], play_events: list[dict[str, Any]]) -> dict[str, Any]:

@@ -22,6 +22,7 @@ TAKEOUT_SOURCE = "google_takeout"
 SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
 DEFAULT_MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_ARCHIVE_TOTAL_BYTES = 1024 * 1024 * 1024
+HISTORY_FILENAME_PATTERN = r"(watch[- ]?history|historial|historique|chronik|verlauf|cronolog[ií]a|chronologia).*\.(json|html?)$"
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,7 @@ def parse_takeout_file(
                 history_infos = [
                     info
                     for info in archive.infolist()
-                    if re.search(r"(watch-history|watch history|historial).*\.(json|html?)$", info.filename, flags=re.I)
+                    if re.search(HISTORY_FILENAME_PATTERN, info.filename, flags=re.I)
                     and "youtube" in info.filename.lower()
                 ]
                 if not history_infos:
@@ -171,7 +172,7 @@ def parse_takeout_zip(content: bytes) -> list[dict[str, Any]]:
         history_names = [
             name
             for name in archive.namelist()
-            if re.search(r"(watch-history|watch history|historial).*\.(json|html?)$", name, flags=re.I)
+            if re.search(HISTORY_FILENAME_PATTERN, name, flags=re.I)
             and "youtube" in name.lower()
         ]
         if not history_names:
@@ -204,7 +205,7 @@ def parse_takeout_music_library(
     names = [
         name
         for name in archive.namelist()
-        if name.lower().endswith("music library songs.csv") and "youtube" in name.lower()
+        if "youtube" in name.lower() and name.lower().endswith(".csv") and "music" in name.lower() and ("library" in name.lower() or "bibli" in name.lower())
     ]
     for name in names:
         info = archive.getinfo(name)
@@ -255,6 +256,13 @@ def normalise_takeout_items(
                     artists.append(str(subtitle["name"]).strip())
         video_id = extract_video_id(str(item.get("titleUrl") or ""))
         library_item = library_lookup.get(video_id or "")
+        music_evidence = (
+            "music_library"
+            if library_item
+            else "youtube_music_product"
+            if "youtube music" in header.casefold()
+            else "unverified_youtube_history"
+        )
         played, timestamp_invalid, raw_timestamp = normalise_takeout_timestamp(item.get("time"))
         source_event_id = extract_source_event_id(item)
         result.append(
@@ -267,6 +275,7 @@ def normalise_takeout_items(
                 "titleUrl": item.get("titleUrl"),
                 "source": TAKEOUT_SOURCE,
                 "sourceFormat": "json",
+                "takeoutMusicEvidence": music_evidence,
                 "sourceEventId": source_event_id,
                 "parserSchemaVersion": TAKEOUT_PARSER_SCHEMA_VERSION,
                 "timestampInvalid": timestamp_invalid,
@@ -330,6 +339,13 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         title = library_item.get("title") or title
         artist_names = [artist["name"] for artist in library_item.get("artists", []) if artist.get("name")]
         album = library_item.get("album")
+        music_evidence = "music_library"
+    elif channel.lower().endswith(" - topic") or "vevo" in channel.lower():
+        music_evidence = "official_music_channel"
+    elif " - " in title:
+        music_evidence = "artist_title_pattern"
+    else:
+        music_evidence = "unverified_youtube_history"
     if not artist_names and channel.lower().endswith(" - topic"):
         artist_names = [clean_channel_artist(channel)]
     if not artist_names and " - " in title:
@@ -350,6 +366,7 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         "titleUrl": href,
         "source": TAKEOUT_SOURCE,
         "sourceFormat": "html",
+        "takeoutMusicEvidence": music_evidence,
         "sourceEventId": None,
         "parserSchemaVersion": TAKEOUT_PARSER_SCHEMA_VERSION,
         "timestampInvalid": timestamp_invalid,

@@ -113,7 +113,11 @@ class OllamaService:
                     "prompt": prompt,
                     "stream": False,
                     "format": "json",
-                    "options": {"temperature": 0.15, "top_p": 0.8, "num_predict": 520},
+                    # The response is bounded to six short fields.  Keeping
+                    # the model warm removes repeated laptop-GPU load time and
+                    # the smaller cap avoids waiting for unused tokens.
+                    "keep_alive": "15m",
+                    "options": {"temperature": 0.15, "top_p": 0.8, "num_predict": 420},
                 },
                 timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
             )
@@ -136,7 +140,8 @@ class OllamaService:
             "an array of exactly six strings in this order: openingDescription, personalityRoast, musicalAgeExplanation, "
             "finalRoastHeadline, finalRoastBody, finalLine. Do not use those names as keys. "
             "openingDescription is at most sixty words. personalityRoast is one short sentence. musicalAgeExplanation is "
-            "two short sentences and does not restate the age. finalRoastHeadline is at most eighty characters. "
+            "two short sentences about only the supplied release-year centre, dominant decade and confidence; it must not "
+            "mention habits, discovery, album depth, emotion, or personality. It does not restate the age. finalRoastHeadline is at most eighty characters. "
             "finalRoastBody is seventy to one hundred thirty words and interprets personality, intensity, repetition, "
             "discovery, reflective or cinematic taste, and favourite-artist patterns without listing metrics. finalLine is "
             "at most one hundred characters. Tone mode: "
@@ -177,7 +182,18 @@ class OllamaService:
             fields["finalRoastBody"] = self.fallback_persona_language(evidence, "gemma_short_final_roast").finalRoastBody
         elif body_words > 130:
             raise ValueError("final roast length is outside the accepted range")
-        if any(re.search(r"\d", value) for value in fields.values()):
+        # The report renders Musical Age from deterministic data below.  A
+        # supplied year/decade may appear in the discarded age prose, but no
+        # other numerical claim is allowed anywhere.
+        age_facts = evidence.get("musicalAge") if isinstance(evidence.get("musicalAge"), dict) else {}
+        allowed_age_numbers = {
+            str(value)
+            for value in (age_facts.get("weightedMedianReleaseYear"), age_facts.get("dominantDecade"))
+            if value not in (None, "", 0, "Unknown")
+        }
+        has_invented_number = any(re.search(r"\d", value) for key, value in fields.items() if key != "musicalAgeExplanation")
+        age_numbers = re.findall(r"\d+(?:s)?", fields["musicalAgeExplanation"])
+        if has_invented_number or any(number not in allowed_age_numbers for number in age_numbers):
             raise ValueError("generated language contains an invented numeric claim")
         known = [str(value).strip() for value in evidence.get("knownArtists", []) if str(value).strip()]
         for match in re.finditer(r"\b(?:by|artist|band)\s+([A-Z][\w'&.-]+(?:\s+[A-Z][\w'&.-]+){0,4})", " ".join(fields.values())):
@@ -193,13 +209,21 @@ class OllamaService:
         started: float | None = None,
     ) -> PersonaReportLanguage:
         personality = evidence.get("personality") if isinstance(evidence.get("personality"), dict) else {}
+        musical_age = evidence.get("musicalAge") if isinstance(evidence.get("musicalAge"), dict) else {}
         title = str(personality.get("title") or "your music character")
         signals = [str(value).lower() for value in evidence.get("strongestSignals", []) if value][:3]
         signal_line = ", ".join(signals) if signals else "repeat listening and a carefully guarded sonic atmosphere"
+        age_explanation = (
+            "This estimate follows the verified release years in the current rotation and the decade they cluster around. "
+            "It describes the catalogue, not the listener's real age."
+            if musical_age.get("isResolved", True)
+            else "There are not enough verified release years in this rotation to estimate a Musical Age yet. "
+            "More catalogue metadata is needed before the app should draw a conclusion."
+        )
         return PersonaReportLanguage(
             openingDescription=f"{title} turns familiar songs into places worth revisiting. The clearest signals are {signal_line}.",
             personalityRoast="You do not replay songs; you renew their lease and let them rearrange the furniture.",
-            musicalAgeExplanation="Familiar anchors and selective discovery share the same carefully kept rotation. Album depth and reflective listening give the estimate its shape without pretending it is a physical age.",
+            musicalAgeExplanation=age_explanation,
             finalRoastHeadline="Your soundtrack has permanent residents",
             finalRoastBody=(
                 "Your music taste treats atmosphere like a basic utility and the repeat button like a trusted advisor. "

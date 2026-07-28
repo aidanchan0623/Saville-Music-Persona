@@ -64,6 +64,7 @@ def calculate_musical_age(normalised: dict[str, Any], period: str = "rolling_yea
         if year is not None and 1880 <= year <= current_year:
             years.append(year)
     coverage = len(years) / max(len(events), 1)
+    resolved = bool(years)
     if years:
         median_year = _weighted_percentile(years, .5)
         ages = [max(0, current_year - year) for year in years]
@@ -71,19 +72,25 @@ def calculate_musical_age(normalised: dict[str, Any], period: str = "rolling_yea
         likely_min, likely_max = _weighted_percentile(ages, .25), _weighted_percentile(ages, .75)
         decade = Counter(f"{year // 10 * 10}s" for year in years).most_common(1)[0][0]
     else:
-        median_year, age, likely_min, likely_max, decade = current_year, 0, 0, 0, "Unknown"
+        median_year, age, likely_min, likely_max, decade = 0, 0, 0, 0, "Unknown"
     sample = min(len(years) / 100, 1)
     confidence = round(min(1.0, coverage * .75 + sample * .25), 2)
-    title = category_for_age(age)
-    summary = next(summary for upper, name, summary in AGE_CATEGORIES if name == title)
-    explanation = (f"Your play-weighted release years centre on {median_year}, with {decade} as the dominant decade. "
-                   "Musical Age measures how old your music is and which eras dominate. It is not your real age.")
+    if resolved:
+        title = category_for_age(age)
+        summary = next(summary for upper, name, summary in AGE_CATEGORIES if name == title)
+        explanation = (f"Your play-weighted release years centre on {median_year}, with {decade} as the dominant decade. "
+                       "Musical Age measures how old your music is and which eras dominate. It is not your real age.")
+    else:
+        title = "Release metadata needed"
+        summary = "There are not enough verified release years in this listening period to estimate a Musical Age."
+        explanation = "Musical Age is unavailable until the local catalogue can verify release years for enough of the music in this period."
     return {"age": age, "likelyMin": likely_min, "likelyMax": likely_max, "title": title, "summary": summary,
             "explanation": explanation, "confidence": confidence, "confidenceLabel": confidence_label(confidence),
             "weightedMedianReleaseYear": median_year, "dominantDecade": decade, "releaseYearCoverage": round(coverage * 100, 1),
             "factors": {"repeatAttachment": 0, "discovery": 0, "tasteStability": 0, "catalogMaturity": 0, "albumDepth": 0, "crossEraBreadth": 0, "emotionalIntensity": 0, "reflectiveListening": 0},
             "calculationVersion": MUSICAL_AGE_CALCULATION_VERSION, "generationSource": "fallback", "sourcePeriod": serialise_spec(spec), "strongestFactors": [],
-            "metadataCoverage": {"releaseYearPercent": round(coverage * 100, 1)}}
+            "metadataCoverage": {"releaseYearPercent": round(coverage * 100, 1)},
+            "isResolved": resolved}
 
 
 def age_from_factor_scores(_factors: dict[str, float]) -> int:

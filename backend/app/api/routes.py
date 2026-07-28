@@ -17,7 +17,7 @@ from app.analysis.insights import insights_payload
 from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_image_cache_schema
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
-from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, normalise_collection
+from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, apply_release_year_cache, normalise_collection
 from app.analysis.period_profile import ANALYTICS_VERSION, GENRE_MAP_VERSION, build_period_profile
 from app.models.listening_event import LISTENING_EVENT_SCHEMA_VERSION
 from app.analysis.overview import (
@@ -108,7 +108,7 @@ genre_enrichment = GenreEnrichmentCoordinator(repo, settings.genre_enrichment_ti
 refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
 
 PERSONA_REPORT_SCHEMA_VERSION = 7
-PERSONA_REPORT_PROMPT_VERSION = 5
+PERSONA_REPORT_PROMPT_VERSION = 8
 PERSONA_REPORT_PERIOD = "rolling_year"
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
 INSIGHTS_RESPONSE_CACHE: dict[tuple[Any, ...], dict[str, Any]] = {}
@@ -339,10 +339,12 @@ def normalise_with_duration_cache(
 ) -> dict[str, Any]:
     artist_cache = ensure_artist_image_cache_schema(repo.load_json("artist_image_cache_v2") or {})
     album_cache = ensure_album_image_cache_schema(repo.load_json("album_image_cache_v1") or {})
+    release_year_cache = repo.load_json("release_year_cache_v1") or {}
     raw.pop("artist_image_cache", None)
     raw.pop("album_image_cache", None)
     raw["artist_image_cache_v2"] = artist_cache
     raw["album_image_cache_v1"] = album_cache
+    raw["release_year_cache_v1"] = release_year_cache if isinstance(release_year_cache, dict) else {}
     repo.delete_json("artist_image_cache")
     repo.delete_json("album_image_cache")
     if artist_cache:
@@ -905,7 +907,7 @@ def process_takeout_import(
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
     raw["takeout_import_batch_id"] = job_id
     raw["takeout_import_diagnostics"] = parsed.diagnostics
-    for key in ("artist_image_cache_v2", "album_image_cache_v1"):
+    for key in ("artist_image_cache_v2", "album_image_cache_v1", "release_year_cache_v1"):
         cached = repo.load_json(key)
         if cached:
             raw[key] = cached
@@ -1030,9 +1032,17 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     if not isinstance(duration_cache, dict):
         duration_cache = {}
     stats = ytmusic.enrich_duration_cache(cached_normalised, duration_cache, settings.duration_enrichment_limit)
+    release_year_cache = repo.load_json("release_year_cache_v1") or {}
+    if not isinstance(release_year_cache, dict):
+        release_year_cache = {}
+    release_stats = ytmusic.enrich_release_year_cache(
+        cached_normalised,
+        release_year_cache,
+        settings.release_year_enrichment_limit,
+    )
     coordinator.check_timeout(deadline)
-    if not stats.get("attempted"):
-        coordinator.stage("complete", "Track duration coverage is already up to date.", **stats)
+    if not stats.get("attempted") and not release_stats.get("attempted"):
+        coordinator.stage("complete", "Track duration and release-year coverage are already up to date.", **stats, releaseYearEnrichment=release_stats)
         return
 
     coordinator.stage("rebuilding", "Applying resolved durations and rebuilding listening totals.", **stats)
@@ -1044,22 +1054,32 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
         cached_normalised = latest_normalised
     rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
+    rebuilt_normalised = apply_release_year_cache(rebuilt_normalised, release_year_cache)
     rebuilt_analysis = build_analysis(rebuilt_normalised)
     if "coverage" not in rebuilt_analysis:
         raise ValueError("duration rebuild produced an incomplete analysis")
     coordinator.check_timeout(deadline)
+    raw = repo.load_json("raw") or {}
+    if isinstance(raw, dict):
+        raw["release_year_cache_v1"] = release_year_cache
     repo.save_json_batch(
-        {"duration_cache": duration_cache, "normalised": rebuilt_normalised, "analysis": rebuilt_analysis},
+        {"duration_cache": duration_cache, "release_year_cache_v1": release_year_cache, "raw": raw, "normalised": rebuilt_normalised, "analysis": rebuilt_analysis},
         delete_keys=["latest_report", "recommendations"],
         delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
     )
     clear_analytics_memory_caches()
-    remaining_note = f" {stats['remaining']} more track(s) remain queued for the next local batch." if stats.get("remaining") else ""
+    remaining_total = int(stats.get("remaining") or 0) + int(release_stats.get("remaining") or 0)
+    remaining_note = f" {remaining_total} more track(s) remain queued for the next local batch." if remaining_total else ""
     coordinator.stage(
         "complete",
-        f"Resolved {stats['added']} track duration(s). Listening totals are updated.{remaining_note}",
+        f"Resolved {stats['added']} track duration(s) and {release_stats['added']} release year(s). Listening totals are updated.{remaining_note}",
+        # Duration lookups are cheap to resume automatically.  Release-year
+        # matching makes upstream searches and album reads, so leave additional
+        # metadata for the next explicit/background refresh instead of chaining
+        # an unbounded job on a laptop.
         continueQueued=bool(stats.get("remaining")),
         **stats,
+        releaseYearEnrichment=release_stats,
     )
 
 
@@ -1537,6 +1557,23 @@ def report_profile_with_characters(source: str | None = "youtube") -> dict[str, 
 @router.post("/report/generate", response_model=PersonaReportResponse)
 def generate_report(request: ReportRequest) -> PersonaReportResponse:
     source = normalise_source(request.source)
+    # A repeated click should never rebuild analytics and wake Gemma for the
+    # exact same local dataset.  The pointer is invalidated whenever data that
+    # changes report facts is persisted.
+    pointer = repo.load_json(persona_report_pointer_key(source))
+    normalised_updated_at = repo.updated_at(cache_key("normalised", source))
+    if (
+        persona_report_pointer_is_current(pointer, source, normalised_updated_at)
+        and isinstance(pointer, dict)
+        and pointer.get("mode") == request.mode
+    ):
+        cached = repo.load_json(str(pointer.get("cacheKey") or ""))
+        if (
+            isinstance(cached, dict)
+            and cached.get("schemaVersion") == PERSONA_REPORT_SCHEMA_VERSION
+            and (cached.get("generation") or {}).get("source") in {"gemma", "cache-gemma"}
+        ):
+            return PersonaReportResponse.model_validate(cached)
     profile = report_profile_with_characters(source)
     analytics_fingerprint = persona_report_fingerprint(profile)
     report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint)

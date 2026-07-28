@@ -6,6 +6,7 @@ from typing import Any
 from app.analysis.music_character import character_payload, personality_catalogue
 from app.analysis.musical_age import age_category_catalogue
 from app.analysis.overview import build_overview_response
+from app.analysis.period_profile import build_period_profile
 from app.analysis.periods import albums_payload, listening_minutes_payload, taste_dna_payload, top_payload
 
 
@@ -15,13 +16,17 @@ REPORT_PERIOD = "rolling_year"
 def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str) -> dict[str, Any]:
     """Build every report fact from the same canonical period services."""
 
-    overview = build_overview_response(normalised, REPORT_PERIOD, timezone_name=timezone_name)
-    character = character_payload(normalised, REPORT_PERIOD, timezone_name=timezone_name)
-    listening = listening_minutes_payload(normalised, REPORT_PERIOD, None, timezone_name)
-    taste = taste_dna_payload(normalised, REPORT_PERIOD, None, timezone_name)
-    tracks = top_payload(normalised, "tracks", REPORT_PERIOD, None, timezone_name)
-    artists = top_payload(normalised, "artists", REPORT_PERIOD, None, timezone_name)
-    albums = albums_payload(normalised, REPORT_PERIOD, None, timezone_name, limit=20)
+    # Build the expensive period analytics once.  Before this shared profile,
+    # one report independently rebuilt the same 365-day taste and ranking data
+    # through Overview, Character, Taste DNA, and Top endpoints.
+    profile = build_period_profile(normalised, REPORT_PERIOD, timezone_name=timezone_name)
+    taste = taste_dna_payload(normalised, REPORT_PERIOD, None, timezone_name, profile=profile)
+    character = character_payload(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, taste=taste)
+    overview = build_overview_response(normalised, REPORT_PERIOD, timezone_name=timezone_name, profile=profile, character=character)
+    listening = profile["minutes"]
+    tracks = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_tracks"], 1)]}
+    artists = {"items": [{**item, "rank": rank} for rank, item in enumerate(profile["top_artists"], 1)]}
+    albums = albums_payload(normalised, REPORT_PERIOD, None, timezone_name, limit=20, profile=profile)
     period = overview["selectedPeriod"]
     primary = character["primary"]
     musical_age = overview["musicalAge"]
@@ -78,6 +83,10 @@ def build_persona_report_evidence(normalised: dict[str, Any], timezone_name: str
                 "age": musical_age.get("age"),
                 "title": musical_age.get("title"),
                 "confidence": musical_age.get("confidenceLabel"),
+                "isResolved": musical_age.get("isResolved", True),
+                "weightedMedianReleaseYear": musical_age.get("weightedMedianReleaseYear"),
+                "dominantDecade": musical_age.get("dominantDecade"),
+                "releaseYearCoverage": musical_age.get("releaseYearCoverage"),
                 "strongestFactors": musical_age.get("strongestFactors", [])[:3],
             },
             "behaviour": {
@@ -124,7 +133,10 @@ def compose_persona_report(
         "listeningWorld": evidence["listeningWorld"],
         "musicalAge": {
             **{key: value for key, value in musical_age.items() if key != "fallbackExplanation"},
-            "explanation": language.get("musicalAgeExplanation") or musical_age["fallbackExplanation"],
+            # Musical Age is a factual release-year calculation.  Keep its
+            # explanatory prose deterministic so a language model cannot turn
+            # metadata confidence into a generic personality claim.
+            "explanation": musical_age["fallbackExplanation"],
         },
         "topFive": evidence["topFive"],
         "summary": {

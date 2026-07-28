@@ -117,13 +117,32 @@ def _public(character: dict[str, Any]) -> dict[str, Any]:
     return {key: character[key] for key in ("id", "name", "category", "profile", "roast", "match_score")}
 
 
-def character_payload(normalised: dict[str, Any], period: str = "rolling_year", month: str | None = None, timezone_name: str | None = None, today: date | None = None) -> dict[str, Any]:
-    spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = filter_events(normalised, spec)
-    local = normalised_for_events(normalised, events, spec)
-    analysis = build_analysis(local)
-    sound = taste_dna_payload(normalised, spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
-    signals = _signals(analysis, sound, top_payload(normalised, "tracks", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"]), top_payload(normalised, "artists", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"]), albums_payload(normalised, spec["period"], spec.get("month"), spec["timezone"], today=spec["today"]), events)
+def character_payload(
+    normalised: dict[str, Any],
+    period: str = "rolling_year",
+    month: str | None = None,
+    timezone_name: str | None = None,
+    today: date | None = None,
+    profile: dict[str, Any] | None = None,
+    taste: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic character, reusing a caller's PeriodProfile when available."""
+    spec = profile["spec"] if profile is not None else resolve_period(normalised, period, month, timezone_name, today)
+    events = profile["events"] if profile is not None else filter_events(normalised, spec)
+    local = profile["normalised"] if profile is not None else normalised_for_events(normalised, events, spec)
+    analysis = profile["analysis"] if profile is not None else build_analysis(local)
+    sound = taste or taste_dna_payload(
+        normalised,
+        spec["period"],
+        spec.get("month"),
+        spec["timezone"],
+        today=spec["today"],
+        profile=profile,
+    )
+    tracks = {"items": profile["top_tracks"]} if profile is not None else top_payload(normalised, "tracks", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
+    artists = {"items": profile["top_artists"]} if profile is not None else top_payload(normalised, "artists", spec["period"], spec.get("month"), spec["timezone"], today=spec["today"])
+    albums = albums_payload(normalised, spec["period"], spec.get("month"), spec["timezone"], today=spec["today"], profile=profile)
+    signals = _signals(analysis, sound, tracks, artists, albums, events)
     ranked = score_personalities(signals)
     primary = ranked[0] if signals["total_plays"] >= 8 and ranked[0]["match_score"] >= THRESHOLD else {"id": "forming", "name": "Current profile is still forming", "category": "Fallback", "profile": "There is not enough reliable genre information in this period to choose a musical personality.", "roast": "Your taste is still warming up, but the repeat button already has opinions.", "match_score": 0}
     secondary = next((item for item in ranked[1:] if item["match_score"] >= THRESHOLD), None)

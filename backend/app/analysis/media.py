@@ -262,6 +262,7 @@ def album_cache_success_entry(album: str, artist: str, payload: dict[str, Any], 
     browse_id = payload.get("browseId") or payload.get("album_id") or payload.get("id") or album_id
     resolved_at = datetime.now(timezone.utc).isoformat()
     thumbnail = best_thumbnail_url(payload.get("thumbnails") or payload.get("thumbnail") or payload.get("images") or payload.get("image")) or selected_url
+    release_year = release_year_from_payload(payload)
     return {
         "schemaVersion": ALBUM_IMAGE_CACHE_SCHEMA_VERSION,
         "mediaType": "album",
@@ -281,6 +282,11 @@ def album_cache_success_entry(album: str, artist: str, payload: dict[str, Any], 
         "source": source,
         "album_image_source": "youtube_album_cover",
         "album_art_source": "youtube_album_cover",
+        # This is durable metadata, not merely presentation data.  Takeout
+        # history rarely includes release years, whereas a resolved album often
+        # does.  Keeping it with the existing persistent album cache lets a
+        # refresh/re-import retain the enrichment.
+        "release_year": release_year,
         "resolvedAt": resolved_at,
         "fetched_at": resolved_at,
         "last_successful_update_at": resolved_at if thumbnail else None,
@@ -288,6 +294,16 @@ def album_cache_success_entry(album: str, artist: str, payload: dict[str, Any], 
         "failure_reason": None if thumbnail else "missing_thumbnails",
         "retry_after": None if thumbnail else (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
     }
+
+
+def release_year_from_payload(payload: dict[str, Any]) -> int | None:
+    for key in ("year", "release_year", "releaseYear", "releaseDate", "release_date"):
+        match = re.search(r"(?:18|19|20)\d{2}", str(payload.get(key) or ""))
+        if match:
+            year = int(match.group(0))
+            if 1880 <= year <= datetime.now(timezone.utc).year:
+                return year
+    return None
 
 
 def artist_cache_failure(artist: str, artist_id: Any, reason: str) -> dict[str, Any]:

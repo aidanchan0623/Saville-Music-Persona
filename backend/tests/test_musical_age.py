@@ -28,3 +28,10 @@ def test_musical_age_is_only_release_year_dependent() -> None:
 
 def test_missing_years_lower_confidence() -> None:
     assert calculate_musical_age(profile([2010] * 20), today=TODAY)["confidence"] > calculate_musical_age(profile([2010, None] * 10), today=TODAY)["confidence"]
+
+
+def test_no_release_years_is_unresolved_not_a_fake_new_release_profile() -> None:
+    result = calculate_musical_age(profile([None, None]), today=TODAY)
+    assert result["isResolved"] is False
+    assert result["title"] == "Release metadata needed"
+    assert result["weightedMedianReleaseYear"] == 0

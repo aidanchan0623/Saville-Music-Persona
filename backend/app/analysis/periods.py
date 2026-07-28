@@ -722,9 +722,11 @@ def albums_payload(
     timezone_name: str | None = None,
     today: date | None = None,
     limit: int = 10,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = [event for event in filter_events(normalised, spec) if event.get("is_music_candidate") is not False]
+    spec = profile["spec"] if profile is not None else resolve_period(normalised, period, month, timezone_name, today)
+    base_events = profile["events"] if profile is not None else filter_events(normalised, spec)
+    events = [event for event in base_events if event.get("is_music_candidate") is not False]
     track_lookup = tracks_by_id(normalised)
     albums = rank_albums(events, track_lookup, spec)
     return {
@@ -960,12 +962,13 @@ def taste_dna_payload(
     month: str | None = None,
     timezone_name: str | None = None,
     today: date | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    spec = resolve_period(normalised, period, month, timezone_name, today)
-    events = filter_events(normalised, spec)
+    spec = profile["spec"] if profile is not None else resolve_period(normalised, period, month, timezone_name, today)
+    events = profile["events"] if profile is not None else filter_events(normalised, spec)
     track_lookup = tracks_by_id(normalised)
     artist_counts = artist_counts_for_events(events, track_lookup)
-    period_norm = normalised_for_events(normalised, events, spec)
+    period_norm = profile["normalised"] if profile is not None else normalised_for_events(normalised, events, spec)
     taste = build_taste_model(period_norm, artist_counts, len(events))
     nodes = taste_nodes(events, track_lookup, taste)
     traits = trait_nodes(events, track_lookup, len(events))

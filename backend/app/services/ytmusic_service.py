@@ -20,6 +20,7 @@ from app.analysis.media import (
     album_cache_success_entry,
     album_image_url as resolve_album_image_url,
     ensure_album_image_cache_schema,
+    release_year_from_payload,
     artist_cache_lookup,
     artist_cache_set,
     ensure_artist_image_cache_schema,
@@ -288,7 +289,12 @@ class YTMusicService:
             album_id = target.get("album_id")
             cached = album_cache_lookup(album_cache, album_id=album_id, album=album, artist=artist)
             is_preferred = (normalise_album_name(album), normalise_artist_name(artist)) in preferred_keys
-            if album_cache_has_result(cached) and (album_cache_has_thumbnail(cached) or not is_preferred):
+            # Revisit cached covers that have no release year.  This keeps the
+            # existing artwork cache useful as a durable metadata-enrichment
+            # source for Musical Age instead of treating a thumbnail as a
+            # complete album record.
+            cache_has_year = bool(cached and cached.get("release_year"))
+            if album_cache_has_result(cached) and cache_has_year and (album_cache_has_thumbnail(cached) or not is_preferred):
                 continue
             if attempted >= limit:
                 break
@@ -411,6 +417,81 @@ class YTMusicService:
             "fallback_attempted": fallback_attempted,
             "remaining": remaining,
         }
+
+    def enrich_release_year_cache(self, normalised: dict[str, Any], release_cache: dict[str, Any], limit: int = 100) -> dict[str, int]:
+        """Resolve high-impact missing release years through exact song and artist matches.
+
+        The cache is keyed by stable local track ID, so an import can be rebuilt
+        without losing metadata acquired for the same YouTube video.
+        """
+        if limit <= 0:
+            return {"attempted": 0, "added": 0, "failed": 0, "remaining": 0}
+        counts = Counter(str(event.get("track_id") or "") for event in normalised.get("play_events") or [])
+        targets = [
+            track
+            for track in normalised.get("tracks") or []
+            if isinstance(track, dict)
+            and track.get("track_id")
+            and not track.get("release_year")
+            and track.get("title")
+            and track.get("primary_artist")
+        ]
+        targets.sort(key=lambda track: (-counts.get(str(track.get("track_id")), 0), str(track.get("title")).casefold()))
+        pending = [track for track in targets if not isinstance(release_cache.get(str(track.get("track_id"))), dict) or not release_cache[str(track.get("track_id"))].get("release_year")]
+        selected = pending[:limit]
+        if not selected:
+            return {"attempted": 0, "added": 0, "failed": 0, "remaining": 0}
+        yt = self.public_client()
+        added = failed = 0
+        for track in selected:
+            track_id = str(track["track_id"])
+            year = self._release_year_for_track(yt, track)
+            if year:
+                release_cache[track_id] = {
+                    "release_year": year,
+                    "source": "ytmusicapi.exact_song_album",
+                    "title": str(track.get("title")),
+                    "artist": str(track.get("primary_artist")),
+                    "resolvedAt": datetime.now(timezone.utc).isoformat(),
+                }
+                added += 1
+            else:
+                release_cache[track_id] = {
+                    "release_year": None,
+                    "source": "ytmusicapi.exact_song_album",
+                    "failureReason": "no_exact_release_year",
+                    "retry_after": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
+                }
+                failed += 1
+        return {"attempted": len(selected), "added": added, "failed": failed, "remaining": max(0, len(pending) - len(selected))}
+
+    def _release_year_for_track(self, yt: Any, track: dict[str, Any]) -> int | None:
+        title = str(track.get("title") or "").strip()
+        artist = str(track.get("primary_artist") or "").strip()
+        try:
+            results = yt.search(f"{title} {artist}", filter="songs", limit=5)
+        except Exception:
+            return None
+        for candidate in results if isinstance(results, list) else []:
+            if not isinstance(candidate, dict) or normalise_track_title(candidate.get("title")) != normalise_track_title(title):
+                continue
+            candidates = [normalise_artist_name(item.get("name") if isinstance(item, dict) else item) for item in candidate.get("artists") or []]
+            if normalise_artist_name(artist) not in candidates:
+                continue
+            year = release_year_from_payload(candidate)
+            if year:
+                return year
+            album = candidate.get("album") if isinstance(candidate.get("album"), dict) else {}
+            browse_id = album.get("id") or album.get("browseId")
+            if not browse_id:
+                continue
+            try:
+                year = release_year_from_payload(yt.get_album(str(browse_id)))
+            except Exception:
+                year = None
+            if year:
+                return year
+        return None
 
     def search_candidates(self, analysis: dict[str, Any], limit_per_seed: int = 8) -> list[dict[str, Any]]:
         yt = self.client()
@@ -715,7 +796,10 @@ def first_album_search_result(yt: Any, album: str, artist: str) -> dict[str, Any
         if normalised_artist and normalised_artist in candidate_artists:
             return item
         title_matches.append(item)
-    return title_matches[0] if title_matches else None
+    # A title-only match is unsafe for common album names.  Only use it where
+    # Takeout genuinely has no artist attribution; otherwise leave the cover
+    # unresolved rather than showing somebody else's release.
+    return title_matches[0] if title_matches and not normalised_artist else None
 
 
 def artist_cache_entry(artist: str, payload: Any, artist_id: Any = None, source: str = "ytmusicapi.artist_lookup") -> dict[str, Any]:
@@ -785,6 +869,14 @@ def normalise_artist_name(value: Any) -> str:
     text = re.sub(r"[^\w\s'-]+", " ", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def normalise_track_title(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char)).casefold()
+    text = re.sub(r"\s*\((?:official|lyrics?|audio|visuali[sz]er)[^)]*\)", " ", text)
+    text = re.sub(r"[^\w\s]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def artist_candidate_names(payload: dict[str, Any]) -> list[str]:
