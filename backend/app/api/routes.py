@@ -949,6 +949,7 @@ def process_takeout_import(
         cached = repo.load_json(key)
         if cached:
             raw[key] = cached
+    coordinator.check_timeout(deadline)
     try:
         warnings = ["Google Takeout history imported and rebuilt from canonical local events."]
         normalised = normalise_with_duration_cache(

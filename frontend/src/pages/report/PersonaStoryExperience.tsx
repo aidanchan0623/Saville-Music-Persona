@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Crown } from "lucide-react";
 import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
-import type { PersonaGenre, PersonaReport } from "../../types/api";
+import type { PersonaGenre, PersonaReport, PersonaTopArtist, PersonaTopSong } from "../../types/api";
 import { PersonaAlbumDome } from "./PersonaAlbumDome";
 
 interface Props {
@@ -145,22 +146,10 @@ function TopFiveScene({ report }: { report: PersonaReport }) {
         <h2 id="top-five-title" className="sr-only">Top Artists and Songs</h2>
         <motion.div className="persona-ranking-panels" style={reduced ? undefined : { x }}>
           <RankingPanel title="Top Artists" period={report.period.label} side="artists">
-            {report.topFive.artists.map((artist, index) => (
-              <motion.article className="persona-ranking-row persona-ranking-row--artist" key={artist.name} initial={reduced ? false : { opacity: 0, x: 50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: index * 0.07 }}>
-                <span className="persona-rank">{artist.rank.toString().padStart(2, "0")}</span>
-                <ArtistAvatar artistImageUrl={artist.artistImageUrl} artistName={artist.name} size={index === 0 ? "hero" : "lg"} shape="rounded" priority={index < 2} />
-                <div><h3>{artist.name}</h3><p>{artist.detectedPlays.toLocaleString()} detected plays &middot; {artist.uniqueSongs} songs</p></div>
-              </motion.article>
-            ))}
+            <RankingPodium kind="artists" items={report.topFive.artists} />
           </RankingPanel>
           <RankingPanel title="Top Songs" period={report.period.label} side="songs">
-            {report.topFive.songs.map((song, index) => (
-              <motion.article className="persona-ranking-row persona-ranking-row--song" key={`${song.title}-${song.artist}`} initial={reduced ? false : { opacity: 0, x: -50 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: index * 0.07 }}>
-                <span className="persona-rank">{song.rank.toString().padStart(2, "0")}</span>
-                <AlbumCover albumImageUrl={song.albumImageUrl || song.trackImageUrl} albumTitle={song.album || song.title} size={index === 0 ? "hero" : "lg"} priority={index < 2} />
-                <div><h3>{song.title}</h3><p>{song.artist}{song.album ? ` / ${song.album}` : ""}</p><small>{song.detectedPlays.toLocaleString()} detected plays{song.detectedMinutes > 0 ? ` / ${song.formattedMinutes} detected` : ""}</small></div>
-              </motion.article>
-            ))}
+            <RankingPodium kind="songs" items={report.topFive.songs} />
           </RankingPanel>
         </motion.div>
       </div>
@@ -169,7 +158,55 @@ function TopFiveScene({ report }: { report: PersonaReport }) {
 }
 
 function RankingPanel({ title, period, side, children }: { title: string; period: string; side: string; children: React.ReactNode }) {
-  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">Top Artists and Songs</p><h2>{title}</h2><p>{period}</p></div><div className="persona-ranking-list">{children}</div></div>;
+  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">Top Artists and Songs</p><h2>{title}</h2><p>{period}</p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
+}
+
+function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArtist[] } | { kind: "songs"; items: PersonaTopSong[] }) {
+  const reduced = useReducedMotion();
+  return (
+    <div className={`persona-podium persona-podium--${kind}`} aria-label={`Top five ${kind}`}>
+      {items.slice(0, 5).map((item) => {
+        const rank = Math.min(5, Math.max(1, item.rank));
+        const visualColumn = ({ 1: 3, 2: 2, 3: 4, 4: 1, 5: 5 } as const)[rank as 1 | 2 | 3 | 4 | 5];
+        const isArtist = kind === "artists";
+        const artist = isArtist ? item as PersonaTopArtist : null;
+        const song = !isArtist ? item as PersonaTopSong : null;
+        const title = artist?.name ?? song?.title ?? "Unknown";
+        const subtitle = artist
+          ? `${artist.detectedPlays.toLocaleString()} plays · ${artist.uniqueSongs} songs`
+          : `${song?.artist ?? "Unknown artist"} · ${song?.detectedPlays.toLocaleString() ?? 0} plays`;
+        return (
+          <motion.article
+            className={`persona-podium-entry persona-podium-entry--rank-${rank}`}
+            key={artist?.name ?? `${song?.title}-${song?.artist}`}
+            initial={reduced ? false : { opacity: 0, x: (3 - visualColumn) * 76, y: 46, scale: 0.84 }}
+            whileInView={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.35 }}
+            transition={{ type: "spring", stiffness: 105, damping: 17, delay: rank === 1 ? 0.06 : 0.12 + visualColumn * 0.055 }}
+          >
+            <div className="persona-podium-profile">
+              {rank === 1 ? <span className="persona-podium-crown" aria-label="First place"><Crown aria-hidden="true" /></span> : null}
+              {artist
+                ? <ArtistAvatar artistImageUrl={artist.artistImageUrl} artistName={artist.name} size={rank === 1 ? "hero" : "lg"} shape="rounded" priority={rank <= 2} />
+                : <AlbumCover albumImageUrl={song?.albumImageUrl || song?.trackImageUrl} albumTitle={song?.album || song?.title || "Song"} size={rank === 1 ? "hero" : "lg"} priority={rank <= 2} />}
+              <h3 title={title}>{title}</h3>
+              <p>{subtitle}</p>
+              {song?.detectedMinutes ? <small>{song.formattedMinutes} detected</small> : null}
+            </div>
+            <motion.div
+              className="persona-podium-step"
+              initial={reduced ? false : { scaleY: 0.08 }}
+              whileInView={{ scaleY: 1 }}
+              viewport={{ once: true, amount: 0.35 }}
+              transition={{ duration: 0.62, ease: [0.22, 1, 0.36, 1], delay: 0.08 + visualColumn * 0.05 }}
+            >
+              <span>{rank}</span>
+            </motion.div>
+          </motion.article>
+        );
+      })}
+    </div>
+  );
 }
 
 function FinalRoastScene({ report }: { report: PersonaReport }) {

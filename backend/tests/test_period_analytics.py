@@ -457,6 +457,24 @@ def test_artist_metrics_use_primary_artist_events_without_fractional_plays() -> 
     assert all("weighted_play_score" not in item for item in artists)
 
 
+def test_top_songs_merge_exact_title_artist_across_video_ids() -> None:
+    normalised = normalise_collection(
+        {
+            "history": [
+                {"videoId": "official-video", "title": "Same Song", "artists": [{"name": "Artist"}], "played": "2026-07-01"},
+                {"videoId": "official-audio", "title": "Same Song", "artists": [{"name": "Artist"}], "played": "2026-07-02"},
+                {"videoId": "live-version", "title": "Same Song (Live)", "artists": [{"name": "Artist"}], "played": "2026-07-03"},
+            ]
+        },
+        today=date(2026, 7, 7),
+    )
+
+    ranked = rank_items(normalised["play_events"], tracks_by_id(normalised), "tracks")
+
+    assert [(item["title"], item["play_count"]) for item in ranked] == [("Same Song", 2), ("Same Song (Live)", 1)]
+    assert ranked[0]["track_id"] in {"video:official-video", "video:official-audio"}
+
+
 def test_duration_milliseconds_are_normalised_once() -> None:
     normalised = normalise_collection(
         {

@@ -634,7 +634,7 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
     dated_dates = [item for item in parsed_history_dates if item is not None]
     latest = max(dated_dates) if dated_dates else None
     earliest_available = min(dated_dates) if dated_dates else None
-    cutoff = latest - timedelta(days=365) if latest else None
+    rolling_start = latest - timedelta(days=364) if latest else None
     use_dated_window = latest is not None
     undated_history_count = sum(1 for item in parsed_history_dates if item is None)
     album_image_cache = ensure_album_image_cache_schema(raw.get("album_image_cache_v1") or {})
@@ -668,15 +668,11 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
 
     included_dated_dates: list[date] = []
     for item, played_at in zip(history, parsed_history_dates):
-        include = False
         coverage_status = "available_history_no_dates"
         if use_dated_window and played_at:
-            include = cutoff is None or played_at >= cutoff
-            coverage_status = "dated_365_window" if include else "outside_365_window"
-        elif not use_dated_window:
-            include = True
-        if not include:
-            continue
+            coverage_status = "dated_365_window" if rolling_start is None or played_at >= rolling_start else "outside_365_window"
+        elif use_dated_window:
+            coverage_status = "missing_timestamp"
         track = upsert(item, "history")
         event = add_event(item, track, "play_event")
         if event is None:
@@ -732,6 +728,8 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         notes.append(f"{undated_history_count} history items had missing or unparseable play dates and were excluded from dated coverage metrics.")
     if dated_dates and not full_365:
         notes.append("Available dated history does not cover approximately 365 days, so the report is labelled as partial coverage.")
+    if dated_dates:
+        notes.append("All dated history is retained locally; each dashboard period applies its own date filter.")
 
     release_cache = raw.get("release_year_cache_v1") or {}
     if isinstance(release_cache, dict):
@@ -763,7 +761,7 @@ def normalise_collection(raw: dict[str, Any], today: date | None = None) -> dict
         "undated_history_items": undated_history_count,
         "history_items_returned": len(history),
         "date_data_available": bool(dated_dates),
-        "history_coverage_status": "dated_365_window" if dated_dates else "available_history_no_dates",
+        "history_coverage_status": "all_available_history" if dated_dates else "available_history_no_dates",
         "notes": notes,
     }
     payload = {

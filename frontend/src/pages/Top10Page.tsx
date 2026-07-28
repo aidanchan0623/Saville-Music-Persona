@@ -19,7 +19,7 @@ import type {
 import { formatDate } from "../utils/format";
 import "./Top10Page.css";
 
-type TopPeriod = "this_month" | "month" | "rolling_year";
+type TopPeriod = "this_month" | "month" | "rolling_year" | "all";
 type RankingKind = "songs" | "artists";
 
 export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; titleAnimationKey: string }) {
@@ -142,6 +142,7 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
           <PeriodButton active={period === "month"} label="Select Month" onClick={() => setPeriod("month")} />
           <PeriodButton active={period === "rolling_year"} label="Rolling Year" onClick={() => setPeriod("rolling_year")} />
+          <PeriodButton active={period === "all"} label="All History" onClick={() => setPeriod("all")} />
           {period === "month" ? (
             <select
               className="rounded-md border border-white/10 bg-ink px-3 py-2 text-sm text-white"
@@ -685,6 +686,7 @@ function Movement({ movement }: { movement: PeriodTopItem["movement"] }) {
 
 function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
   if (period === "rolling_year") return "Rolling Year";
+  if (period === "all") return "All History";
   return label ?? "Selected Period";
 }
 

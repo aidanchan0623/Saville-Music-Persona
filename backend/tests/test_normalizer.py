@@ -4,6 +4,7 @@ from datetime import date
 
 from app.analysis.media import album_cache_set, empty_album_image_cache
 from app.analysis.normalizer import normalise_collection, parse_played_date
+from app.analysis.periods import filter_events, resolve_period
 
 
 def test_duplicate_track_normalisation_merges_video_id() -> None:
@@ -58,6 +59,25 @@ def test_partial_history_coverage_is_not_full_year() -> None:
     assert result["coverage"]["days_represented"] == 20
 
 
+def test_full_history_is_retained_while_rolling_year_is_filtered() -> None:
+    raw = {
+        "history": [
+            {"videoId": "old", "title": "Old", "artists": [{"name": "Artist"}], "played": "2024-06-01"},
+            {"videoId": "new", "title": "New", "artists": [{"name": "Artist"}], "played": "2026-06-01"},
+        ]
+    }
+    result = normalise_collection(raw, today=date(2026, 7, 1))
+
+    all_spec = resolve_period(result, "all", timezone_name="UTC", today=date(2026, 7, 1))
+    rolling_spec = resolve_period(result, "rolling_year", timezone_name="UTC", today=date(2026, 7, 1))
+
+    assert result["metadata"]["play_count"] == 2
+    assert len(filter_events(result, all_spec)) == 2
+    assert [event["title"] for event in filter_events(result, rolling_spec)] == ["New"]
+    assert result["coverage"]["earliest_detected_play"] == "2024-06-01"
+    assert result["coverage"]["history_coverage_status"] == "all_available_history"
+
+
 def test_available_history_without_dates_is_labelled() -> None:
     raw = {"history": [{"videoId": "a", "title": "A", "artists": [{"name": "Artist"}]}]}
     result = normalise_collection(raw, today=date(2026, 7, 1))
@@ -88,6 +108,53 @@ def test_preference_evidence_and_non_music_do_not_create_analytics_plays() -> No
     }
     assert any(event["music_classification"] == "non_music" for event in result["excluded_play_events"])
     assert result["import_diagnostics"]["accepted_music_plays"] == 1
+
+
+def test_full_album_and_concert_music_are_retained_but_reactions_are_not() -> None:
+    raw = {
+        "history": [
+            {
+                "videoId": "album001",
+                "title": "Band - Record (Full Album Stream)",
+                "artists": [{"name": "Band"}],
+                "played": "2026-07-01T10:00:00Z",
+                "duration_seconds": 2700,
+            },
+            {
+                "videoId": "concert01",
+                "title": "Band - Full Concert",
+                "artists": [{"name": "Band"}],
+                "played": "2026-07-01T11:00:00Z",
+                "duration_seconds": 5400,
+            },
+            {
+                "videoId": "episode33",
+                "title": "Episode 33",
+                "artists": [{"name": "She Her Her Hers"}],
+                "played": "2026-07-01T11:30:00Z",
+                "duration_seconds": 258,
+            },
+            {
+                "videoId": "reaction1",
+                "title": "Producer Reaction to Band Full Album",
+                "artists": [{"name": "Reaction Channel"}],
+                "played": "2026-07-01T12:00:00Z",
+                "duration_seconds": 2700,
+            },
+        ]
+    }
+
+    result = normalise_collection(raw, today=date(2026, 7, 2))
+
+    assert [event["title"] for event in result["play_events"]] == [
+        "Band - Record (Full Album Stream)",
+        "Band - Full Concert",
+        "Episode 33",
+    ]
+    assert result["metadata"]["play_count"] == 3
+    assert result["play_events"][0]["content_type"] == "music_longform"
+    assert result["play_events"][1]["content_type"] == "music_longform"
+    assert result["excluded_play_events"][0]["title"] == "Producer Reaction to Band Full Album"
 
 
 def test_canonical_events_are_idempotent_for_a_repeated_takeout_import() -> None:

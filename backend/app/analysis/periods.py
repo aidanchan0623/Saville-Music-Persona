@@ -560,6 +560,26 @@ def album_group_for_track(track: dict[str, Any], event: dict[str, Any] | None = 
     return {"key": key, "album": album, "artist": artist, "album_id": album_id}
 
 
+def song_group_key(track: dict[str, Any], event: dict[str, Any]) -> str:
+    """Group exact song identities across official video/audio catalogue IDs."""
+    title = str(track.get("title") or event.get("title") or "").strip()
+    artist = primary_artist_for(track, event)
+    title_key = normalise_match_text(title)
+    artist_key = normalise_match_text(artist)
+    if title_key and artist_key:
+        return f"song:{title_key}::artist:{artist_key}"
+    return f"track:{event.get('track_id') or title_key or 'unknown'}"
+
+
+def ranking_track_quality(track: dict[str, Any]) -> tuple[int, int, int, int]:
+    return (
+        int(bool(resolve_album_image_url(track))),
+        int(bool(resolve_track_image_url(track))),
+        int(album_name_is_usable(track.get("album"))),
+        int(bool(track.get("duration_seconds"))),
+    )
+
+
 def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, Any]], kind: str, artist_metadata: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     counts: Counter[str] = Counter()
     raw_appearance_counts: Counter[str] = Counter()
@@ -569,10 +589,11 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
     top_song: dict[str, Counter[str]] = defaultdict(Counter)
     last_played: dict[str, str] = {}
     active_days: dict[str, set[date]] = defaultdict(set)
+    representative_tracks: dict[str, dict[str, Any]] = {}
     total = len(events)
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
-        keys = [str(event.get("track_id"))]
+        keys = [song_group_key(track, event)]
         if kind == "artists":
             keys = [primary_artist_for(track, event)]
         weight = 1
@@ -581,6 +602,10 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         title = str(track.get("title") or event.get("title") or "Unknown track")
         artist = primary_artist_for(track, event)
         for key in keys:
+            if kind != "artists":
+                current = representative_tracks.get(key)
+                if current is None or ranking_track_quality(track) > ranking_track_quality(current):
+                    representative_tracks[key] = track
             counts[key] += weight
             raw_appearance_counts[key] += 1
             seconds[key] += sec * weight
@@ -593,7 +618,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             played = str(event.get("played_at") or "")
             if played:
                 last_played[key] = max(last_played.get(key, ""), played)
-    ranked = sorted(counts, key=lambda key: (-counts[key], -len(active_days[key]), str(track_lookup.get(key, {}).get("title") or key).casefold(), str(key).casefold()))
+    ranked = sorted(counts, key=lambda key: (-counts[key], -len(active_days[key]), str(representative_tracks.get(key, {}).get("title") or track_lookup.get(key, {}).get("title") or key).casefold(), str(key).casefold()))
     result = []
     metadata = artist_metadata or {}
     normalised_metadata_lookup = {normalise_match_text(name): meta for name, meta in metadata.items()} if kind == "artists" and metadata else {}
@@ -619,7 +644,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
             spotify_rank = artist_meta.get("spotify_rank")
             spotify_signal_label = None
         else:
-            meta_track = track_lookup.get(key, {})
+            meta_track = representative_tracks.get(key, {})
             artist = str(meta_track.get("primary_artist") or UNKNOWN_ARTIST)
             title = str(meta_track.get("title") or "Unknown track")
             track_art = resolve_track_image_url(meta_track)
@@ -641,7 +666,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
         result.append(
             {
                 "key": key,
-                "track_id": key if kind != "artists" else None,
+                "track_id": meta_track.get("track_id") if kind != "artists" else None,
                 "video_id": meta_track.get("video_id") if meta_track else None,
                 "source": source,
                 "source_track_id": source_track_id,

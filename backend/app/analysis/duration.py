@@ -17,10 +17,7 @@ NON_MUSIC_TITLE_PATTERNS = (
     "documentary",
     "livestream",
     "live stream",
-    "full album",
-    "full concert",
     "playlist",
-    "episode",
     "tutorial",
     "behind the scenes",
     "press conference",
@@ -32,6 +29,12 @@ NON_MUSIC_TITLE_PATTERNS = (
     "lactogrow",
     "probio",
     "tumbesaran",
+)
+
+MUSIC_LONGFORM_TITLE_PATTERNS = (
+    "full album",
+    "album stream",
+    "full concert",
 )
 
 
@@ -108,6 +111,7 @@ def content_type_for(title: str | None, duration_seconds: int | None) -> tuple[s
     title_text = (title or "").lower()
     if any(pattern in title_text for pattern in NON_MUSIC_TITLE_PATTERNS):
         return "non_music_or_longform", False, "non_music_content"
+    is_music_longform = any(pattern in title_text for pattern in MUSIC_LONGFORM_TITLE_PATTERNS)
     if duration_seconds is None:
         return "music_candidate", True, "missing_duration"
     if duration_seconds <= 0:
@@ -118,7 +122,11 @@ def content_type_for(title: str | None, duration_seconds: int | None) -> tuple[s
         # have a title and channel attribution.
         return "non_music_or_shortform", False, "duration_too_short"
     if duration_seconds > MAX_TRACK_DURATION_SECONDS:
+        if is_music_longform:
+            return "music_longform", True, None
         return "longform_video", False, "too_long_for_track"
+    if is_music_longform:
+        return "music_longform", True, None
     return "music_track", True, None
 
 
