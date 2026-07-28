@@ -10,7 +10,7 @@ from dataclasses import dataclass
 class ArtistGenreProfile:
     canonical_genres: tuple[str, ...]
     broad_clusters: tuple[str, ...]
-    sonic_traits: tuple[str, ...]
+    sonic_traits: tuple[str, ...] = ()
     confidence: str = "high"
     source: str = "curated genre mapping"
     taste_role_hint: str | None = None
@@ -450,7 +450,7 @@ ARTIST_GENRES: dict[str, ArtistGenreProfile] = {
         sonic_traits=("narrative", "melodic", "polished", "songwriting-led"),
     ),
     "g.e.m.": ArtistGenreProfile(
-        canonical_genres=("pop", "singer-songwriter"),
+        canonical_genres=("mandopop", "c-pop", "pop", "r&b"),
         broad_clusters=("Pop / Pop Rock Crossover",),
         sonic_traits=("melodic", "vocal-led", "polished"),
     ),
@@ -469,6 +469,23 @@ ARTIST_GENRES: dict[str, ArtistGenreProfile] = {
         broad_clusters=("Pop / Pop Rock Crossover", "Electronic / Atmospheric"),
         sonic_traits=("rhythmic", "melodic", "polished"),
     ),
+    "邓紫棋": ArtistGenreProfile(canonical_genres=("mandopop", "c-pop", "pop", "r&b"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "周杰伦": ArtistGenreProfile(canonical_genres=("mandopop", "c-pop", "pop", "r&b"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "周杰倫": ArtistGenreProfile(canonical_genres=("mandopop", "c-pop", "pop", "r&b"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "告五人": ArtistGenreProfile(canonical_genres=("mandopop", "pop rock", "indie pop"), broad_clusters=("Pop / Pop Rock Crossover", "Alternative / Indie Rock")),
+    "王力宏": ArtistGenreProfile(canonical_genres=("mandopop", "r&b", "pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "林俊杰": ArtistGenreProfile(canonical_genres=("mandopop", "pop", "r&b"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "林俊傑": ArtistGenreProfile(canonical_genres=("mandopop", "pop", "r&b"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "陈奕迅": ArtistGenreProfile(canonical_genres=("cantopop", "mandopop", "pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "陳奕迅": ArtistGenreProfile(canonical_genres=("cantopop", "mandopop", "pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "五月天": ArtistGenreProfile(canonical_genres=("mandopop", "pop rock"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "bts": ArtistGenreProfile(canonical_genres=("k-pop", "pop", "hip-hop"), broad_clusters=("Pop / Pop Rock Crossover", "Hip-Hop / Rap")),
+    "blackpink": ArtistGenreProfile(canonical_genres=("k-pop", "pop", "dance pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "twice": ArtistGenreProfile(canonical_genres=("k-pop", "pop", "dance pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "newjeans": ArtistGenreProfile(canonical_genres=("k-pop", "r&b", "pop"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "yoasobi": ArtistGenreProfile(canonical_genres=("j-pop", "pop rock"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "ado": ArtistGenreProfile(canonical_genres=("j-pop", "pop rock"), broad_clusters=("Pop / Pop Rock Crossover",)),
+    "kenshi yonezu": ArtistGenreProfile(canonical_genres=("j-pop", "pop rock"), broad_clusters=("Pop / Pop Rock Crossover",)),
 }
 
 
@@ -479,6 +496,12 @@ ARTIST_ALIASES: dict[str, str] = {
     "mcr": "my chemical romance",
     "one republic": "onerepublic",
     "sawano hiroyuki": "hiroyuki sawano",
+    "gem tang": "g.e.m.",
+    "邓紫棋": "g.e.m.",
+    "周杰倫": "jay chou",
+    "周杰伦": "jay chou",
+    "林俊傑": "林俊杰",
+    "陳奕迅": "陈奕迅",
     "周杰伦": "周杰倫",
 }
 
@@ -541,6 +564,6 @@ def normalise_genre(genre: str) -> tuple[str, str] | None:
     if value in GENRE_ALIASES:
         return GENRE_ALIASES[value]
     key = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
-    if not key or key in {"music", "other", "unknown", "various"}:
+    if not key or key in {"music", "other", "unknown", "various", "spoken-word", "comedy", "podcast", "audiobook", "talk", "made-up-genre"}:
         return None
     return key, " ".join(part.capitalize() for part in value.split())

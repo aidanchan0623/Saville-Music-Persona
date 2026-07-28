@@ -24,9 +24,9 @@ def profile_for_artist(artist: str, source_genres: list[str] | tuple[str, ...] |
     curated = get_exact_curated_artist_profile(artist)
     if curated:
         return profile_payload(curated)
-    trusted_genres = [normalised[1] if normalised else str(genre).strip() for genre in (source_genres or []) if str(genre).strip() for normalised in [normalise_genre(str(genre))]]
+    trusted_genres = list(dict.fromkeys(normalised[1] for genre in (source_genres or []) if str(genre).strip() for normalised in [normalise_genre(str(genre))] if normalised))
     source_clusters = clusters_for_genres(trusted_genres)
-    if source_clusters:
+    if trusted_genres:
         return {
             "canonical_genres": trusted_genres,
             "broad_clusters": source_clusters,

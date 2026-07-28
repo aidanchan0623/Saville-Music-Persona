@@ -8,6 +8,7 @@ import httpx
 
 from app.analysis.normalizer import normalise_collection
 from app.analysis.scoring import build_analysis
+from app.analysis.taste_model import profile_for_artist
 from app.services.genre_enrichment_service import MusicBrainzGenreService
 
 
@@ -95,7 +96,7 @@ def test_unsupported_musicbrainz_genres_remain_unknown() -> None:
 def test_cached_match_is_reapplied_without_network_after_reimport() -> None:
     normalised = unknown_profile("Narvent", 2)
     cache = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "provider": "musicbrainz",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
         "items": {
@@ -183,5 +184,19 @@ def test_cache_version_change_removes_stale_enriched_genres_before_rechecking() 
     service = FakeMusicBrainzGenreService([{"artists": []}])
     cache, stats = service.enrich(normalised, old_cache, limit=1, deadline=time.monotonic() + 10)
     assert stats["attempted"] == 1
-    assert cache["schemaVersion"] == 2
+    assert cache["schemaVersion"] == 3
     assert normalised["artist_metadata"]["Versioned Artist"]["genres"] == []
+
+
+def test_regional_musicbrainz_tags_are_kept_and_count_as_classified() -> None:
+    normalised = unknown_profile("Regional Artist", 2)
+    service = FakeMusicBrainzGenreService(
+        [
+            {"artists": [{"id": "regional", "name": "Regional Artist", "score": 100}]},
+            {"genres": [{"name": "korean pop", "count": 8}, {"name": "mandarin pop", "count": 6}]},
+        ]
+    )
+    _, stats = service.enrich(normalised, None, limit=1, deadline=time.monotonic() + 10)
+    assert stats["matched"] == 1
+    assert normalised["artist_metadata"]["Regional Artist"]["genres"] == ["k-pop", "mandopop"]
+    assert profile_for_artist("Regional Artist", ["k-pop", "mandopop"])["canonical_genres"]

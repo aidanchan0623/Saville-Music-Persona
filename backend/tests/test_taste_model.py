@@ -42,6 +42,12 @@ def test_trusted_source_genres_are_used_only_when_they_map_to_known_clusters() -
     assert unknown["confidence"] == "low"
 
 
+def test_regional_and_non_cluster_source_genres_are_retained_when_normalised() -> None:
+    profile = profile_for_artist("Unmapped regional artist", ["korean pop", "mandarin pop"])
+    assert profile["confidence"] == "medium"
+    assert profile["canonical_genres"] == ["K-pop", "Mandopop"]
+
+
 def test_spotify_track_genres_reach_event_weighted_taste_classification() -> None:
     normalised = normalise_collection(
         {

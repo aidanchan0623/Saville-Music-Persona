@@ -9,11 +9,11 @@ from typing import Any
 import httpx
 
 from app.analysis.taste_model import has_usable_artist, profile_for_artist, source_genres_for_artist
-from app.data.artist_genres import clusters_for_genres, normalise_artist_name
+from app.data.artist_genres import normalise_artist_name, normalise_genre
 
 
 MUSICBRAINZ_API_URL = "https://musicbrainz.org/ws/2"
-GENRE_METADATA_CACHE_VERSION = 2
+GENRE_METADATA_CACHE_VERSION = 3
 NEGATIVE_CACHE_TTL_DAYS = 30
 POSITIVE_CACHE_TTL_DAYS = 180
 
@@ -242,9 +242,11 @@ def supported_genres(value: Any) -> list[str]:
     for item in ordered:
         if int(item.get("count") or 0) < minimum_count:
             continue
-        name = str(item["name"]).strip().casefold()
-        if name and clusters_for_genres([name]) and name not in genres:
-            genres.append(name)
+        normalised = normalise_genre(str(item["name"]))
+        if normalised:
+            name = normalised[1].casefold()
+            if name not in genres:
+                genres.append(name)
     return genres[:8]
 
 
@@ -260,7 +262,7 @@ def unknown_artist_play_counts(normalised: dict[str, Any]) -> Counter[str]:
         if not has_usable_artist(artist):
             continue
         genres = source_genres_for_artist(track, metadata, artist)
-        if not profile_for_artist(artist, genres).get("broad_clusters"):
+        if not profile_for_artist(artist, genres).get("canonical_genres"):
             counts[artist] += 1
     return counts
 
