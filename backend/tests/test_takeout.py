@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from app.analysis.scoring import build_analysis
 from app.services.takeout_service import (
     dedupe_takeout_entries,
     normalise_takeout_items,
+    parse_takeout_file,
     parse_takeout_html,
     parse_takeout_upload,
 )
@@ -336,7 +338,7 @@ def test_html_parser_tolerates_class_order_and_keeps_timestamp_out_of_link_text(
     assert entries[0]["title"] == "Structured Song"
     assert entries[0]["artists"][0]["name"] == "Structured Artist"
     assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"
-    assert entries[0]["parserSchemaVersion"] == 4
+    assert entries[0]["parserSchemaVersion"] == 5
 
 
 def test_html_parser_accepts_narrow_nonbreaking_timestamp_whitespace() -> None:
@@ -348,3 +350,56 @@ def test_html_parser_accepts_narrow_nonbreaking_timestamp_whitespace() -> None:
     )
     assert entries[0]["videoId"] == "whitespace1"
     assert entries[0]["played"] == "2026-07-10T14:32:18+00:00"
+
+
+def test_html_file_audit_reconciles_duplicates_exclusions_and_repeated_plays(tmp_path: Path) -> None:
+    song = """
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched <a href="https://music.youtube.com/watch?v=audit1234">Audit Song</a><br>
+      <a href="https://www.youtube.com/channel/example">Audit Artist - Topic</a><br>
+      {timestamp}<br>
+    </div>
+    """
+    ad = """
+    <div class="content-cell mdl-cell mdl-cell--6-col mdl-typography--body-1">
+      Watched at Jul 11, 2026, 10:32:18 PM GMT+08:00<br>From Google Ads
+    </div>
+    """
+    path = tmp_path / "watch-history.html"
+    first = song.format(timestamp="Jul 10, 2026, 10:32:18 PM GMT+08:00")
+    later = song.format(timestamp="Jul 11, 2026, 10:32:18 PM GMT+08:00")
+    path.write_text(first + first + later + ad, encoding="utf-8")
+
+    result = parse_takeout_file(path)
+
+    assert result.raw_event_count == 4
+    assert len(result.entries) == 2
+    assert result.diagnostics["parsed_records"] == 3
+    assert result.diagnostics["duplicates"] == 1
+    assert result.diagnostics["intentionally_excluded_records"] == 1
+    assert result.diagnostics["silent_loss"] == 0
+    assert result.entries[0]["rawTitle"] == "Audit Song"
+    assert result.entries[0]["rawChannel"] == "Audit Artist - Topic"
+
+
+def test_zip_reconciles_the_same_json_event_across_multiple_history_files(tmp_path: Path) -> None:
+    item = {
+        "header": "YouTube Music",
+        "title": "Watched Repeated Export Song",
+        "titleUrl": "https://www.youtube.com/watch?v=repeat1234",
+        "subtitles": [{"name": "Export Artist"}],
+        "time": "2026-07-10T08:01:02Z",
+        "products": ["YouTube"],
+    }
+    archive_path = tmp_path / "takeout.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("Takeout/YouTube and YouTube Music/history/watch-history.json", json.dumps([item]))
+        archive.writestr("Takeout/YouTube and YouTube Music/history/watch history backup.json", json.dumps([item]))
+
+    result = parse_takeout_file(archive_path)
+
+    assert result.raw_event_count == 2
+    assert result.diagnostics["parsed_records"] == 2
+    assert len(result.entries) == 1
+    assert result.diagnostics["duplicates"] == 1
+    assert result.diagnostics["silent_loss"] == 0

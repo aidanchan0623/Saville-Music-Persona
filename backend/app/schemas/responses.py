@@ -94,6 +94,8 @@ class DurationEnrichmentStatusResponse(BaseModel):
     added: int | None = None
     failed: int | None = None
     continueQueued: bool | None = None
+    releaseYearEnrichment: dict[str, int] | None = None
+    trackMetadataEnrichment: dict[str, int] | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
     finishedAt: str | None = None

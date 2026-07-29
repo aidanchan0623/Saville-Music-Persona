@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from app.data.genre_taxonomy import TAXONOMY_VERSION, normalise_external_genres
+from app.analysis.track_metadata import display_recording_title
 
 
 RECORDING_CATALOG_SCHEMA_VERSION = 1
@@ -236,8 +237,9 @@ class RecordingCatalog:
         create: bool = True,
     ) -> RecordingResolution | None:
         identifiers = identifier_candidates(track)
-        versions, presentations = modifiers_for(track.get("title"))
-        title_key = base_title(track.get("title"))
+        cleaned_title = display_recording_title(track.get("title"), track.get("primary_artist"))
+        versions, presentations = modifiers_for(cleaned_title)
+        title_key = base_title(cleaned_title)
         artist_key = normalise_recording_text(track.get("primary_artist"))
         album_key = normalise_recording_text(track.get("album"))
         duration = _positive_int(track.get("duration_seconds"))

@@ -19,6 +19,7 @@ from app.analysis.media import ensure_album_image_cache_schema, ensure_artist_im
 from app.analysis.music_character import MUSIC_CHARACTER_CLASSIFIER_VERSION, character_payload
 from app.analysis.musical_age import MUSICAL_AGE_CALCULATION_VERSION
 from app.analysis.normalizer import NORMALISED_DATA_SCHEMA_VERSION, apply_release_year_cache, normalise_collection
+from app.analysis.track_metadata import apply_track_metadata_cache, ensure_track_metadata_cache
 from app.analysis.period_profile import ANALYTICS_VERSION, GENRE_MAP_VERSION, build_period_profile
 from app.models.listening_event import LISTENING_EVENT_SCHEMA_VERSION
 from app.analysis.overview import (
@@ -359,11 +360,13 @@ def normalise_with_duration_cache(
     artist_cache = ensure_artist_image_cache_schema(repo.load_json("artist_image_cache_v2") or {})
     album_cache = ensure_album_image_cache_schema(repo.load_json("album_image_cache_v1") or {})
     release_year_cache = repo.load_json("release_year_cache_v1") or {}
+    track_metadata_cache = ensure_track_metadata_cache(repo.load_json("track_metadata_cache_v1") or {})
     raw.pop("artist_image_cache", None)
     raw.pop("album_image_cache", None)
     raw["artist_image_cache_v2"] = artist_cache
     raw["album_image_cache_v1"] = album_cache
     raw["release_year_cache_v1"] = release_year_cache if isinstance(release_year_cache, dict) else {}
+    raw["track_metadata_cache_v1"] = track_metadata_cache
     repo.delete_json("artist_image_cache")
     repo.delete_json("album_image_cache")
     if artist_cache:
@@ -383,6 +386,7 @@ def normalise_with_duration_cache(
             if warnings is not None:
                 warnings.append(f"Artist image enrichment skipped: {exc}")
     normalised = normalise_collection(raw)
+    apply_track_metadata_cache(normalised, track_metadata_cache)
     if allow_album_image_enrichment:
         try:
             preferred_albums = preferred_album_image_targets(normalised)
@@ -390,6 +394,7 @@ def normalise_with_duration_cache(
             if stats.get("seeded") or stats.get("attempted"):
                 repo.save_json("album_image_cache_v1", album_cache)
                 normalised = normalise_collection(raw)
+                apply_track_metadata_cache(normalised, track_metadata_cache)
                 if warnings is not None:
                     warnings.append(
                         f"Album image cache checked {stats['attempted']} album(s), added {stats['added']} official cover(s), and reused {stats['seeded']} library album cover(s)."
@@ -962,7 +967,7 @@ def process_takeout_import(
     raw["takeout_parser_schema_version"] = TAKEOUT_PARSER_SCHEMA_VERSION
     raw["takeout_import_batch_id"] = job_id
     raw["takeout_import_diagnostics"] = parsed.diagnostics
-    for key in ("artist_image_cache_v2", "album_image_cache_v1", "release_year_cache_v1"):
+    for key in ("artist_image_cache_v2", "album_image_cache_v1", "release_year_cache_v1", "track_metadata_cache_v1"):
         cached = repo.load_json(key)
         if cached:
             raw[key] = cached
@@ -1098,9 +1103,15 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         release_year_cache,
         settings.release_year_enrichment_limit,
     )
+    track_metadata_cache = ensure_track_metadata_cache(repo.load_json("track_metadata_cache_v1") or {})
+    metadata_stats = ytmusic.enrich_track_metadata_cache(
+        cached_normalised,
+        track_metadata_cache,
+        settings.track_metadata_enrichment_limit,
+    )
     coordinator.check_timeout(deadline)
-    if not stats.get("attempted") and not release_stats.get("attempted"):
-        coordinator.stage("complete", "Track duration and release-year coverage are already up to date.", **stats, releaseYearEnrichment=release_stats)
+    if not stats.get("attempted") and not release_stats.get("attempted") and not metadata_stats.get("attempted"):
+        coordinator.stage("complete", "Track duration, identity metadata, and release-year coverage are already up to date.", **stats, releaseYearEnrichment=release_stats, trackMetadataEnrichment=metadata_stats)
         return
 
     coordinator.stage("rebuilding", "Applying resolved durations and rebuilding listening totals.", **stats)
@@ -1112,6 +1123,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
         cached_normalised = latest_normalised
     rebuilt_normalised = annotate_normalised_durations(cached_normalised, duration_cache)
+    apply_track_metadata_cache(rebuilt_normalised, track_metadata_cache)
     rebuilt_normalised = apply_release_year_cache(rebuilt_normalised, release_year_cache)
     apply_genre_cache(rebuilt_normalised, durable_genre_cache())
     current_recording_catalog().sync_normalised(rebuilt_normalised)
@@ -1122,17 +1134,18 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     raw = repo.load_json("raw") or {}
     if isinstance(raw, dict):
         raw["release_year_cache_v1"] = release_year_cache
+        raw["track_metadata_cache_v1"] = track_metadata_cache
     repo.save_json_batch(
-        {"duration_cache": duration_cache, "release_year_cache_v1": release_year_cache, "raw": raw, "normalised": rebuilt_normalised, "analysis": rebuilt_analysis},
+        {"duration_cache": duration_cache, "release_year_cache_v1": release_year_cache, "track_metadata_cache_v1": track_metadata_cache, "raw": raw, "normalised": rebuilt_normalised, "analysis": rebuilt_analysis},
         delete_keys=["latest_report", "recommendations"],
         delete_prefixes=["persona_report:", "persona_report_pointer:", "overview_language:"],
     )
     clear_analytics_memory_caches()
-    remaining_total = int(stats.get("remaining") or 0) + int(release_stats.get("remaining") or 0)
+    remaining_total = int(stats.get("remaining") or 0) + int(release_stats.get("remaining") or 0) + int(metadata_stats.get("remaining") or 0)
     remaining_note = f" {remaining_total} more track(s) remain queued for the next local batch." if remaining_total else ""
     coordinator.stage(
         "complete",
-        f"Resolved {stats['added']} track duration(s) and {release_stats['added']} release year(s). Listening totals are updated.{remaining_note}",
+        f"Resolved {stats['added']} track duration(s), {metadata_stats['added']} authoritative track metadata record(s), and {release_stats['added']} release year(s). Listening totals are updated.{remaining_note}",
         # Duration lookups are cheap to resume automatically.  Release-year
         # matching makes upstream searches and album reads, so leave additional
         # metadata for the next explicit/background refresh instead of chaining
@@ -1140,6 +1153,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         continueQueued=bool(stats.get("remaining")),
         **stats,
         releaseYearEnrichment=release_stats,
+        trackMetadataEnrichment=metadata_stats,
     )
 
 

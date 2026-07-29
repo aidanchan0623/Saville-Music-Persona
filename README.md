@@ -42,6 +42,21 @@ flowchart LR
   Ollama --> API
 ```
 
+The Takeout integrity path is deliberately separate from presentation:
+
+```mermaid
+flowchart LR
+  ZIP["Takeout ZIP / watch history"] --> Parser["Schema-v5 parser + record outcomes"]
+  Parser --> Events["Schema-v4 canonical listening events"]
+  Events --> Source["Exact source-video identity"]
+  Source --> Metadata["Resumable track / album / release-year metadata cache"]
+  Metadata --> Recording["Version-aware canonical recording identity"]
+  Recording --> Period["Analytics-v5 timezone and period filter"]
+  Period --> Pages["Overview / Top 10 / Insights / Persona Report"]
+```
+
+Raw title, channel, source URL, timestamp, and source-video provenance are retained. Only overlapping copies with the same source occurrence fingerprint are deduplicated; repeated plays at different timestamps remain separate events. Presentation labels such as Official Audio, Official Video, Lyrics, and Visualizer may share a canonical recording, while live, remix, remaster, slowed, sped-up, instrumental, acoustic, radio-edit, and cover versions remain distinct.
+
 ## Local prerequisites
 
 - Windows PowerShell
@@ -160,7 +175,24 @@ Listening-event identity and recording identity are deliberately separate. Repea
 
 The artist cache and SQLite recording catalog are reapplied after every Takeout import, YouTube refresh, duration/release-year rebuild, and genre-enrichment batch. Completed MusicBrainz evidence is durable, failed lookups have retry metadata, and only assignments above the combined confidence gate affect analytics.
 
-Multiple Takeout JSON, HTML, or ZIP files can be imported sequentially. The backend merges them into the existing local history and deduplicates events using, in order, a source event ID, video ID plus timestamp, or title/artist plus timestamp. Entries with invalid timestamps are retained because merging them would risk deleting genuine separate plays.
+Each Takeout upload rebuilds the active local profile from that export, preventing an older tester's history from leaking into a new user's profile. Multiple history files inside one Takeout ZIP are combined and deduplicated using, in order, a source event ID, video ID plus timestamp, or title/artist plus timestamp. Re-importing the same complete export is idempotent. Entries with invalid timestamps are retained because merging them would risk deleting genuine separate plays.
+
+## Sanitised Takeout integrity audit
+
+The audit utility processes every HTML watch-history block and writes a machine-readable report without storing the full private history in the repository. Record rows use hashes and field-presence shapes; a requested focus artist/album trace is written only to the chosen local output file.
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\audit_takeout.py `
+  "C:\path\to\takeout.zip" `
+  --db data\saville_music_persona.db `
+  --output "C:\path\outside-the-repo\audit.json" `
+  --period rolling_year `
+  --timezone Asia/Kuala_Lumpur `
+  --focus-artist Wisp `
+  --focus-album Pandora
+```
+
+The report reconciles raw blocks to accepted music, accepted non-music, duplicates, intentional exclusions, and malformed/unresolved outcomes; silent loss must be zero. It also reports metadata coverage, identity-quality buckets, aggregation consistency, period boundaries, and separate confidence scores with evidence and limitations. Never write the output beneath the repository or commit it.
 
 ## Period definitions
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import calendar
 import re
-import unicodedata
 from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from functools import lru_cache
@@ -28,6 +27,7 @@ from app.analysis.taste_model import (
 )
 from app.data.artist_genres import canonical_artist_key
 from app.analysis.thumbnails import best_thumbnail_url
+from app.analysis.track_metadata import display_recording_title
 
 
 MIN_COMPARISON_PLAYS = 25
@@ -573,30 +573,19 @@ def song_group_key(track: dict[str, Any], event: dict[str, Any]) -> str:
     """Group the same recording across catalogue/video presentation variants."""
     title = str(track.get("title") or event.get("title") or "").strip()
     artist = primary_artist_for(track, event)
-    title_key = canonical_song_title(title)
+    title_key = canonical_song_title(title, artist)
     artist_key = canonical_artist_key(artist)
     if title_key and artist_key:
         return f"song:{title_key}::artist:{artist_key}"
     return f"track:{event.get('track_id') or title_key or 'unknown'}"
 
 
-PRESENTATION_SUFFIX = re.compile(
-    r"(?:"
-    r"\s*[\(\[\u3010]\s*(?:(?:official\s+)?(?:music\s+)?video|official\s+audio|audio|lyrics?|lyric\s+video|visuali[sz]er|mv|m/v)\s*[\)\]\u3011]"
-    r"|\s*[-|\uFF5C]\s*(?:(?:official\s+)?(?:music\s+)?video|official\s+audio|audio|lyrics?|lyric\s+video|visuali[sz]er|mv|m/v)"
-    r")\s*$",
-    re.IGNORECASE,
-)
+def display_song_title(value: Any, artist: Any = None) -> str:
+    return display_recording_title(value, artist)
 
 
-def display_song_title(value: Any) -> str:
-    title = unicodedata.normalize("NFKC", str(value or "")).strip()
-    cleaned = PRESENTATION_SUFFIX.sub("", title).strip(" -|\uFF5C")
-    return cleaned or title
-
-
-def canonical_song_title(value: Any) -> str:
-    title = display_song_title(value).casefold()
+def canonical_song_title(value: Any, artist: Any = None) -> str:
+    title = display_song_title(value, artist).casefold()
     title = re.sub(r"[^\w\s]", " ", title, flags=re.UNICODE)
     return " ".join(title.split())
 
@@ -645,7 +634,7 @@ def rank_items(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, A
                 usable_counts[key] += weight
             unique_tracks[key].add(song_group_key(track, event))
             display_names[key][artist] += 1
-            display_titles[key][display_song_title(title)] += 1
+            display_titles[key][display_song_title(title, artist)] += 1
             if day:
                 active_days[key].add(day)
             top_song[key][f"{title} - {artist}"] += 1

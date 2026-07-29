@@ -27,6 +27,13 @@ from app.analysis.media import (
     normalise_album_name,
 )
 from app.analysis.normalizer import UNKNOWN_ARTIST, extract_album, extract_artist_ids, extract_artist_names, extract_tracks
+from app.analysis.track_metadata import (
+    cache_track_metadata,
+    display_recording_title,
+    ensure_track_metadata_cache,
+    metadata_alias_key,
+    version_signature,
+)
 from app.analysis.thumbnails import best_thumbnail
 from app.config import Settings
 
@@ -341,6 +348,216 @@ class YTMusicService:
         raw["album_image_cache_v1"] = album_cache
         return {"seeded": seeded, "attempted": attempted, "added": added, "failed": failed}
 
+    def enrich_track_metadata_cache(
+        self,
+        normalised: dict[str, Any],
+        metadata_cache: dict[str, Any],
+        limit: int = 100,
+        preferred_track_ids: list[str] | None = None,
+    ) -> dict[str, int]:
+        """Resolve authoritative per-video track, artist, album, and year metadata.
+
+        Exact video-ID watch metadata is preferred. An exact title+artist song
+        search is only used when a presentation upload has no album link. When
+        an album is resolved, its authoritative track list seeds reusable alias
+        records so Topic, audio, lyric, and official-video presentations can
+        share album metadata without merging their listening events.
+        """
+
+        cache = ensure_track_metadata_cache(metadata_cache)
+        if limit <= 0:
+            return {"attempted": 0, "added": 0, "failed": 0, "albumAliases": 0, "remaining": 0}
+        counts = Counter(str(event.get("track_id") or "") for event in normalised.get("play_events") or [])
+        preferred = {str(value) for value in preferred_track_ids or [] if str(value)}
+        now = datetime.now(timezone.utc)
+
+        def due(track: dict[str, Any]) -> bool:
+            video_id = str(track.get("video_id") or "")
+            if not video_id:
+                return False
+            cached = cache["items"].get(video_id)
+            if (
+                isinstance(cached, dict)
+                and cached.get("status") == "resolved"
+                and cached.get("album")
+                and cached.get("album_release_year")
+                and cached.get("artwork_checked") is True
+            ):
+                return False
+            failure = cache["failures"].get(video_id)
+            if not isinstance(failure, dict):
+                return True
+            retry_at = failure.get("retryAfter")
+            if not retry_at:
+                return True
+            try:
+                return datetime.fromisoformat(str(retry_at).replace("Z", "+00:00")) <= now
+            except ValueError:
+                return True
+
+        targets = [
+            track
+            for track in normalised.get("tracks") or []
+            if isinstance(track, dict)
+            and track.get("video_id")
+            and track.get("title")
+            and track.get("primary_artist") not in (None, "", UNKNOWN_ARTIST)
+            and due(track)
+        ]
+        targets.sort(
+            key=lambda track: (
+                0 if str(track.get("track_id")) in preferred else 1,
+                -counts.get(str(track.get("track_id") or ""), 0),
+                str(track.get("title") or "").casefold(),
+            )
+        )
+        selected = targets[:limit]
+        if not selected:
+            return {"attempted": 0, "added": 0, "failed": 0, "albumAliases": 0, "remaining": 0}
+
+        yt = self.public_client()
+        added = failed = album_aliases = 0
+        fetched_albums: dict[str, dict[str, Any] | None] = {}
+        for track in selected:
+            video_id = str(track.get("video_id") or "")
+            source_title = str(track.get("title") or "")
+            source_artist = str(track.get("primary_artist") or "")
+            candidate: dict[str, Any] | None = None
+            match_method = "youtube_video_id_watch_playlist"
+            identity_confidence = 1.0
+            try:
+                watch = yt.get_watch_playlist(videoId=video_id, limit=3)
+                for item in watch.get("tracks") or [] if isinstance(watch, dict) else []:
+                    if isinstance(item, dict) and str(item.get("videoId") or "") == video_id:
+                        candidate = item
+                        break
+            except Exception:
+                candidate = None
+
+            album = candidate.get("album") if isinstance(candidate, dict) and isinstance(candidate.get("album"), dict) else {}
+            if not album:
+                query_title = display_recording_title(source_title, source_artist)
+                try:
+                    results = yt.search(f"{query_title} {source_artist}", filter="songs", limit=8)
+                except Exception:
+                    results = []
+                source_key = metadata_alias_key(query_title, source_artist)
+                for item in results if isinstance(results, list) else []:
+                    if not isinstance(item, dict):
+                        continue
+                    names = [str(value.get("name") if isinstance(value, dict) else value) for value in item.get("artists") or []]
+                    if normalise_artist_name(source_artist) not in {normalise_artist_name(name) for name in names}:
+                        continue
+                    if metadata_alias_key(item.get("title"), source_artist) != source_key:
+                        continue
+                    if version_signature(item.get("title")) != version_signature(query_title):
+                        continue
+                    candidate = item
+                    album = item.get("album") if isinstance(item.get("album"), dict) else {}
+                    match_method = "exact_title_artist_song_search"
+                    identity_confidence = 0.90
+                    break
+
+            if not isinstance(candidate, dict):
+                cache["failures"][video_id] = {
+                    "reason": "no_authoritative_track_match",
+                    "attemptedAt": now.isoformat(),
+                    "retryAfter": (now + timedelta(days=7)).isoformat(),
+                }
+                failed += 1
+                continue
+
+            candidate_artists = [
+                str(value.get("name") if isinstance(value, dict) else value).strip()
+                for value in candidate.get("artists") or []
+                if str(value.get("name") if isinstance(value, dict) else value).strip()
+            ] or [source_artist]
+            album_id = str(album.get("id") or album.get("browseId") or "").strip() or None
+            album_payload: dict[str, Any] | None = None
+            if album_id:
+                if album_id not in fetched_albums:
+                    try:
+                        fetched_albums[album_id] = yt.get_album(album_id)
+                    except Exception:
+                        fetched_albums[album_id] = None
+                album_payload = fetched_albums[album_id]
+            album_year = release_year_from_payload(album_payload or {}) or release_year_from_payload(candidate)
+            album_thumbnail = best_thumbnail((album_payload or {}).get("thumbnails") or album.get("thumbnails"))
+            entry = {
+                "status": "resolved",
+                "video_id": video_id,
+                "title": display_recording_title(candidate.get("title") or source_title, candidate_artists[0]),
+                "primary_artist": candidate_artists[0],
+                "artists": candidate_artists,
+                "album": (album_payload or {}).get("title") or album.get("name") or album.get("title"),
+                "album_id": album_id,
+                "album_art_url": album_thumbnail.get("url") if album_thumbnail else None,
+                "album_art_source": "youtube_album_cover" if album_thumbnail else None,
+                "artwork_checked": True,
+                "original_release_year": None,
+                "edition_release_year": album_year,
+                "album_release_year": album_year,
+                "source": "ytmusicapi.public",
+                "identity_confidence": identity_confidence,
+                "match_confidence": identity_confidence,
+                "release_year_confidence": "high" if match_method == "youtube_video_id_watch_playlist" else "medium",
+                "match_method": match_method,
+                "version_signature": list(version_signature(display_recording_title(source_title, source_artist))),
+                "fetchedAt": now.isoformat(),
+            }
+            cache_track_metadata(cache, entry, video_id=video_id)
+            added += 1
+
+            if isinstance(album_payload, dict):
+                album_name = str(album_payload.get("title") or entry.get("album") or "").strip()
+                release_year = release_year_from_payload(album_payload)
+                album_thumbnail = best_thumbnail(album_payload.get("thumbnails"))
+                album_artists = [
+                    str(value.get("name") if isinstance(value, dict) else value).strip()
+                    for value in album_payload.get("artists") or []
+                    if str(value.get("name") if isinstance(value, dict) else value).strip()
+                ] or candidate_artists
+                for album_track in album_payload.get("tracks") or []:
+                    if not isinstance(album_track, dict) or not album_track.get("title"):
+                        continue
+                    artists = [
+                        str(value.get("name") if isinstance(value, dict) else value).strip()
+                        for value in album_track.get("artists") or []
+                        if str(value.get("name") if isinstance(value, dict) else value).strip()
+                    ] or album_artists
+                    album_entry = {
+                        "status": "resolved",
+                        "video_id": album_track.get("videoId"),
+                        "title": display_recording_title(album_track.get("title"), artists[0]),
+                        "primary_artist": artists[0],
+                        "artists": artists,
+                        "album": album_name,
+                        "album_id": album_id,
+                        "album_art_url": album_thumbnail.get("url") if album_thumbnail else None,
+                        "album_art_source": "youtube_album_cover" if album_thumbnail else None,
+                        "artwork_checked": True,
+                        "original_release_year": None,
+                        "edition_release_year": release_year,
+                        "album_release_year": release_year,
+                        "source": "ytmusicapi.public.album_tracklist",
+                        "identity_confidence": 0.95,
+                        "match_confidence": 0.95,
+                        "release_year_confidence": "medium",
+                        "match_method": "authoritative_album_tracklist",
+                        "version_signature": list(version_signature(album_track.get("title"))),
+                        "fetchedAt": now.isoformat(),
+                    }
+                    cache_track_metadata(cache, album_entry, video_id=album_track.get("videoId"))
+                    album_aliases += 1
+
+        return {
+            "attempted": len(selected),
+            "added": added,
+            "failed": failed,
+            "albumAliases": album_aliases,
+            "remaining": max(0, len(targets) - len(selected)),
+        }
+
     def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 1000) -> dict[str, Any]:
         if limit <= 0:
             return {"attempted": 0, "added": 0, "failed": 0, "api_batches": 0, "fallback_attempted": 0, "remaining": 0}
@@ -461,7 +678,23 @@ class YTMusicService:
             and track.get("primary_artist")
         ]
         targets.sort(key=lambda track: (-counts.get(str(track.get("track_id")), 0), str(track.get("title")).casefold()))
-        pending = [track for track in targets if not isinstance(release_cache.get(str(track.get("track_id"))), dict) or not release_cache[str(track.get("track_id"))].get("release_year")]
+        now = datetime.now(timezone.utc)
+
+        def release_lookup_due(track: dict[str, Any]) -> bool:
+            cached = release_cache.get(str(track.get("track_id")))
+            if not isinstance(cached, dict):
+                return True
+            if cached.get("release_year"):
+                return False
+            retry_at = cached.get("retry_after")
+            if not retry_at:
+                return True
+            try:
+                return datetime.fromisoformat(str(retry_at).replace("Z", "+00:00")) <= now
+            except ValueError:
+                return True
+
+        pending = [track for track in targets if release_lookup_due(track)]
         selected = pending[:limit]
         if not selected:
             return {"attempted": 0, "added": 0, "failed": 0, "remaining": 0}
@@ -474,6 +707,8 @@ class YTMusicService:
                 release_cache[track_id] = {
                     "release_year": year,
                     "source": "ytmusicapi.exact_song_album",
+                    "confidence": "medium",
+                    "matchMethod": "exact_title_artist_song_search",
                     "title": str(track.get("title")),
                     "artist": str(track.get("primary_artist")),
                     "resolvedAt": datetime.now(timezone.utc).isoformat(),

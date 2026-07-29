@@ -17,7 +17,7 @@ class TakeoutParseError(ValueError):
     pass
 
 
-TAKEOUT_PARSER_SCHEMA_VERSION = 4
+TAKEOUT_PARSER_SCHEMA_VERSION = 5
 TAKEOUT_SOURCE = "google_takeout"
 SOURCE_EVENT_ID_KEYS = ("sourceEventId", "eventId", "event_id", "activityId", "activity_id", "id")
 DEFAULT_MAX_ARCHIVE_ENTRY_BYTES = 256 * 1024 * 1024
@@ -135,21 +135,24 @@ def parse_takeout_file(
                 emit("history_file_found", {"count": len(history_infos)})
                 entries: list[dict[str, Any]] = []
                 raw_count = 0
+                exclusion_counts: dict[str, int] = {}
                 for info in history_infos:
                     check()
                     payload = read_archive_entry(archive, info, max_archive_entry_bytes)
                     if info.filename.lower().endswith(".json"):
                         items = json.loads(payload.decode("utf-8-sig"))
                         raw_count += len(items) if isinstance(items, list) else 0
-                        entries.extend(normalise_takeout_items(items, library_lookup))
+                        entries.extend(normalise_takeout_items(items, library_lookup, deduplicate=False))
                     else:
                         html = payload.decode("utf-8-sig", errors="replace")
-                        parsed, block_count = parse_takeout_html_with_count(html, library_lookup)
+                        parsed, block_count, exclusions = parse_takeout_html_with_audit(html, library_lookup)
                         raw_count += block_count
                         entries.extend(parsed)
+                        for rule, count in exclusions.items():
+                            exclusion_counts[rule] = exclusion_counts.get(rule, 0) + count
                 accepted = dedupe_takeout_entries(entries)
                 emit("deduplication_completed", {"rawEventCount": raw_count, "acceptedEventCount": len(accepted)})
-                result = TakeoutParseResult(accepted, raw_count, len(history_infos), takeout_diagnostics(raw_count, entries, accepted))
+                result = TakeoutParseResult(accepted, raw_count, len(history_infos), takeout_diagnostics(raw_count, entries, accepted, exclusion_counts))
         elif lower.endswith(".json"):
             check()
             items = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -159,8 +162,9 @@ def parse_takeout_file(
             result = TakeoutParseResult(entries, raw_count, 1, takeout_diagnostics(raw_count, entries_before_dedupe, entries))
         elif lower.endswith(".html") or lower.endswith(".htm"):
             check()
-            entries, raw_count = parse_takeout_html_with_count(path.read_text(encoding="utf-8-sig", errors="replace"))
-            result = TakeoutParseResult(entries, raw_count, 1, takeout_diagnostics(raw_count, entries, entries))
+            entries_before_dedupe, raw_count, exclusions = parse_takeout_html_with_audit(path.read_text(encoding="utf-8-sig", errors="replace"))
+            entries = dedupe_takeout_entries(entries_before_dedupe)
+            result = TakeoutParseResult(entries, raw_count, 1, takeout_diagnostics(raw_count, entries_before_dedupe, entries, exclusions))
         else:
             raise TakeoutParseError("Unsupported file type. Upload a Google Takeout watch-history JSON, HTML, or ZIP file.")
     except zipfile.BadZipFile as exc:
@@ -289,6 +293,8 @@ def normalise_takeout_items(
                 "album": library_item.get("album") if library_item else None,
                 "played": played,
                 "titleUrl": item.get("titleUrl"),
+                "rawTitle": raw_title,
+                "rawChannel": artists[0] if artists else None,
                 "source": TAKEOUT_SOURCE,
                 "sourceFormat": "json",
                 "takeoutMusicEvidence": music_evidence,
@@ -309,16 +315,49 @@ def parse_takeout_html(html: str, library_lookup: dict[str, dict[str, Any]] | No
 def parse_takeout_html_with_count(
     html: str,
     library_lookup: dict[str, dict[str, Any]] | None = None,
+    *,
+    deduplicate: bool = True,
 ) -> tuple[list[dict[str, Any]], int]:
+    entries, count, _ = parse_takeout_html_with_audit(html, library_lookup)
+    return (dedupe_takeout_entries(entries) if deduplicate else entries), count
+
+
+def parse_takeout_html_with_audit(
+    html: str,
+    library_lookup: dict[str, dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
     library_lookup = library_lookup or {}
     parser = _WatchHistoryHtmlParser()
     parser.feed(html)
     entries: list[dict[str, Any]] = []
+    exclusions: dict[str, int] = {}
     for block in parser.blocks:
-        entry = normalise_takeout_html_block(block, library_lookup)
+        entry, rule = normalise_takeout_html_block_with_reason(block, library_lookup)
         if entry:
             entries.append(entry)
-    return dedupe_takeout_entries(entries), len(parser.blocks)
+        elif rule:
+            exclusions[rule] = exclusions.get(rule, 0) + 1
+    return entries, len(parser.blocks), exclusions
+
+
+def normalise_takeout_html_block_with_reason(
+    block: dict[str, Any],
+    library_lookup: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    text_nodes = [normalise_spaces(str(value)) for value in block.get("text_nodes", []) if normalise_spaces(str(value))]
+    text = " ".join(text_nodes)
+    links = [link for link in block.get("links", []) if isinstance(link, dict)]
+    if html_block_is_ad(text_nodes, links):
+        return None, "explicit_google_ad"
+    if "YouTube Homepage" in text:
+        return None, "youtube_homepage_activity"
+    if not links:
+        entry = normalise_legacy_html_text(text)
+        return (entry, None) if entry else (None, "legacy_block_unresolved")
+    entry = normalise_takeout_html_block(block, library_lookup)
+    if entry is None:
+        return None, "html_block_unresolved"
+    return entry, None
 
 
 def clean_takeout_title(title: str) -> str:
@@ -402,7 +441,8 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
     if not links:
         return normalise_legacy_html_text(text)
     title_link = links[0]
-    title = clean_takeout_title(str(title_link.get("text") or ""))
+    raw_title = str(title_link.get("text") or "")
+    title = clean_takeout_title(raw_title)
     href = str(title_link.get("href") or "")
     video_id = extract_video_id(href)
     channel = str(links[1].get("text") or "").strip() if len(links) > 1 else ""
@@ -444,6 +484,8 @@ def normalise_takeout_html_block(block: dict[str, Any], library_lookup: dict[str
         "album": album,
         "played": played,
         "titleUrl": href,
+        "rawTitle": raw_title,
+        "rawChannel": channel or None,
         "source": TAKEOUT_SOURCE,
         "sourceFormat": "html",
         "takeoutMusicEvidence": music_evidence,
@@ -571,24 +613,12 @@ def dedupe_takeout_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]
     seen: set[tuple[str, ...]] = set()
     result: list[dict[str, Any]] = []
     for entry in entries:
-        source = str(entry.get("source") or TAKEOUT_SOURCE)
-        source_event_id = entry.get("sourceEventId")
-        if source_event_id:
-            key = ("source_event_id", source, str(source_event_id))
-        elif entry.get("timestampInvalid") or not entry.get("played"):
+        key = takeout_entry_identity(entry)
+        if key is None:
             # A malformed timestamp has no safe occurrence identity. Keep it instead of
             # silently merging potentially unrelated plays.
             result.append(entry)
             continue
-        elif entry.get("videoId"):
-            key = ("video_timestamp", source, str(entry["videoId"]), str(entry["played"]))
-        else:
-            title = normalise_spaces(str(entry.get("title") or "")).casefold()
-            artists = entry.get("artists") or []
-            artist = ""
-            if artists and isinstance(artists[0], dict):
-                artist = normalise_spaces(str(artists[0].get("name") or "")).casefold()
-            key = ("title_artist_timestamp", source, title, artist, str(entry["played"]))
         if key in seen:
             continue
         seen.add(key)
@@ -596,8 +626,36 @@ def dedupe_takeout_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]
     return result
 
 
-def takeout_diagnostics(raw_count: int, entries_before_dedupe: list[dict[str, Any]], accepted: list[dict[str, Any]]) -> dict[str, Any]:
+def takeout_entry_identity(entry: dict[str, Any]) -> tuple[str, ...] | None:
+    source = str(entry.get("source") or TAKEOUT_SOURCE)
+    source_event_id = entry.get("sourceEventId")
+    if source_event_id:
+        return ("source_event_id", source, str(source_event_id))
+    if entry.get("timestampInvalid") or not entry.get("played"):
+        return None
+    if entry.get("videoId"):
+        return ("video_timestamp", source, str(entry["videoId"]), str(entry["played"]))
+    title = normalise_spaces(str(entry.get("title") or "")).casefold()
+    artists = entry.get("artists") or []
+    artist = ""
+    if artists and isinstance(artists[0], dict):
+        artist = normalise_spaces(str(artists[0].get("name") or "")).casefold()
+    return ("title_artist_timestamp", source, title, artist, str(entry["played"]))
+
+
+def takeout_diagnostics(
+    raw_count: int,
+    entries_before_dedupe: list[dict[str, Any]],
+    accepted: list[dict[str, Any]],
+    exclusion_counts: dict[str, int] | None = None,
+) -> dict[str, Any]:
     total = len(accepted)
+    exclusions = dict(exclusion_counts or {})
+    if not exclusions and raw_count > len(entries_before_dedupe):
+        exclusions["filtered_or_malformed_source_record"] = raw_count - len(entries_before_dedupe)
+    duplicate_count = max(0, len(entries_before_dedupe) - total)
+    intentionally_excluded = sum(exclusions.values())
+    silent_loss = max(0, raw_count - total - duplicate_count - intentionally_excluded)
     music_evidence = {
         "music_library",
         "official_music_channel",
@@ -607,9 +665,15 @@ def takeout_diagnostics(raw_count: int, entries_before_dedupe: list[dict[str, An
     }
     return {
         "raw_events": raw_count,
+        "parsed_records": len(entries_before_dedupe),
+        "accepted_records": total,
         "retained_non_ad_events": total,
         "accepted_music_plays": sum(1 for entry in accepted if entry.get("takeoutMusicEvidence") in music_evidence),
-        "duplicates": max(0, len(entries_before_dedupe) - total),
+        "duplicates": duplicate_count,
+        "intentionally_excluded_records": intentionally_excluded,
+        "exclusion_rules": exclusions,
+        "malformed_or_unresolved_records": sum(count for rule, count in exclusions.items() if "unresolved" in rule or "malformed" in rule),
+        "silent_loss": silent_loss,
         "invalid_timestamps": sum(1 for entry in accepted if entry.get("timestampInvalid")),
         "missing_ids": sum(1 for entry in accepted if not entry.get("videoId")),
         "unknown_classifications": sum(1 for entry in accepted if not entry.get("artists")),

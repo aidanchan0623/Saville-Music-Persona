@@ -9,7 +9,7 @@ from app.analysis.normalizer import parse_release_year
 from app.analysis.periods import filter_events, resolve_period, serialise_spec, tracks_by_id
 
 
-MUSICAL_AGE_CALCULATION_VERSION = 2
+MUSICAL_AGE_CALCULATION_VERSION = 3
 AGE_MIN = 0
 AGE_MAX = 100
 AGE_CATEGORIES = (
@@ -60,7 +60,15 @@ def calculate_musical_age(normalised: dict[str, Any], period: str = "rolling_yea
     current_year = spec["end_date"].year
     years = []
     for event in events:
-        year = parse_release_year((tracks.get(event.get("track_id")) or {}).get("release_year"))
+        track = tracks.get(event.get("track_id")) or {}
+        if str(track.get("release_year_confidence") or "").casefold() == "low":
+            continue
+        year = (
+            parse_release_year(track.get("original_release_year"))
+            or parse_release_year(track.get("release_year"))
+            or parse_release_year(track.get("album_release_year"))
+            or parse_release_year(track.get("edition_release_year"))
+        )
         if year is not None and 1880 <= year <= current_year:
             years.append(year)
     coverage = len(years) / max(len(events), 1)

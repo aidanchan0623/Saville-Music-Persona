@@ -23,7 +23,7 @@ from app.analysis.taste_model import weighted_cluster_counts
 from app.data.artist_genres import canonical_artist_key
 
 
-ANALYTICS_VERSION = 4
+ANALYTICS_VERSION = 5
 GENRE_MAP_VERSION = 6
 
 

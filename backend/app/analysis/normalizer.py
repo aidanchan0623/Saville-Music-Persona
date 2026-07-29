@@ -29,7 +29,7 @@ from app.models.listening_event import (
 
 
 UNKNOWN_ARTIST = "Unknown Artist"
-NORMALISED_DATA_SCHEMA_VERSION = 3
+NORMALISED_DATA_SCHEMA_VERSION = 4
 TAKEOUT_EVIDENCE_PRIORITY = {
     None: 0,
     "": 0,
@@ -273,6 +273,9 @@ def canonical_event_for_item(
     event["genre_clusters"] = list(track.get("genre_clusters") or [])
     event["release_year"] = track.get("release_year")
     event["source_track_id"] = track.get("source_track_id")
+    event["raw_title"] = item.get("rawTitle") or item.get("raw_title") or item.get("title")
+    event["raw_channel"] = item.get("rawChannel") or item.get("raw_channel")
+    event["source_url"] = item.get("titleUrl") or item.get("source_url")
     return event
 
 
@@ -436,6 +439,8 @@ def normalise_track_item(
         "musicbrainz_recording_id": item.get("musicbrainz_recording_id") or item.get("recording_mbid"),
         "recording_identifiers": dict(item.get("recording_identifiers") or {}) if isinstance(item.get("recording_identifiers"), dict) else {},
         "title": title,
+        "source_title": item.get("rawTitle") or item.get("raw_title") or title,
+        "source_channel": item.get("rawChannel") or item.get("raw_channel"),
         "artists": artists,
         "artist_ids": extract_artist_ids(item),
         "artist_genres": artist_genres,
@@ -444,6 +449,12 @@ def normalise_track_item(
         "album": album,
         "album_id": album_id,
         "release_year": year,
+        "original_release_year": parse_release_year(item.get("original_release_year")),
+        "edition_release_year": parse_release_year(item.get("edition_release_year")),
+        "album_release_year": parse_release_year(item.get("album_release_year")) or year,
+        "release_year_source": item.get("release_year_source"),
+        "release_year_confidence": item.get("release_year_confidence"),
+        "release_year_match_method": item.get("release_year_match_method"),
         "duration_seconds": duration,
         "thumbnails": track_thumbnail_items,
         "track_thumbnails": track_thumbnail_items,
@@ -499,6 +510,12 @@ def merge_track(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
         "album",
         "album_id",
         "release_year",
+        "original_release_year",
+        "edition_release_year",
+        "album_release_year",
+        "release_year_source",
+        "release_year_confidence",
+        "release_year_match_method",
         "duration_seconds",
         "video_id",
         "source_track_id",
@@ -859,6 +876,10 @@ def apply_release_year_cache(normalised: dict[str, Any], release_cache: dict[str
         cached = release_cache.get(track_id)
         if not track.get("release_year") and isinstance(cached, dict):
             track["release_year"] = parse_release_year(cached.get("release_year"))
+        if track.get("release_year") and isinstance(cached, dict):
+            track["release_year_source"] = cached.get("source") or track.get("release_year_source")
+            track["release_year_confidence"] = cached.get("confidence") or track.get("release_year_confidence") or "medium"
+            track["release_year_match_method"] = cached.get("matchMethod") or track.get("release_year_match_method")
     for event in [*(normalised.get("play_events") or []), *(normalised.get("excluded_play_events") or []), *(normalised.get("listening_events") or [])]:
         if isinstance(event, dict):
             event["release_year"] = by_track.get(str(event.get("track_id") or ""), {}).get("release_year")
