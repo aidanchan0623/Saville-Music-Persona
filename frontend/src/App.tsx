@@ -1,13 +1,12 @@
 import { Menu, Music2, X } from "lucide-react";
 import type { CSSProperties } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import { pollTakeoutImport, runExclusiveOperation } from "./api/takeoutImport";
 import { GlowPanel } from "./components/GlowPanel";
 import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
 import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
 import type { Page } from "./components/navigation/navigation";
-import { BubbleBackground } from "./components/ui/components-backgrounds-bubble";
 import { OverviewPage } from "./pages/OverviewPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -26,6 +25,7 @@ const PAGE_PATHS: Record<Page, string> = {
 };
 
 const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page as Page]));
+const ColorBends = lazy(() => import("./components/reactbits/ColorBends/ColorBends"));
 
 function getHistoryPage(): Page {
   if (typeof window === "undefined") return "overview";
@@ -516,7 +516,25 @@ export default function App() {
       style={{ "--app-sidebar-width": sidebarCollapsed ? "5.5rem" : "15rem" } as CSSProperties}
     >
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-        <BubbleBackground className="h-full w-full !bg-[#050505] opacity-[0.22]" />
+        <Suspense fallback={<div className="h-full w-full bg-[#050304]" />}>
+          <ColorBends
+            className="smp-color-bends"
+            colors={["#120205", "#2b050a", "#540b13", "#851522", "#d13842"]}
+            rotation={108}
+            autoRotate={0.45}
+            speed={0.075}
+            scale={0.9}
+            frequency={0.82}
+            warpStrength={0.72}
+            mouseInfluence={0}
+            parallax={0}
+            noise={0.025}
+            iterations={2}
+            intensity={0.66}
+            bandWidth={4.8}
+            transparent={false}
+          />
+        </Suspense>
       </div>
       <DesktopSidebar activePage={page} collapsed={sidebarCollapsed} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
 

@@ -1,5 +1,4 @@
 import type { CSSProperties, ElementType } from "react";
-import ShimmerText from "./ui/shimmer-text";
 
 type TitleTag = "h1" | "h2" | "h3";
 
@@ -13,9 +12,5 @@ interface AnimatedPageTitleProps {
 
 export function AnimatedPageTitle({ text, tag = "h1", className = "", animationKey, textAlign = "left" }: AnimatedPageTitleProps) {
   const Tag = tag as ElementType;
-  return (
-    <ShimmerText key={`${animationKey}:${text}`} className="max-w-full">
-      <Tag className={className} style={{ textAlign }}>{text}</Tag>
-    </ShimmerText>
-  );
+  return <Tag key={`${animationKey}:${text}`} className={className} style={{ textAlign }}>{text}</Tag>;
 }
