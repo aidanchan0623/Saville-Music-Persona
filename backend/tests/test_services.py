@@ -423,6 +423,26 @@ def test_artist_image_enrichment_uses_verified_lane_8_channel() -> None:
     assert cache_record(cache, "Lane 8")["url"] == "https://img.example/lane-8.jpg"
 
 
+def test_artist_image_enrichment_uses_verified_jay_chou_channel() -> None:
+    fake = FakeYTMusic(
+        artist_pages={
+            "UCL2MDNdwEtV6aYUgNjFQGZA": {
+                "artist": "周杰倫 - Jay Chou",
+                "browseId": "UCL2MDNdwEtV6aYUgNjFQGZA",
+                "thumbnails": [{"url": "https://img.example/jay-chou.jpg", "width": 512, "height": 512}],
+            }
+        }
+    )
+    cache: dict[str, object] = {}
+
+    stats = fake_service(fake).enrich_artist_image_cache({"history": [_history_artist("周杰倫")]}, cache)
+
+    assert stats["added"] == 1
+    assert fake.search_calls == []
+    assert fake.get_artist_calls == ["UCL2MDNdwEtV6aYUgNjFQGZA"]
+    assert cache_record(cache, "周杰倫")["url"] == "https://img.example/jay-chou.jpg"
+
+
 def test_artist_image_enrichment_keeps_list_on_upstream_exception() -> None:
     fake = FakeYTMusic(raise_search=True)
     cache: dict[str, object] = {}

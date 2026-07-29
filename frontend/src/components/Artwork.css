@@ -54,6 +54,10 @@
   transition: opacity 180ms ease;
 }
 
+.artwork-frame--artist img {
+  object-position: 50% 32%;
+}
+
 .artwork-frame--track {
   background: #050505;
 }

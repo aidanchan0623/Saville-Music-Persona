@@ -118,11 +118,10 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
     return (
       <div className="space-y-6">
         <PageTitlePanel
-          eyebrow="Music leaders"
           title="Top 10"
           titleAnimationKey={titleAnimationKey}
           titleClassName="text-4xl font-black leading-none text-white md:text-5xl"
-          subtitle="Refresh your music data to build period rankings from detected plays."
+          className="top10-title-panel"
         />
         <GlowPanel as="section" variant="card" className="p-5 text-sm text-mist">No rankings yet.</GlowPanel>
       </div>
@@ -132,11 +131,10 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
   return (
     <div className="space-y-8">
       <PageTitlePanel
-        eyebrow="Music leaders"
         title="Top 10"
         titleAnimationKey={titleAnimationKey}
         titleClassName="text-4xl font-black leading-none text-white md:text-5xl"
-        subtitle={source === "spotify" ? "Spotify-backed leaders from top items, saved music, playlists, and recent sync signals." : "The songs, artists, and albums currently defining this slice of your listening."}
+        className="top10-title-panel"
         actions={
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-black/25 p-2">
           <PeriodButton active={period === "this_month"} label="This Month" onClick={() => setPeriod("this_month")} />
@@ -158,9 +156,8 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
         }
         metadata={
           <span>
-            {activeLabel} / {tracks?.period.start_date} to {tracks?.period.end_date} / {(tracks?.total_play_count ?? 0).toLocaleString()} detected plays
-            {source === "spotify" ? " / Top-item based, not exact Spotify history" : ""}
-            {loading ? " / Updating" : ""}
+            {activeLabel} &middot; {(tracks?.total_play_count ?? 0).toLocaleString()} {source === "spotify" ? "ranking signals" : "plays"}
+            {loading ? " · Updating" : ""}
           </span>
         }
       />
@@ -176,18 +173,14 @@ export function Top10Page({ source, titleAnimationKey }: { source: MusicSource; 
       <RankingStorySection
         kind="songs"
         title={`Top Songs - ${displayPeriodLabel(tracks?.period.label, period)}`}
-        caption={source === "spotify" ? "Your clearest Spotify top-track signals. Exact lifetime play counts are not available from Spotify." : "Your clearest song leaders, ranked by local play history."}
         response={tracks}
         loading={loading}
         source={source}
       />
 
-      <RankingTransition />
-
       <RankingStorySection
         kind="artists"
         title={`Top Artists - ${displayPeriodLabel(artists?.period.label, period)}`}
-        caption={source === "spotify" ? "Official Spotify artist images and genres where available." : "The artists pulling the most attention in this period."}
         response={artists}
         loading={loading}
         source={source}
@@ -219,7 +212,6 @@ function PeriodButton({ active, label, onClick }: { active: boolean; label: stri
 function RankingStorySection({
   kind,
   title,
-  caption,
   response,
   loading,
   selectedArtist,
@@ -228,7 +220,6 @@ function RankingStorySection({
 }: {
   kind: RankingKind;
   title: string;
-  caption: string;
   response: PeriodTopResponse | null;
   loading: boolean;
   selectedArtist?: string | null;
@@ -247,7 +238,6 @@ function RankingStorySection({
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-red-200">{label}</p>
             <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
           </div>
           {loading ? <span className="text-sm text-mist">Loading...</span> : null}
         </div>
@@ -261,13 +251,12 @@ function RankingStorySection({
   return (
     <section className={`ranking-story ranking-story--${kind}`} aria-labelledby={`ranking-story-${kind}`}>
       <div className="ranking-story__visual">
-        <StickyRankingVisual kind={kind} caption={caption} activeItem={activeItem} itemCount={items.length} source={source} />
+        <StickyRankingVisual kind={kind} activeItem={activeItem} itemCount={items.length} source={source} />
       </div>
       <div className="ranking-story__items">
         <div className="ranking-story__chapter">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">{label}</p>
           <h2 id={`ranking-story-${kind}`} className="mt-3 text-3xl font-black leading-tight text-white md:text-4xl">{title}</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-mist">{caption}</p>
           {loading ? <span className="mt-4 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs text-mist">Loading...</span> : null}
         </div>
         {items.map((item) => {
@@ -291,10 +280,10 @@ function RankingStorySection({
   );
 }
 
-function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: { kind: RankingKind; caption: string; activeItem: PeriodTopItem | null; itemCount: number; source: MusicSource }) {
+function StickyRankingVisual({ kind, activeItem, itemCount, source }: { kind: RankingKind; activeItem: PeriodTopItem | null; itemCount: number; source: MusicSource }) {
   const activeId = activeItem ? rankingItemId(activeItem, kind) : "empty";
   const activeTitle = activeItem ? rankingItemTitle(activeItem, kind) : "No ranking yet";
-  const activeSubtitle = activeItem ? rankingItemSubtitle(activeItem, kind) : caption;
+  const activeSubtitle = activeItem ? rankingItemSubtitle(activeItem, kind) : "";
   const label = kind === "artists" ? "Artist chapter" : "Song chapter";
   const fallback = activeItem ? (kind === "artists" ? initials(activeItem.artist) : `#${activeItem.rank}`) : "?";
 
@@ -310,7 +299,7 @@ function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: {
         </div>
         <div className="ranking-story__hero-art">
           {kind === "artists" ? (
-            <ArtistAvatar artistImageUrl={activeItem?.artist_image_url} artistName={activeItem?.artist ?? "Artist"} size="hero" priority fallbackLabel={fallback} shape="rounded" className="ranking-story__hero-artwork" />
+            <ArtistAvatar artistImageUrl={activeItem?.artist_image_url} artistName={activeItem?.artist ?? "Artist"} size="hero" priority fallbackLabel={fallback} shape="circle" className="ranking-story__hero-artwork" />
           ) : (
             <TrackArtwork trackImageUrl={activeItem?.track_image_url} albumArtUrl={activeItem?.album_art_url} title={activeTitle} size="hero" priority fallbackLabel={fallback} className="ranking-story__hero-artwork" />
           )}
@@ -321,11 +310,10 @@ function StickyRankingVisual({ kind, caption, activeItem, itemCount, source }: {
           <p className="mt-2 text-base font-semibold leading-6 text-red-100">{activeSubtitle}</p>
           {activeItem ? (
             <div className="mt-5 text-xs font-medium leading-6 text-mist/75">
-              {displayListLabel(activeItem.interpretation_label, kind === "artists")} / {spotifyEvidenceLabel(activeItem, source, kind === "artists")}
-              {detectedMinutesLabel(activeItem) ? ` / ${detectedMinutesLabel(activeItem)}` : ""} / {activeItem.share_of_period}% share
+              {spotifyEvidenceLabel(activeItem, source, kind === "artists")}
+              {detectedMinutesLabel(activeItem) ? ` · ${detectedMinutesLabel(activeItem)}` : ""}
             </div>
           ) : null}
-          {activeItem && durationCoverageNotice(activeItem) ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{durationCoverageNotice(activeItem)}</p> : null}
         </div>
       </div>
       <GradualBlur
@@ -380,7 +368,6 @@ function RankingStoryCard({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-3">
               <span className="text-xl font-black text-red-200">{rank}</span>
-              <span className="rounded-full border border-red-400/25 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-100">{displayListLabel(item.interpretation_label, isArtist)}</span>
             </div>
             <h3 className="mt-2 break-words text-xl font-black leading-tight text-white md:text-2xl">{title}</h3>
             {isArtist ? (
@@ -396,10 +383,8 @@ function RankingStoryCard({
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <span className="text-lg font-black text-white">{spotifyEvidenceLabel(item, source, isArtist)}</span>
               {detectedMinutesLabel(item) ? <span className="text-xs text-mist/75">{detectedMinutesLabel(item)}</span> : null}
-              {isArtist ? <span className="text-xs text-mist/75">{item.share_of_period}% share</span> : null}
               <Movement movement={item.movement} />
             </div>
-            {durationCoverageNotice(item) ? <p className="mt-2 text-xs leading-5 text-amber-100/80">{durationCoverageNotice(item)}</p> : null}
             {isArtist && onViewSongs ? (
               <button
                 aria-label={`View songs by ${item.artist}`}
@@ -414,18 +399,6 @@ function RankingStoryCard({
         </div>
       </GlowPanel>
     </div>
-  );
-}
-
-function RankingTransition() {
-  return (
-    <GlowPanel as="section" variant="card" className="ranking-transition p-5 md:p-6">
-      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-200">Next chapter</p>
-      <h2 className="mt-2 text-2xl font-black text-white">From tracks you replay to the artists shaping the whole pattern.</h2>
-      <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
-        The artist section uses the same detected-play rankings, then shifts the sticky stage toward artist-level identity and song breadth.
-      </p>
-    </GlowPanel>
   );
 }
 
@@ -690,11 +663,6 @@ function displayPeriodLabel(label: string | undefined, period: TopPeriod) {
   return label ?? "Selected Period";
 }
 
-function displayListLabel(label: string, artistList: boolean) {
-  if (artistList && label === "Comfort favourite") return "Stable favourite";
-  return label;
-}
-
 function spotifyEvidenceLabel(item: PeriodTopItem, source: MusicSource, artistList: boolean) {
   if (source !== "spotify") return `${item.play_count.toLocaleString()} plays`;
   if (artistList) return item.play_count > 1 ? `${item.play_count.toLocaleString()} signals` : "Spotify top artist";
@@ -704,12 +672,6 @@ function spotifyEvidenceLabel(item: PeriodTopItem, source: MusicSource, artistLi
 function detectedMinutesLabel(item: PeriodTopItem) {
   if (!item.detected_minutes || item.detected_minutes <= 0) return null;
   return item.detected_minutes_formatted || `${Math.round(item.detected_minutes)} min detected`;
-}
-
-function durationCoverageNotice(item: PeriodTopItem) {
-  const coverage = Math.round(item.duration_coverage_percent);
-  if (coverage >= 75) return `${coverage}% duration coverage`;
-  return `Partial duration coverage (${coverage}%) - listening time excludes unresolved plays.`;
 }
 
 function initials(value: string) {

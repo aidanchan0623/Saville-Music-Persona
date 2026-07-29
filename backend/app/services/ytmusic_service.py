@@ -46,7 +46,9 @@ logger = logging.getLogger(__name__)
 # official channel avoids caching an unrelated artist with the same name.
 ARTIST_BROWSE_ID_OVERRIDES = {
     "g.e.m.": "UCBRh2Z_U1Lw9-YJ-XGZ8M2Q",
+    "jay chou": "UCL2MDNdwEtV6aYUgNjFQGZA",
     "lane 8": "UCqjupXgFQVmnpYo-sJ47dHg",
+    "周杰倫": "UCL2MDNdwEtV6aYUgNjFQGZA",
 }
 
 

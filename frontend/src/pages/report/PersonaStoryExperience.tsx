@@ -88,11 +88,6 @@ function ListeningWorldScene({ report }: { report: PersonaReport }) {
           <p className="persona-chapter-label">Your Listening World</p>
           <h2 id="listening-world-title">{report.listeningWorld.formattedTime} detected</h2>
           <p className="persona-period-line">{report.period.label}</p>
-          <p className="persona-body">{report.listeningWorld.interpretation}</p>
-          <div className="persona-coverage-line">
-            <span>Duration coverage <strong>{formatPercent(report.listeningWorld.durationCoverage)}</strong></span>
-            <span>Genre coverage by plays <strong>{formatPercent(report.listeningWorld.genreCoverage)}</strong></span>
-          </div>
         </div>
         <GenreComposition genres={report.listeningWorld.genres} />
       </div>
@@ -196,7 +191,7 @@ function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArti
             <div className="persona-podium-profile">
               {rank === 1 ? <span className="persona-podium-crown" aria-label="First place"><Crown aria-hidden="true" /></span> : null}
               {artist
-                ? <ArtistAvatar artistImageUrl={artist.artistImageUrl} artistName={artist.name} size={rank === 1 ? "hero" : "lg"} shape="rounded" priority={rank <= 2} />
+                ? <ArtistAvatar artistImageUrl={artist.artistImageUrl} artistName={artist.name} size={rank === 1 ? "hero" : "lg"} shape="circle" priority={rank <= 2} />
                 : <AlbumCover albumImageUrl={song?.albumImageUrl} fallbackImageUrl={song?.trackImageUrl} albumTitle={song?.album || song?.title || "Song"} size={rank === 1 ? "hero" : "lg"} priority={rank <= 2} />}
               <h3 title={title}>{title}</h3>
               <p>{subtitle}</p>
@@ -241,8 +236,6 @@ function RevealScene({ id, direction, className, children }: { id: string; direc
   const opacity = useTransform(scrollYProgress, [0, 0.45], [0, 1]);
   return <section ref={ref} className={`persona-scene-track ${className}`} aria-labelledby={`${id}-title`}><motion.div className="persona-scene-sticky" style={reduced ? undefined : { x, scale, opacity }}>{children}</motion.div></section>;
 }
-
-function formatPercent(value: number) { return `${Math.round(value * 100)}%`; }
 
 function ExplainerModal({ report, kind, onClose }: { report: PersonaReport; kind: "ages" | "personalities"; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement | null>(null);

@@ -1,3 +1,12 @@
+.top10-title-panel .smp-page-title-panel__inner {
+  min-height: auto;
+  padding-block: clamp(1.25rem, 2vw, 1.75rem);
+}
+
+.top10-title-panel .smp-page-title-panel__metadata {
+  margin-top: 1rem;
+}
+
 .ranking-story {
   display: grid;
   grid-template-columns: minmax(18.75rem, 0.85fr) minmax(0, 1.15fr);
@@ -94,25 +103,6 @@
 .ranking-story__row-artwork {
   width: 5.5rem;
   aspect-ratio: 1 / 1;
-}
-
-.ranking-transition {
-  position: relative;
-  overflow: hidden;
-}
-
-.ranking-transition::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 92% 0%, rgb(239 43 45 / 14%), transparent 34%),
-    linear-gradient(90deg, rgb(239 43 45 / 7%), transparent 46%);
-}
-
-.ranking-transition > * {
-  position: relative;
 }
 
 @keyframes ranking-visual-in {

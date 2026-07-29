@@ -1,4 +1,5 @@
 import { Menu, Music2, X } from "lucide-react";
+import type { CSSProperties } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import { pollTakeoutImport, runExclusiveOperation } from "./api/takeoutImport";
@@ -44,6 +45,7 @@ export default function App() {
   const [page, setPage] = useState<Page>(() => getHistoryPage());
   const [titleVisitId, setTitleVisitId] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("smp_sidebar_collapsed") !== "false");
   const [source, setSource] = useState<MusicSource>(() => {
     const querySource = new URLSearchParams(window.location.search).get("source");
     if (querySource === "spotify") return "spotify";
@@ -129,6 +131,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("smp_use_demo", String(useDemo));
   }, [useDemo]);
+
+  useEffect(() => {
+    localStorage.setItem("smp_sidebar_collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -504,9 +510,12 @@ export default function App() {
   const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
 
   return (
-    <div className="min-h-screen bg-ink text-white">
+    <div
+      className="min-h-screen bg-ink text-white"
+      style={{ "--app-sidebar-width": sidebarCollapsed ? "5.5rem" : "15rem" } as CSSProperties}
+    >
       <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,43,45,0.16),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(123,17,24,0.15),transparent_25%)]" />
-      <DesktopSidebar activePage={page} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onNavigate={navigate} />
+      <DesktopSidebar activePage={page} collapsed={sidebarCollapsed} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -541,7 +550,7 @@ export default function App() {
         </div>
       ) : null}
 
-      <div className="min-w-0 lg:pl-60">
+      <div className="min-w-0 transition-[padding] duration-300 lg:pl-[var(--app-sidebar-width)]">
         <header className="sticky top-0 z-20 border-b border-line bg-backgroundElevated/90 px-4 py-3 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <button className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-line bg-white/[0.055] text-white" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
