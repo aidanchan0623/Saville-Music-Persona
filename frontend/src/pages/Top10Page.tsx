@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import { AlbumCover, ArtistAvatar, TrackArtwork } from "../components/Artwork";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
+import ShimmerText from "../components/ui/shimmer-text";
 import GradualBlur from "../components/reactbits/GradualBlur/GradualBlur";
 import type {
   MusicSource,
@@ -237,7 +238,7 @@ function RankingStorySection({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-red-200">{label}</p>
-            <h2 className="mt-2 text-3xl font-black text-white">{title}</h2>
+            <ShimmerText className="mt-2"><h2 className="text-3xl font-black text-white">{title}</h2></ShimmerText>
           </div>
           {loading ? <span className="text-sm text-mist">Loading...</span> : null}
         </div>
@@ -256,7 +257,7 @@ function RankingStorySection({
       <div className="ranking-story__items">
         <div className="ranking-story__chapter">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-200">{label}</p>
-          <h2 id={`ranking-story-${kind}`} className="mt-3 text-3xl font-black leading-tight text-white md:text-4xl">{title}</h2>
+          <ShimmerText className="mt-3"><h2 id={`ranking-story-${kind}`} className="text-3xl font-black leading-tight text-white md:text-4xl">{title}</h2></ShimmerText>
           {loading ? <span className="mt-4 inline-flex rounded-full bg-white/10 px-3 py-1 text-xs text-mist">Loading...</span> : null}
         </div>
         {items.map((item) => {
@@ -481,7 +482,7 @@ function FavouriteAlbumsSection({ response, loading, selectedAlbum, onViewSongs,
     <GlowPanel as="section" variant="major" className="p-4 lg:p-5">
       <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-black leading-tight text-white md:text-3xl">Favourite Albums</h2>
+          <ShimmerText><h2 className="text-2xl font-black leading-tight text-white md:text-3xl">Favourite Albums</h2></ShimmerText>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">{source === "spotify" ? "Projects with the strongest album-level signal from Spotify top tracks, saved music, playlists, and recent sync data." : "Projects with the strongest pull across your local plays."}</p>
         </div>
         {loading ? <span className="text-sm text-mist">Loading...</span> : null}

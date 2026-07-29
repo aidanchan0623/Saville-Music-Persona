@@ -8,7 +8,7 @@
   min-width: 0;
   margin: -1.5rem -1rem;
   color: #fff;
-  background: #050506;
+  background: rgb(5 5 6 / 92%);
   overflow: clip;
 }
 
@@ -94,7 +94,7 @@
 .persona-ranking-viewport { width: 100%; max-width: none; height: 100vh; min-height: 100vh; box-sizing: border-box; padding-block: 0; padding-inline: 0; overflow: hidden; }
 .persona-ranking-panels { display: flex; width: 200%; min-width: 0; }
 .persona-ranking-panel { display: grid; grid-template-rows: auto 24rem; align-content: center; align-items: stretch; gap: clamp(.25rem, .7vh, .55rem); width: 50%; min-width: 0; height: 100svh; box-sizing: border-box; padding: clamp(.75rem, 1.5vh, 1.25rem) var(--report-gutter); }
-.persona-ranking-heading { width: 100%; max-width: none; align-self: start; padding: 0; text-align: center; }
+.persona-ranking-heading { width: 100%; max-width: none; align-self: start; padding: 0; text-align: center; transform: translateY(-1rem); }
 .persona-ranking-heading h2 { margin-top: .35rem; font-size: clamp(2.7rem, 5.2vw, 4.8rem); }
 .persona-ranking-period { display: flex; align-items: baseline; justify-content: center; flex-wrap: wrap; gap: .35rem .65rem; margin: .32rem 0 0; color: #aaa6b1; font-size: clamp(.75rem, 1vw, .92rem); }
 .persona-ranking-period span { color: #f7a2a6; font-size: .78em; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
@@ -159,7 +159,7 @@
   .persona-ranking-panels { display: block; width: 100%; transform: none !important; }
   .persona-ranking-panel { display: block; width: 100%; height: auto; padding: 5.5rem 1.25rem; }
   .persona-ranking-panel + .persona-ranking-panel { padding-top: 3rem; }
-  .persona-ranking-heading { margin-bottom: 1.5rem; }
+  .persona-ranking-heading { margin-bottom: 1.5rem; transform: none; }
   .persona-ranking-podium-shell { margin-inline: -1.25rem; overflow-x: auto; padding: 0 1.25rem; scrollbar-width: thin; }
   .persona-podium { width: 720px; min-height: 510px; }
   .persona-podium-profile .artwork-frame { width: 72px; height: 72px; }

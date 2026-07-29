@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Crown } from "lucide-react";
 import { motion, useInView, useReducedMotion, useScroll, useSpring, useTransform } from "motion/react";
 import { AlbumCover, ArtistAvatar } from "../../components/Artwork";
+import ShimmerText from "../../components/ui/shimmer-text";
 import type { PersonaGenre, PersonaReport, PersonaReportPeriodKey, PersonaTopArtist, PersonaTopSong } from "../../types/api";
 import { PersonaAlbumDome } from "./PersonaAlbumDome";
 
@@ -31,7 +32,7 @@ export function PersonaStoryExperience({ report, busy, onGenerate, titleAnimatio
         <header className="persona-report__masthead">
           <div className="persona-report__heading">
             <p className="persona-report__eyebrow">Persona Report</p>
-            <h1>Your listening habits, professionally overanalysed.</h1>
+            <ShimmerText><h1>Your listening habits, professionally overanalysed.</h1></ShimmerText>
             <p className="persona-report__meta">{report.source === "spotify" ? "Spotify" : "YouTube Music"} &middot; showing {report.period.label.toLowerCase()} &middot; {report.period.timezone}</p>
           </div>
           <div className="persona-report__actions">
@@ -67,7 +68,7 @@ function PersonalityScene({ report, titleAnimationKey, onLearnMore }: { report: 
       <motion.div className="persona-scene-sticky persona-scene-sticky--center" style={reduced ? undefined : { scale, x }}>
         <div className="persona-text-scrim persona-opening-copy">
           <p className="persona-chapter-label">Your Musical Personality</p>
-          <h1 id="personality-title" key={titleAnimationKey}>{report.personality.title}</h1>
+          <ShimmerText className="max-w-full"><h1 id="personality-title" key={titleAnimationKey}>{report.personality.title}</h1></ShimmerText>
           <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
           <p className="persona-lede">{report.personality.shortDescription}</p>
           {report.personality.habits.length > 0 && <div className="persona-habit-chips" aria-label="Listening habits">{report.personality.habits.map((habit) => <span key={habit}>{habit}</span>)}</div>}
@@ -86,7 +87,7 @@ function ListeningWorldScene({ report }: { report: PersonaReport }) {
       <div className="persona-scene-grid">
         <div className="persona-text-scrim">
           <p className="persona-chapter-label">Your Listening World</p>
-          <h2 id="listening-world-title">{report.listeningWorld.formattedTime} detected</h2>
+          <ShimmerText><h2 id="listening-world-title">{report.listeningWorld.formattedTime} detected</h2></ShimmerText>
           <p className="persona-period-line">{report.period.label}</p>
         </div>
         <GenreComposition genres={report.listeningWorld.genres} />
@@ -123,7 +124,7 @@ function MusicalAgeScene({ report, onLearnMore }: { report: PersonaReport; onLea
       <div className="persona-text-scrim persona-age-copy">
         <p className="persona-chapter-label">Musical Age</p>
         <p className="persona-age-number">{report.musicalAge.age}</p>
-        <h2 id="musical-age-title">{report.musicalAge.title}</h2>
+        <ShimmerText><h2 id="musical-age-title">{report.musicalAge.title}</h2></ShimmerText>
         <button className="persona-explainer-button" type="button" onClick={onLearnMore}>Learn more</button>
         <div className="persona-age-facts">
           <span>Typical range <strong>{report.musicalAge.likelyMin}-{report.musicalAge.likelyMax} years</strong></span>
@@ -162,7 +163,7 @@ function TopFiveScene({ report }: { report: PersonaReport }) {
 function RankingPanel({ title, period, side, children }: { title: string; period: string; side: string; children: React.ReactNode }) {
   const [scope, ...dateParts] = period.split("·");
   const dates = dateParts.join("·").trim();
-  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">The five-repeat hall of fame</p><h2>{title}</h2><p className="persona-ranking-period"><span>{dates ? scope.trim() : "Listening period"}</span><b>{dates || scope.trim()}</b></p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
+  return <div className={`persona-ranking-panel persona-ranking-panel--${side}`}><div className="persona-ranking-heading persona-text-scrim"><p className="persona-chapter-label">The five-repeat hall of fame</p><ShimmerText><h2>{title}</h2></ShimmerText><p className="persona-ranking-period"><span>{dates ? scope.trim() : "Listening period"}</span><b>{dates || scope.trim()}</b></p></div><div className="persona-ranking-podium-shell">{children}</div></div>;
 }
 
 function RankingPodium({ kind, items }: { kind: "artists"; items: PersonaTopArtist[] } | { kind: "songs"; items: PersonaTopSong[] }) {
@@ -219,7 +220,7 @@ function FinalRoastScene({ report }: { report: PersonaReport }) {
     <section className="persona-final-scene" aria-labelledby="final-roast-title">
       <motion.div className="persona-text-scrim persona-final-copy" initial={reduced ? false : { opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.35 }} transition={{ duration: 0.72 }}>
         <p className="persona-chapter-label">Closing Summary</p>
-        <h2 id="final-roast-title">{report.summary.headline}</h2>
+        <ShimmerText className="max-w-full"><h2 id="final-roast-title">{report.summary.headline}</h2></ShimmerText>
         <p className="persona-final-body">{report.summary.body}</p>
         <blockquote>{report.summary.finalLine}</blockquote>
       </motion.div>

@@ -7,6 +7,7 @@ import { GlowPanel } from "./components/GlowPanel";
 import { DesktopSidebar } from "./components/navigation/DesktopSidebar";
 import { NAVIGATION_ITEMS } from "./components/navigation/navigation";
 import type { Page } from "./components/navigation/navigation";
+import { BubbleBackground } from "./components/ui/components-backgrounds-bubble";
 import { OverviewPage } from "./pages/OverviewPage";
 import { InsightsPage } from "./pages/InsightsPage";
 import { RecommendationsPage } from "./pages/RecommendationsPage";
@@ -511,10 +512,12 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-ink text-white"
+      className="relative isolate min-h-screen overflow-x-clip bg-ink text-white"
       style={{ "--app-sidebar-width": sidebarCollapsed ? "5.5rem" : "15rem" } as CSSProperties}
     >
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_70%_10%,rgba(239,43,45,0.16),transparent_28%),radial-gradient(circle_at_20%_80%,rgba(123,17,24,0.15),transparent_25%)]" />
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        <BubbleBackground className="h-full w-full !bg-[#050505] opacity-[0.22]" />
+      </div>
       <DesktopSidebar activePage={page} collapsed={sidebarCollapsed} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
 
       {mobileOpen ? (
@@ -550,7 +553,7 @@ export default function App() {
         </div>
       ) : null}
 
-      <div className="min-w-0 transition-[padding] duration-300 lg:pl-[var(--app-sidebar-width)]">
+      <div className="relative z-10 min-w-0 transition-[padding] duration-300 lg:pl-[var(--app-sidebar-width)]">
         <header className="sticky top-0 z-20 border-b border-line bg-backgroundElevated/90 px-4 py-3 backdrop-blur-xl lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <button className="grid h-10 w-10 shrink-0 place-items-center rounded-md border border-line bg-white/[0.055] text-white" type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>

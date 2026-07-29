@@ -1,5 +1,6 @@
 import { ArrowRight, RefreshCw, Waves } from "lucide-react";
 import { formatDateTime } from "../../utils/format";
+import ShimmerText from "../ui/shimmer-text";
 
 interface Props {
   identityTitle: string;
@@ -39,9 +40,9 @@ export function HeroIdentitySection({
             <span className="rounded-full border border-violet/25 bg-violet/10 px-3 py-1 text-violet-100">{modelLabel}</span>
           </div>
           <p className="mt-7 text-sm font-semibold uppercase tracking-[0.24em] text-violet-100">Private music identity</p>
-          <h1 className="mt-3 max-w-5xl text-5xl font-black leading-[0.94] tracking-tight text-white md:text-6xl xl:text-7xl">
-            Saville Music Persona
-          </h1>
+          <ShimmerText className="mt-3 max-w-5xl">
+            <h1 className="text-5xl font-black leading-[0.94] tracking-tight text-white md:text-6xl xl:text-7xl">Saville Music Persona</h1>
+          </ShimmerText>
           <p className="mt-5 max-w-4xl text-2xl font-black leading-tight text-violet-100 md:text-3xl xl:text-4xl">
             {identityTitle}
           </p>

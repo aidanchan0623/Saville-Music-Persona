@@ -6,6 +6,7 @@ import { ArtistAvatar, TrackArtwork } from "../components/Artwork";
 import { CompactScoreGauge } from "../components/insights/CompactScoreGauge";
 import { ListeningRhythmChart } from "../components/insights/ListeningRhythmChart";
 import { MusicProfileRadar } from "../components/insights/MusicProfileRadar";
+import ShimmerText from "../components/ui/shimmer-text";
 import type { InsightsResponse, MusicSource } from "../types/api";
 import { formatDate, formatMinutes } from "../utils/format";
 import "./InsightsPage.css";
@@ -53,7 +54,7 @@ export function InsightsPage({ source, onOpenTop10 }: { source: MusicSource; tit
         <header className="insights-header">
           <div>
             <p className="insights-eyebrow">Listening evidence</p>
-            <h1>Insights</h1>
+            <ShimmerText><h1>Insights</h1></ShimmerText>
             <p className="insights-header__lede">Your sound profile, listening scores, and rhythm in one view.</p>
           </div>
           <div className="insights-period-control" aria-label="Insights period">
@@ -82,7 +83,7 @@ export function InsightsPage({ source, onOpenTop10 }: { source: MusicSource; tit
             <section className="insights-surface insights-profile" aria-labelledby="music-profile-title">
               <div className="insights-section-heading">
                 <p className="insights-eyebrow">What you listen to</p>
-                <h2 id="music-profile-title">Your Music Profile</h2>
+                <ShimmerText><h2 id="music-profile-title">Your Music Profile</h2></ShimmerText>
                 <p>Actual classified play share using Saville's canonical artist and genre mappings.</p>
               </div>
               <div className="insights-profile__grid">
@@ -146,7 +147,7 @@ function RankingsSection({ data, onOpenTop10 }: { data: InsightsResponse; onOpen
       <div className="insights-section-heading insights-section-heading--split">
         <div>
           <p className="insights-eyebrow">What keeps returning</p>
-          <h2 id="rankings-title">Period leaders</h2>
+          <ShimmerText><h2 id="rankings-title">Period leaders</h2></ShimmerText>
           <p>Same deterministic play-count ranking used by Top 10.</p>
         </div>
         <button type="button" className="insights-text-link" onClick={onOpenTop10}>View full Top 10 <ArrowRight size={15} /></button>
@@ -200,7 +201,7 @@ function IntensitySection({ data }: { data: InsightsResponse }) {
       <div className="insights-section-heading insights-section-heading--split">
         <div>
           <p className="insights-eyebrow">Recent intensity</p>
-          <h2 id="intensity-title">Daily listening intensity</h2>
+          <ShimmerText><h2 id="intensity-title">Daily listening intensity</h2></ShimmerText>
         </div>
         <p>{activeDays.length} active days{peak ? ` | peak ${formatMinutes(peak.value)} on ${formatDate(peak.date)}` : ""}</p>
       </div>
