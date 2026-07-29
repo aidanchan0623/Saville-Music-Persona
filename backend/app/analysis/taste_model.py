@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
+from functools import lru_cache
 from typing import Any
 
 from app.analysis.normalizer import UNKNOWN_ARTIST
@@ -13,11 +14,36 @@ from app.data.artist_genres import (
     normalise_artist_name,
     normalise_genre,
 )
+from app.data.genre_taxonomy import INTERNAL_BROAD_CLUSTERS, TaxonomyMatch, normalise_external_genres
 
 
 CORE_THRESHOLD = 6.0
 SECONDARY_THRESHOLD = 4.0
 SIDE_THRESHOLD = 1.0
+
+
+def primary_genre_for_profile(profile: dict[str, Any]) -> TaxonomyMatch | None:
+    """Collapse provider/curated labels into one stable primary genre.
+
+    Listening analytics count events, not labels. Secondary genres remain on
+    the profile as evidence, but they must not divide one real play into
+    fractions or create duplicate genre families in the UI.
+    """
+
+    labels = tuple(str(value) for value in profile.get("canonical_genres") or [] if str(value).strip())
+    return _primary_genre_for_labels(labels)
+
+
+@lru_cache(maxsize=16_384)
+def _primary_genre_for_labels(labels: tuple[str, ...]) -> TaxonomyMatch | None:
+    return normalise_external_genres(labels)
+
+
+def primary_broad_cluster(match: TaxonomyMatch | None) -> str | None:
+    if not match:
+        return None
+    clusters = INTERNAL_BROAD_CLUSTERS.get(match.primary_genre) or ()
+    return clusters[0] if clusters else None
 
 
 def profile_for_artist(artist: str, source_genres: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
@@ -180,9 +206,11 @@ def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str
         if profile is None:
             profile = profile_for_artist(artist, source_genres)
             profile_cache[profile_key] = profile
-        if profile["is_curated"]:
+        taxonomy = primary_genre_for_profile(profile)
+        broad_cluster = primary_broad_cluster(taxonomy)
+        if taxonomy and profile["is_curated"]:
             coverage_counts["curated"] += 1
-        elif profile["canonical_genres"]:
+        elif taxonomy:
             coverage_counts["inferred"] += 1
         else:
             coverage_counts["unknown"] += 1
@@ -191,17 +219,11 @@ def weighted_cluster_counts(events: list[dict[str, Any]], tracks_by_id: dict[str
             simple = " ".join(str(artist).strip().casefold().split())
             if normalised != simple:
                 unmatched_variants[f"{artist} -> {normalised}"] += 1
-        clusters = profile.get("broad_clusters") or []
-        genres = profile.get("canonical_genres") or []
         traits = profile.get("sonic_traits") or []
-        if clusters:
-            weight = 1 / len(clusters)
-            for cluster in clusters:
-                cluster_counts[cluster] += weight
-        if genres:
-            weight = 1 / len(genres)
-            for genre in genres:
-                genre_counts[genre] += weight
+        if broad_cluster:
+            cluster_counts[broad_cluster] += 1
+        if taxonomy:
+            genre_counts[taxonomy.primary_genre] += 1
         for trait in traits:
             trait_counts[trait] += 1
     return cluster_counts, genre_counts, trait_counts, coverage_counts, unknown_artists, invalid_artist_events, unmatched_variants

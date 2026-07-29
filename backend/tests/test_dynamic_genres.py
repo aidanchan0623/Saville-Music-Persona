@@ -29,6 +29,23 @@ def test_regional_pop_aliases_stay_distinct() -> None:
     assert "Cantopop" in labels
 
 
+def test_each_play_contributes_one_integer_count_to_one_primary_genre() -> None:
+    history = [
+        {"videoId": f"gem-{index}", "title": f"GEM {index}", "artists": [{"name": "G.E.M."}], "played": "2026-07-01"}
+        for index in range(4)
+    ] + [
+        {"videoId": f"jay-{index}", "title": f"Jay {index}", "artists": [{"name": "周杰倫 Jay Chou"}], "played": "2026-07-02"}
+        for index in range(3)
+    ]
+    profile = _insights(history)
+    mandopop = next(axis for axis in profile["axes"] if axis["label"] == "Mandopop")
+
+    assert mandopop["detectedPlays"] == 7
+    assert mandopop["value"] == 100.0
+    assert all(axis["label"] not in {"C-pop", "R&B / Soul"} for axis in profile["axes"])
+    assert all(isinstance(axis["detectedPlays"], int) for axis in profile["axes"])
+
+
 def test_low_coverage_does_not_fabricate_axes() -> None:
     profile = _insights([{"videoId": "unknown", "title": "Song", "artists": [{"name": "Unknown artist"}], "played": "2026-07-01"}])
     assert profile["axes"] == []

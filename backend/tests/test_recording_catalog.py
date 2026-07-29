@@ -223,6 +223,12 @@ def test_taxonomy_has_thirty_stable_buckets_and_regional_coverage() -> None:
     assert normalise_external_genres(["pop rock"]).primary_genre == "Pop Rock"
     assert normalise_external_genres(["new wave", "rock", "post-punk"]).primary_genre == "Post-Punk / Goth / Darkwave"
     assert normalise_external_genres(["alternative rock", "pop"]).primary_genre == "Alternative / Indie Rock"
+    assert normalise_external_genres(["c-pop", "r&b"]).primary_genre == "Mandopop"
+    assert normalise_external_genres(["breakcore"]).primary_genre == "EDM / Bass Music"
+    assert normalise_external_genres(["electronic"]).primary_genre == "EDM / Bass Music"
+    assert normalise_external_genres(["post-punk"]).primary_genre == "Post-Punk / Goth / Darkwave"
+    assert normalise_external_genres(["pop rap"]).primary_genre == "Hip-Hop / Rap"
+    assert normalise_external_genres(["hip-hop", "k-pop"]).primary_genre == "K-pop"
 
 
 def test_musicbrainz_candidate_requires_version_and_uses_duration_for_identity() -> None:

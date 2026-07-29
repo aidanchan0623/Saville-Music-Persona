@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 from datetime import date, timedelta
 from typing import Any
@@ -18,8 +19,7 @@ from app.analysis.periods import (
 )
 from app.analysis.scoring import build_analysis
 from app.analysis.period_profile import build_period_profile
-from app.analysis.taste_model import profile_for_artist, source_genres_for_artist
-from app.data.artist_genres import normalise_genre
+from app.analysis.taste_model import primary_genre_for_profile, profile_for_artist, source_genres_for_artist
 
 
 INSIGHTS_SCHEMA_VERSION = 1
@@ -92,24 +92,16 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
         track = track_lookup.get(event.get("track_id"), {})
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
         profile = profile_for_artist(artist, source_genres_for_artist(track, artist_metadata, artist))
-        genres = [normalise_genre(str(value)) for value in (profile.get("canonical_genres") or [])]
-        meaningful = list(dict.fromkeys(item for item in genres if item))
-        regional_keys = {"k-pop", "mandopop", "cantopop", "c-pop", "j-pop"}
-        if any(key in regional_keys for key, _ in meaningful):
-            # A regional-pop tag is more informative than its accompanying
-            # generic Pop/Dance Pop metadata, so do not dilute it in the UI.
-            meaningful = [item for item in meaningful if item[0] not in {"pop", "dance-pop", "pop-rock"}]
-        meaningful = meaningful[:3]
-        if not meaningful:
+        taxonomy = primary_genre_for_profile(profile)
+        if not taxonomy:
             continue
         classified_plays += 1
-        weight = 1 / len(meaningful)
-        for key, label in meaningful:
-            genre_weights[key] += weight
-            labels[key] = label
-            contributors.setdefault(key, Counter())[artist] += weight
-            source_counts.setdefault(key, Counter())[str(profile.get("source") or "unavailable")] += weight
-            confidence_counts.setdefault(key, Counter())[str(profile.get("confidence") or "low")] += weight
+        key = re.sub(r"[^a-z0-9]+", "-", taxonomy.primary_genre.casefold()).strip("-")
+        genre_weights[key] += 1
+        labels[key] = taxonomy.primary_genre
+        contributors.setdefault(key, Counter())[artist] += 1
+        source_counts.setdefault(key, Counter())[str(profile.get("source") or "unavailable")] += 1
+        confidence_counts.setdefault(key, Counter())[str(profile.get("confidence") or "low")] += 1
 
     total = len(events)
     ranked_keys = sorted(genre_weights, key=lambda key: (-genre_weights[key], labels[key].casefold()))
@@ -122,7 +114,7 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
             "key": key,
             "label": labels[key],
             "value": round(genre_weights[key] / total * 100, 1) if total else 0.0,
-            "detectedPlays": round(genre_weights[key], 1),
+            "detectedPlays": int(genre_weights[key]),
             "contributingArtists": [name for name, _ in contributors[key].most_common(3)],
             "metadataSource": source_counts[key].most_common(1)[0][0],
             "confidence": confidence_counts[key].most_common(1)[0][0],
@@ -135,7 +127,7 @@ def music_profile(events: list[dict[str, Any]], track_lookup: dict[str, dict[str
         "unclassifiedPlays": max(total - classified_plays, 0),
         "totalPlays": total,
         "axes": axes,
-        "methodology": "Each classified play is split evenly across up to three reliable, normalised artist genres. The chart shows the top six genres for this source and period; classification coverage remains visible separately and unknown artists remain unclassified.",
+        "methodology": "Each classified listening event contributes one whole count to one primary genre in Saville's consolidated taxonomy. Secondary styles remain metadata only. The chart shows the dynamic top six genres for this source and period; unknown listening remains unclassified.",
     }
 
 

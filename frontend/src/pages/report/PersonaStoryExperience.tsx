@@ -91,7 +91,7 @@ function ListeningWorldScene({ report }: { report: PersonaReport }) {
           <p className="persona-body">{report.listeningWorld.interpretation}</p>
           <div className="persona-coverage-line">
             <span>Duration coverage <strong>{formatPercent(report.listeningWorld.durationCoverage)}</strong></span>
-            <span>Genre coverage <strong>{formatPercent(report.listeningWorld.genreCoverage)}</strong></span>
+            <span>Genre coverage by plays <strong>{formatPercent(report.listeningWorld.genreCoverage)}</strong></span>
           </div>
         </div>
         <GenreComposition genres={report.listeningWorld.genres} />

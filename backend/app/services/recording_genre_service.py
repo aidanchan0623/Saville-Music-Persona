@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import httpx
 
-from app.analysis.taste_model import has_usable_artist, profile_for_artist, source_genres_for_artist
+from app.analysis.taste_model import has_usable_artist, primary_genre_for_profile, profile_for_artist, source_genres_for_artist
 from app.data.genre_taxonomy import normalise_external_genres
 from app.database.recording_catalog import RecordingCatalog, base_title, modifiers_for, normalise_recording_text
 from app.services.genre_enrichment_service import MUSICBRAINZ_API_URL, lucene_phrase
@@ -187,7 +187,7 @@ def unresolved_track_play_counts(normalised: dict[str, Any], catalog: RecordingC
         if lookup_key_for(track) in blocked_lookup_keys:
             continue
         genres = source_genres_for_artist(track, metadata, artist)
-        if profile_for_artist(artist, genres).get("canonical_genres"):
+        if primary_genre_for_profile(profile_for_artist(artist, genres)):
             continue
         result.append((track, plays))
     return result

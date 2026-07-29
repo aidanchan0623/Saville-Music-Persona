@@ -555,12 +555,12 @@ ARTIST_GENRES: dict[str, ArtistGenreProfile] = {
         sonic_traits=("melodic", "songwriting-led", "classic"),
     ),
     "mr.kitty": ArtistGenreProfile(
-        canonical_genres=("synthwave", "darkwave", "synth-pop"),
+        canonical_genres=("darkwave", "synthwave", "synth-pop"),
         broad_clusters=("Electronic / Atmospheric", "Alternative / Indie Rock"),
         sonic_traits=("dark", "atmospheric", "synth-led"),
     ),
     "pastel ghost": ArtistGenreProfile(
-        canonical_genres=("synth-pop", "darkwave", "electronic"),
+        canonical_genres=("darkwave", "synth-pop", "electronic"),
         broad_clusters=("Electronic / Atmospheric", "Alternative / Indie Rock"),
         sonic_traits=("ethereal", "dark", "synth-led"),
     ),
@@ -611,6 +611,7 @@ ARTIST_ALIASES: dict[str, str] = {
     "mcr": "my chemical romance",
     "one republic": "onerepublic",
     "sawano hiroyuki": "hiroyuki sawano",
+    "smashingpumpkins": "the smashing pumpkins",
     "gem tang": "g.e.m.",
     "周湯豪": "nickthereal",
     "周湯豪 nickthereal": "nickthereal",
@@ -625,6 +626,8 @@ ARTIST_ALIASES: dict[str, str] = {
     "邓紫棋": "g.e.m.",
     "周杰倫": "jay chou",
     "周杰伦": "jay chou",
+    "周杰倫jay chou": "jay chou",
+    "周杰倫jay chou x amei": "jay chou",
     "林俊傑": "林俊杰",
     "陳奕迅": "陈奕迅",
     "周杰伦": "周杰倫",
@@ -747,6 +750,6 @@ def normalise_genre(genre: str) -> tuple[str, str] | None:
     if value in GENRE_ALIASES:
         return GENRE_ALIASES[value]
     key = re.sub(r"[^a-z0-9]+", "-", value).strip("-")
-    if not key or key in {"music", "other", "unknown", "various", "spoken-word", "comedy", "podcast", "audiobook", "talk", "made-up-genre"}:
+    if not key or key in {"music", "other", "unknown", "various", "spoken-word", "comedy", "podcast", "audiobook", "talk", "made-up-genre", "hummus"}:
         return None
     return key, " ".join(part.capitalize() for part in value.split())

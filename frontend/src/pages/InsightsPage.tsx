@@ -89,7 +89,7 @@ export function InsightsPage({ source, onOpenTop10 }: { source: MusicSource; tit
                 <div className="min-w-0">
                   <MusicProfileRadar axes={data.musicProfile.axes} coverage={data.musicProfile.coverage} />
                   {data.musicProfile.coverage < 0.6 ? (
-                    <p className="insights-coverage-warning">Genre coverage is limited. {data.musicProfile.unclassifiedPlays.toLocaleString()} plays remain unclassified and are not fabricated.</p>
+                    <p className="insights-coverage-warning">Genre coverage by plays is limited. {data.musicProfile.unclassifiedPlays.toLocaleString()} plays remain unclassified and are not fabricated.</p>
                   ) : null}
                 </div>
                 <div className="insights-scores" aria-label={`Listening scores for ${data.period.display_label}`}>

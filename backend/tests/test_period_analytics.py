@@ -396,7 +396,7 @@ def test_taste_dna_comparison_detects_growing_cluster_with_enough_data() -> None
     history = []
     start = date(2026, 7, 1)
     for index in range(60):
-        history.append(_history_item(f"w{index}", f"Wisp {index}", "Wisp", (start + timedelta(days=index % 6)).isoformat(), 180))
+        history.append(_history_item(f"k{index}", f"K-pop {index}", "FIFTY FIFTY", (start + timedelta(days=index % 6)).isoformat(), 180))
     for index in range(80):
         history.append(_history_item(f"b{index}", f"BMTH {index}", "Bring Me The Horizon", (date(2026, 2, 1) + timedelta(days=index % 20)).isoformat(), 180))
     normalised = normalise_collection({"history": history}, today=date(2026, 7, 7))

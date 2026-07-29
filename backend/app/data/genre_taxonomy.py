@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
-TAXONOMY_VERSION = 2
+TAXONOMY_VERSION = 3
 
 # Stable product-facing buckets. External provider labels remain available as
 # evidence; these names are deliberately broad enough to work across users.
@@ -78,6 +78,17 @@ INTERNAL_BROAD_CLUSTERS: dict[str, tuple[str, ...]] = {
     "Tamil / Indian Film & Pop": ("Tamil / Indian Film & Pop",),
 }
 
+REGIONAL_GENRES = frozenset({
+    "Malay / Nusantara Pop",
+    "Malay / Nusantara Rock & Indie",
+    "Dangdut",
+    "Mandopop",
+    "Cantopop",
+    "K-pop",
+    "J-Pop / J-Rock",
+    "Tamil / Indian Film & Pop",
+})
+
 
 @dataclass(frozen=True)
 class TaxonomyMatch:
@@ -104,16 +115,16 @@ RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Alternative / Indie Rock", ("alternative rock", "indie rock", "britpop", "garage rock", "post-grunge", "art rock", "psychedelic rock")),
     ("Classic Rock / Hard Rock", ("classic rock", "hard rock", "arena rock", "glam rock", "blues rock", "progressive rock", "rock")),
     ("Pop Rock", ("pop rock", "soft rock")),
-    ("Alternative / Indie Pop", ("alternative pop", "indie pop", "art pop", "bedroom pop", "hyperpop")),
-    ("Dance Pop / Europop", ("dance-pop", "dance pop", "europop", "eurodance", "italo dance")),
-    ("Mainstream Pop", ("synth-pop", "synthpop", "electropop", "teen pop", "pop")),
-    ("Hip-Hop / Rap", ("hip-hop", "hip hop", "rap", "trap", "drill", "grime", "memphis rap")),
+    ("Alternative / Indie Pop", ("alternative pop", "indie pop", "art pop", "bedroom pop", "hyperpop", "indie sleaze", "indie")),
+    ("Dance Pop / Europop", ("dance-pop", "dance pop", "europop", "eurodance", "italo dance", "nu disco", "disco", "bubblegum dance", "alternative dance")),
+    ("Mainstream Pop", ("synth-pop", "synthpop", "electropop", "teen pop", "boy band", "pop")),
+    ("Hip-Hop / Rap", ("hip-hop", "hip hop", "pop rap", "emo rap", "rap", "trap", "drill", "grime", "memphis rap")),
     ("R&B / Soul", ("alternative r&b", "contemporary r&b", "r&b", "rnb", "rhythm and blues", "neo-soul", "soul")),
     ("House", ("melodic house", "deep house", "progressive house", "tech house", "afro house", "house")),
     ("Techno / Trance", ("melodic techno", "techno", "trance", "psytrance")),
-    ("EDM / Bass Music", ("drum and bass", "dubstep", "future bass", "electro house", "edm", "electronic dance music")),
-    ("Ambient / Experimental Electronic", ("ambient", "electronica", "downtempo", "experimental electronic", "synthwave", "vaporwave", "IDM")),
-    ("Latin Urban", ("reggaeton", "latin trap", "urbano latino", "dembow", "latin urban", "baile funk", "funk carioca")),
+    ("EDM / Bass Music", ("drum and bass", "dubstep", "future bass", "electro house", "edm", "electronic dance music", "electronic", "dance", "breakcore", "phonk", "gym phonk", "wave")),
+    ("Ambient / Experimental Electronic", ("ambient", "electronica", "downtempo", "experimental electronic", "experimental", "synthwave", "retrowave", "dreamwave", "vaporwave", "indietronica", "trip hop", "trip-hop", "electroclash", "glitchcore", "IDM")),
+    ("Latin Urban", ("latin pop", "reggaeton", "latin trap", "urbano latino", "dembow", "latin urban", "baile funk", "funk carioca")),
     ("Afrobeat / Amapiano / Dancehall", ("afrobeats", "afrobeat", "amapiano", "dancehall", "reggae", "afro-trap")),
     ("Country / Folk", ("country", "americana", "folk", "singer-songwriter", "bluegrass")),
     ("Jazz / Blues / Funk", ("jazz", "blues", "funk", "bebop", "fusion")),
@@ -133,15 +144,19 @@ def normalise_external_genres(labels: Iterable[str]) -> TaxonomyMatch | None:
     first_seen: dict[str, int] = {}
     matched: list[str] = []
     for label_index, label in enumerate(cleaned):
-        candidates: list[tuple[bool, int, int, str]] = []
+        candidates: list[tuple[bool, bool, int, int, str]] = []
         for rule_index, (genre, aliases) in enumerate(RULES):
             for alias in aliases:
                 exact = label == alias
                 if exact or re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", label):
-                    candidates.append((exact, -rule_index, len(alias), genre))
+                    candidates.append((exact, rule_index < 8, len(alias), -rule_index, genre))
         if not candidates:
             continue
-        exact, _, _, genre = max(candidates, key=lambda item: (item[0], item[1], item[2]))
+        # Prefer the most specific matching phrase. For example, `post-punk`
+        # must not collapse into the broader `punk`, and `alternative pop`
+        # must not collapse into generic `pop` merely because that rule is
+        # earlier in the display taxonomy.
+        exact, _, _, _, genre = max(candidates, key=lambda item: (item[0], item[1], item[2], item[3]))
         score = 0.98 if exact else 0.84
         scores[genre] = max(scores.get(genre, 0.0), score)
         first_seen.setdefault(genre, label_index)
@@ -150,7 +165,15 @@ def normalise_external_genres(labels: Iterable[str]) -> TaxonomyMatch | None:
         return None
     # Provider order carries evidence weight (MusicBrainz sorts tags by vote
     # count). Do not let the product taxonomy's display order overturn it.
-    ordered = sorted(scores, key=lambda genre: (-scores[genre], first_seen[genre], INTERNAL_GENRES.index(genre)))
+    ordered = sorted(
+        scores,
+        key=lambda genre: (
+            0 if genre in REGIONAL_GENRES else 1,
+            -scores[genre],
+            first_seen[genre],
+            INTERNAL_GENRES.index(genre),
+        ),
+    )
     primary = ordered[0]
     return TaxonomyMatch(
         primary_genre=primary,

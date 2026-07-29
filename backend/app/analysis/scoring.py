@@ -15,7 +15,14 @@ from app.analysis.media import (
     track_image_url as resolve_track_image_url,
 )
 from app.analysis.score_interpretations import attach_score_interpretations
-from app.analysis.taste_model import build_taste_model, enrich_artist
+from app.analysis.taste_model import (
+    build_taste_model,
+    enrich_artist,
+    primary_broad_cluster,
+    primary_genre_for_profile,
+    profile_for_artist,
+    source_genres_for_artist,
+)
 from app.analysis.thumbnails import best_thumbnail_url
 
 
@@ -227,12 +234,13 @@ def genre_diversity_score(tracks: list[dict[str, Any]], events: list[dict[str, A
     counts: Counter[str] = Counter()
     known = 0
     for event in events:
-        clusters = tracks_by_id.get(event["track_id"], {}).get("genre_clusters") or ["unknown"]
-        usable = [cluster for cluster in clusters if cluster != "unknown"]
-        if usable:
+        track = tracks_by_id.get(event["track_id"], {})
+        artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
+        profile = profile_for_artist(artist, source_genres_for_artist(track, {}, artist))
+        cluster = primary_broad_cluster(primary_genre_for_profile(profile))
+        if cluster:
             known += 1
-        for cluster in usable or ["unknown"]:
-            counts[cluster] += 1 / len(clusters)
+        counts[cluster or "unknown"] += 1
     total = sum(counts.values())
     known_share = (known / len(events) * 100) if events else 0
     if total <= 0 or len([key for key in counts if key != "unknown"]) < 2:

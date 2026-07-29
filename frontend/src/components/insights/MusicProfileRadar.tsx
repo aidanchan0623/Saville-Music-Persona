@@ -55,9 +55,8 @@ export function MusicProfileRadar({ axes, coverage }: { axes: InsightsProfileAxi
     </div>
   );
 }
-
 function ProfileLegend({ id, ranked, coverage }: { id: string; ranked: InsightsProfileAxis[]; coverage: number }) {
-  return <div id={id} className="insights-profile-legend"><p className="insights-coverage"><span>{Math.round(coverage * 100)}% classified</span><span>{Math.round((1 - coverage) * 100)}% unclassified</span></p><ol>{ranked.map((axis) => <li key={axis.key}><span>{axis.label}</span><strong>{axis.value.toFixed(1)}%</strong></li>)}</ol></div>;
+  return <div id={id} className="insights-profile-legend"><p className="insights-coverage"><span>{Math.round(coverage * 100)}% of plays classified</span><span>{Math.round((1 - coverage) * 100)}% of plays unclassified</span></p><ol>{ranked.map((axis) => <li key={axis.key}><span>{axis.label}</span><strong>{axis.value.toFixed(1)}%</strong></li>)}</ol></div>;
 }
 
 function radarTick(props: { x?: string | number; y?: string | number; textAnchor?: string; payload?: { value?: string | number } }) {
@@ -82,13 +81,9 @@ function RadarTooltip({ active, payload }: { active?: boolean; payload?: Array<{
     <div className="insights-tooltip">
       <strong>{axis.label}</strong>
       <span>{axis.value.toFixed(1)}% of detected plays</span>
-      <span>{formatWeightedPlays(axis.detectedPlays)} classified play weight</span>
+      <span>{axis.detectedPlays.toLocaleString()} classified plays</span>
       <span>{axis.confidence ?? "unknown"} confidence · {axis.metadataSource ?? "reliable genre metadata"}</span>
       {axis.contributingArtists?.length ? <span>Artists: {axis.contributingArtists.join(", ")}</span> : null}
     </div>
   );
-}
-
-function formatWeightedPlays(value: number) {
-  return Number.isInteger(value) ? value.toLocaleString() : value.toFixed(1);
 }

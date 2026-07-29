@@ -19,7 +19,13 @@ from app.analysis.media import (
     track_image_url as resolve_track_image_url,
 )
 from app.analysis.normalizer import UNKNOWN_ARTIST
-from app.analysis.taste_model import build_taste_model, profile_for_artist
+from app.analysis.taste_model import (
+    build_taste_model,
+    primary_broad_cluster,
+    primary_genre_for_profile,
+    profile_for_artist,
+    source_genres_for_artist,
+)
 from app.data.artist_genres import canonical_artist_key
 from app.analysis.thumbnails import best_thumbnail_url
 
@@ -1050,22 +1056,20 @@ def taste_nodes(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
-        profile = profile_for_artist(artist)
-        clusters = profile.get("broad_clusters") or []
-        if not clusters:
+        profile = profile_for_artist(artist, source_genres_for_artist(track, {}, artist))
+        taxonomy = primary_genre_for_profile(profile)
+        cluster = primary_broad_cluster(taxonomy)
+        if not taxonomy or not cluster:
             continue
-        weight = 1 / len(clusters)
-        seconds = (usable_duration_seconds(event) or 0) * weight
+        seconds = usable_duration_seconds(event) or 0
         title = str(track.get("title") or event.get("title") or "Unknown track")
-        for cluster in clusters:
-            stats[cluster]["play_weight"] += weight
-            stats[cluster]["seconds"] += seconds
-            stats[cluster]["artists"][artist] += 1
-            stats[cluster]["songs"][f"{title} - {artist}"] += 1
-            for genre in profile.get("canonical_genres") or []:
-                stats[cluster]["genres"][genre] += 1
-            for trait in profile.get("sonic_traits") or []:
-                stats[cluster]["traits"][trait] += 1
+        stats[cluster]["play_weight"] += 1
+        stats[cluster]["seconds"] += seconds
+        stats[cluster]["artists"][artist] += 1
+        stats[cluster]["songs"][f"{title} - {artist}"] += 1
+        stats[cluster]["genres"][taxonomy.primary_genre] += 1
+        for trait in profile.get("sonic_traits") or []:
+            stats[cluster]["traits"][trait] += 1
     layer_by_name = {}
     for item in taste.get("core_genre_families", []):
         layer_by_name[item["name"]] = "Core"
@@ -1116,15 +1120,15 @@ def trait_nodes(events: list[dict[str, Any]], track_lookup: dict[str, dict[str, 
     for event in events:
         track = track_lookup.get(event.get("track_id"), {})
         artist = str(track.get("primary_artist") or event.get("primary_artist") or UNKNOWN_ARTIST)
-        profile = profile_for_artist(artist)
+        profile = profile_for_artist(artist, source_genres_for_artist(track, {}, artist))
         traits = profile.get("sonic_traits") or []
-        clusters = profile.get("broad_clusters") or []
+        cluster = primary_broad_cluster(primary_genre_for_profile(profile))
         if traits:
             classified += 1
         for trait in traits:
             trait_counts[trait] += 1
             trait_artists[trait][artist] += 1
-            for cluster in clusters:
+            if cluster:
                 trait_clusters[trait][cluster] += 1
     denominator = classified or total_events or 1
     return [

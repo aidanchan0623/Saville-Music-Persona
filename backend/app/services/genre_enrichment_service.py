@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 import httpx
 
-from app.analysis.taste_model import has_usable_artist, profile_for_artist, source_genres_for_artist
+from app.analysis.taste_model import has_usable_artist, primary_genre_for_profile, profile_for_artist, source_genres_for_artist
 from app.data.artist_genres import normalise_artist_name, normalise_genre
 
 
@@ -484,7 +484,7 @@ def unknown_artist_play_counts(normalised: dict[str, Any]) -> Counter[str]:
         if not has_usable_artist(artist):
             continue
         genres = source_genres_for_artist(track, metadata, artist)
-        if not profile_for_artist(artist, genres).get("canonical_genres"):
+        if not primary_genre_for_profile(profile_for_artist(artist, genres)):
             counts[artist] += 1
     return counts
 
@@ -502,7 +502,7 @@ def apply_genre_record(normalised: dict[str, Any], artist: str, record: dict[str
     metadata = normalised.setdefault("artist_metadata", {})
     existing_name = next((name for name in metadata if normalise_artist_name(str(name)) == normalise_artist_name(artist)), artist)
     item = metadata.setdefault(existing_name, {})
-    if item.get("genres"):
+    if item.get("genres") and primary_genre_for_profile(profile_for_artist(artist, item.get("genres") or [])):
         return
     item["genres"] = list(record.get("genres") or [])
     providers = sorted({str(evidence.get("provider")) for evidence in record.get("evidence") or [] if isinstance(evidence, dict) and evidence.get("provider")})

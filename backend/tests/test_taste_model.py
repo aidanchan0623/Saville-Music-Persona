@@ -32,6 +32,7 @@ def test_artist_genre_fallback_remains_low_confidence() -> None:
     assert profile["confidence"] == "low"
     assert profile["display_genres"] == []
     assert profile["confidence_label"] == "Unavailable / low-confidence"
+    assert profile_for_artist("Bad provider evidence", ["Hummus"])["canonical_genres"] == []
 
 
 def test_trusted_source_genres_are_used_only_when_they_map_to_known_clusters() -> None:
@@ -66,6 +67,11 @@ def test_verified_regional_aliases_keep_distinct_genres() -> None:
     assert "hip-hop" in skai["canonical_genres"]
     assert "mandopop" not in skai["canonical_genres"]
     assert "mandopop" in mayday["canonical_genres"]
+
+
+def test_compact_bilingual_jay_chou_aliases_use_the_curated_profile() -> None:
+    assert profile_for_artist("周杰倫Jay Chou")["is_curated"] is True
+    assert profile_for_artist("周杰倫Jay Chou X aMEI")["is_curated"] is True
 
 
 def test_spotify_track_genres_reach_event_weighted_taste_classification() -> None:
@@ -132,10 +138,9 @@ def test_weighted_cluster_calculation_and_layers() -> None:
     analysis = build_analysis(normalised)
     taste = analysis["overview"]["taste_interpretation"]
     core_names = {item["name"] for item in taste["core_genre_families"]}
-    side_names = {item["name"] for item in taste["side_quests"]}
     assert "Emo / Pop Punk / Post-Hardcore" in core_names
     assert "Alternative / Indie Rock" in core_names
-    assert "Cinematic / Soundtrack" in side_names
+    assert "Cinematic / Soundtrack" in core_names
     assert taste["coverage"]["curated_artist_coverage_percent"] == 100
 
 
