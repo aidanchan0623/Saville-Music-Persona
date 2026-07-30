@@ -11,6 +11,14 @@ class FriendlyError(BaseModel):
     code: str = "request_failed"
 
 
+class SessionStatusResponse(BaseModel):
+    mode: Literal["local", "anonymous"]
+    anonymous: bool
+    sessionHint: str | None = None
+    expiresAt: str | None = None
+    accountConnectionsEnabled: bool
+
+
 class PrerequisiteItem(BaseModel):
     name: str
     available: bool

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import router
 from app.config import settings
+from app.session import generate_session_id, reset_current_session, set_current_session, valid_session_id
 
 
 app = FastAPI(
@@ -21,6 +24,43 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def anonymous_session_boundary(request: Request, call_next):
+    """Issue one opaque browser session before any user-owned cache is read."""
+    if not settings.anonymous_mode:
+        return await call_next(request)
+    origin = request.headers.get("origin")
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and origin and origin not in settings.cors_origins:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "error": "Origin not allowed",
+                "detail": "This anonymous session only accepts writes from the configured frontend.",
+                "code": "origin_not_allowed",
+            },
+        )
+    supplied_session = request.cookies.get(settings.session_cookie_name)
+    session_id = supplied_session if valid_session_id(supplied_session) else generate_session_id()
+    token = set_current_session(session_id)
+    try:
+        response = await call_next(request)
+    finally:
+        reset_current_session(token)
+    if supplied_session != session_id:
+        response.set_cookie(
+            key=settings.session_cookie_name,
+            value=session_id,
+            max_age=settings.session_ttl_hours * 60 * 60,
+            expires=datetime.now(timezone.utc) + timedelta(hours=settings.session_ttl_hours),
+            httponly=True,
+            secure=settings.session_cookie_secure,
+            samesite=settings.session_cookie_samesite,
+            path="/",
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 app.include_router(router)
 

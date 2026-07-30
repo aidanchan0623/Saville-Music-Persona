@@ -1,5 +1,13 @@
 export type MusicSource = "youtube" | "spotify";
 
+export interface SessionStatus {
+  mode: "local" | "anonymous";
+  anonymous: boolean;
+  sessionHint: string | null;
+  expiresAt: string | null;
+  accountConnectionsEnabled: boolean;
+}
+
 export type AnalyticsContractStatus = "complete" | "partial" | "insufficient_data" | "stale_import" | "processing" | "failed";
 
 export interface AnalyticsContractWarning {

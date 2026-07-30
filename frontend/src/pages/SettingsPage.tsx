@@ -5,11 +5,12 @@ import { MusicSourceModal } from "../components/settings/MusicSourceModal";
 import { GlowPanel } from "../components/GlowPanel";
 import { PageTitlePanel } from "../components/PageTitlePanel";
 import { StatusPill } from "../components/StatusPill";
-import type { AuthStatus, Prerequisites, SpotifyStatus } from "../types/api";
+import type { AuthStatus, Prerequisites, SessionStatus, SpotifyStatus } from "../types/api";
 
 interface Props {
   auth: AuthStatus | null;
   prerequisites: Prerequisites | null;
+  runtime: SessionStatus | null;
   useDemo: boolean;
   busy: boolean;
   onUseDemoChange: (value: boolean) => void;
@@ -33,6 +34,7 @@ interface Props {
 export function SettingsPage({
   auth,
   prerequisites,
+  runtime,
   useDemo,
   busy,
   onUseDemoChange,
@@ -54,6 +56,53 @@ export function SettingsPage({
 }: Props) {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
   const spotifyReady = Boolean(spotifyStatus?.connected || spotifyStatus?.cached_data_available);
+  if (runtime?.anonymous) {
+    const expiresLabel = runtime.expiresAt ? new Date(runtime.expiresAt).toLocaleString() : "after the session expires";
+    return (
+      <div className="space-y-6">
+        <PageTitlePanel
+          eyebrow="Private upload session"
+          title="Import without an account"
+          titleAnimationKey={titleAnimationKey}
+          titleClassName="text-3xl font-black text-white md:text-4xl"
+          subtitle="No YouTube or Spotify login is connected. Upload an export and Saville keeps its analysis inside this browser session."
+          metadata={
+            <div className="grid w-full gap-3 md:grid-cols-3">
+              <StatusSummary label="Session" value={`Active · ${runtime.sessionHint ?? "private"}`} ok />
+              <StatusSummary label="YouTube Music" value={auth?.cached_data_available ? "Takeout imported" : "Ready to import"} ok={Boolean(auth?.cached_data_available)} />
+              <StatusSummary label="Spotify" value={spotifyStatus?.historical_data_available ? `${spotifyStatus.historical_play_count.toLocaleString()} plays imported` : "Ready to import"} ok={Boolean(spotifyStatus?.historical_data_available)} />
+            </div>
+          }
+        />
+
+        <SettingsCard>
+          <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Anonymous imports</p>
+              <h2 className="mt-2 text-2xl font-black text-white">Choose your listening export</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-mist">Google Takeout and Spotify extended streaming history are supported. Account connection controls are disabled in hosted mode.</p>
+            </div>
+            <button className="btn-primary" type="button" onClick={() => setSourceModalOpen(true)}>Upload Listening Data</button>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            <Info label="Session reference" value={runtime.sessionHint ?? "Private"} />
+            <Info label="Current expiry" value={expiresLabel} />
+          </div>
+          {message ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-white/10 bg-black/20 p-3 text-sm text-mist" role="status"><span>{message}</span>{canRetryTakeout ? <button className="btn-secondary" type="button" onClick={onRetryTakeout}>Retry Takeout</button> : null}{canRetrySpotifyHistory ? <button className="btn-secondary" type="button" onClick={onRetrySpotifyHistory}>Retry Spotify</button> : null}</div> : null}
+          {(auth?.cached_data_available || spotifyStatus?.historical_data_available) ? <button className="btn-secondary mt-4" type="button" onClick={onViewOverview}>View Overview</button> : null}
+        </SettingsCard>
+
+        <SettingsCard>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Analysis</p>
+          <h2 className="mt-2 text-2xl font-black text-white">Metadata coverage</h2>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">Saville can improve unresolved genres using its shared public music metadata cache without exposing another listener's history.</p>
+          <button className="btn-secondary mt-5" type="button" disabled={busy || !auth?.cached_data_available} onClick={onImproveGenres}><RefreshCw size={16} /> Improve genre coverage</button>
+        </SettingsCard>
+
+        <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} onImportSpotifyHistory={onImportSpotifyHistory} busy={busy} message={message} spotifyConfigured={false} accountConnectionsEnabled={false} />
+      </div>
+    );
+  }
   return (
     <div className="space-y-6">
       <PageTitlePanel
@@ -245,7 +294,7 @@ export function SettingsPage({
         </div>
       </SettingsCard>
 
-      <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} onImportSpotifyHistory={onImportSpotifyHistory} busy={busy} message={message} spotifyConfigured={Boolean(spotifyStatus?.configured)} />
+      <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} onImportSpotifyHistory={onImportSpotifyHistory} busy={busy} message={message} spotifyConfigured={Boolean(spotifyStatus?.configured)} accountConnectionsEnabled />
     </div>
   );
 }

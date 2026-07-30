@@ -6,7 +6,7 @@ import hashlib
 import json
 import time
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +65,7 @@ from app.schemas.responses import (
     DurationEnrichmentStatusResponse,
     GenreEnrichmentStatusResponse,
     ReportRequest,
+    SessionStatusResponse,
     TakeoutImportQueuedResponse,
     TakeoutImportStatusResponse,
 )
@@ -113,10 +114,15 @@ from app.services.takeout_service import (
     parse_takeout_file,
 )
 from app.services.ytmusic_service import YTMusicService
+from app.session import current_session_id, current_session_namespace, is_shared_cache_key
 
 
 router = APIRouter(prefix="/api")
-repo = JsonRepository(settings.db_path)
+repo = JsonRepository(
+    settings.db_path,
+    namespace_resolver=current_session_namespace if settings.anonymous_mode else None,
+    shared_key_predicate=is_shared_cache_key if settings.anonymous_mode else None,
+)
 ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
@@ -137,6 +143,32 @@ refresh_jobs = RefreshCoordinator(repo, settings.refresh_timeout_seconds)
 def current_recording_catalog() -> RecordingCatalog:
     """Follow the active repository so tests and alternate data roots stay isolated."""
     return RecordingCatalog(repo.db_path)
+
+
+def recording_profile_source(source: str) -> str:
+    session_id = current_session_id()
+    if settings.anonymous_mode and session_id:
+        return f"session:{session_id}:{source}"
+    return source
+
+
+def sync_recording_catalog(normalised: dict[str, Any], source: str = "youtube") -> dict[str, int]:
+    return current_recording_catalog().sync_normalised(
+        normalised,
+        profile_source=recording_profile_source(source),
+    )
+
+
+def require_account_connections() -> None:
+    if settings.anonymous_mode:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": "Account connections are disabled",
+                "detail": "This anonymous deployment accepts YouTube Takeout and Spotify history uploads only.",
+                "code": "account_connections_disabled",
+            },
+        )
 
 PERSONA_REPORT_SCHEMA_VERSION = 8
 PERSONA_REPORT_PROMPT_VERSION = 10
@@ -434,7 +466,7 @@ def normalise_with_duration_cache(
     applied_genres = apply_genre_cache(normalised, genre_cache)
     if applied_genres and warnings is not None:
         warnings.append(f"Reapplied durable genre metadata for {applied_genres} artist(s).")
-    catalog_stats = current_recording_catalog().sync_normalised(normalised)
+    catalog_stats = sync_recording_catalog(normalised, "youtube")
     if catalog_stats["recordingsLinked"] and warnings is not None:
         warnings.append(
             f"Linked {catalog_stats['recordingsLinked']} track(s) to reusable recording metadata without changing listening-event totals."
@@ -490,6 +522,7 @@ def canonical_period_profile(source: str, period: str, month: str | None, timezo
     normalised = require_source_cache("normalised", resolved_source)
     metadata = normalised.get("metadata") or {}
     cache_identity = (
+        current_session_namespace(),
         resolved_source,
         period,
         month,
@@ -517,6 +550,7 @@ def canonical_overview_payload(
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     profile, normalised = canonical_period_profile(source, period, month, timezone_name)
     cache_identity = (
+        current_session_namespace(),
         normalise_source(source),
         period,
         month,
@@ -604,7 +638,7 @@ def rebuild_spotify_cache() -> dict[str, Any]:
     normalised = normalise_collection(collection)
     genre_cache, _ = seed_cache_from_source(durable_genre_cache(), normalised, provider="spotify")
     apply_genre_cache(normalised, genre_cache)
-    current_recording_catalog().sync_normalised(normalised, profile_source="spotify")
+    sync_recording_catalog(normalised, "spotify")
     refreshed_at = datetime.now(timezone.utc).isoformat()
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
@@ -655,11 +689,58 @@ def quick_youtube_auth_status() -> dict[str, Any]:
 
 @router.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True, "app": "Saville Music Persona", "time": datetime.now(timezone.utc).isoformat()}
+    return {
+        "ok": True,
+        "app": "Saville Music Persona",
+        "mode": settings.deployment_mode,
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@router.get("/session", response_model=SessionStatusResponse)
+def session_status() -> SessionStatusResponse:
+    if not settings.anonymous_mode:
+        return SessionStatusResponse(
+            mode="local",
+            anonymous=False,
+            accountConnectionsEnabled=True,
+        )
+    session_id = current_session_id()
+    if not session_id:
+        raise HTTPException(status_code=500, detail={"error": "Anonymous session unavailable", "code": "session_unavailable"})
+    now = datetime.now(timezone.utc)
+    existing = repo.load_json("session_meta")
+    created_at = existing.get("createdAt") if isinstance(existing, dict) else now.isoformat()
+    expires_at = now + timedelta(hours=settings.session_ttl_hours)
+    repo.save_json(
+        "session_meta",
+        {
+            "createdAt": created_at,
+            "lastSeenAt": now.isoformat(),
+            "expiresAt": expires_at.isoformat(),
+        },
+    )
+    return SessionStatusResponse(
+        mode="anonymous",
+        anonymous=True,
+        sessionHint=session_id[-8:],
+        expiresAt=expires_at.isoformat(),
+        accountConnectionsEnabled=False,
+    )
 
 
 @router.get("/prerequisites", response_model=PrerequisitesResponse)
 def prerequisites() -> PrerequisitesResponse:
+    if settings.anonymous_mode:
+        return PrerequisitesResponse(
+            ok=True,
+            items=[PrerequisiteItem(name="Anonymous import service", available=True, detail="Ready")],
+            ollama_model="deterministic-fallback",
+            ollama_reachable=False,
+            model_installed=False,
+            local_timezone=settings.local_timezone,
+            duration_enrichment_limit=settings.duration_enrichment_limit,
+        )
     ollama_status = ollama.status()
     items = [
         PrerequisiteItem(name="Git", available=shutil.which("git") is not None, detail=shutil.which("git") or "git not found on PATH"),
@@ -680,6 +761,17 @@ def prerequisites() -> PrerequisitesResponse:
 
 @router.get("/auth/status", response_model=AuthStatusResponse)
 def auth_status(live: bool = Query(False)) -> AuthStatusResponse:
+    if settings.anonymous_mode:
+        return AuthStatusResponse(
+            connected=False,
+            auth_file_exists=False,
+            auth_file_path="",
+            oauth_client_configured=False,
+            account_name=None,
+            message="Anonymous mode accepts Google Takeout uploads without connecting an account.",
+            cached_data_available=repo.load_json("normalised") is not None,
+            last_refreshed_at=(repo.load_json("last_refresh_meta") or {}).get("refreshed_at"),
+        )
     status = ytmusic.auth_status() if live else quick_youtube_auth_status()
     meta = repo.load_json("last_refresh_meta") or {}
     return AuthStatusResponse(
@@ -691,12 +783,25 @@ def auth_status(live: bool = Query(False)) -> AuthStatusResponse:
 
 @router.post("/auth/setup")
 def auth_setup() -> dict[str, Any]:
+    require_account_connections()
     return ytmusic.setup_instructions()
 
 
 @router.get("/spotify/status")
 def spotify_status() -> dict[str, Any]:
-    return spotify.status(repo)
+    status = spotify.status(repo)
+    if settings.anonymous_mode:
+        status.update(
+            {
+                "configured": False,
+                "connected": False,
+                "display_name": None,
+                "profile_image": None,
+                "spotify_user_id": None,
+                "message": "Anonymous mode accepts Spotify streaming-history uploads without connecting an account.",
+            }
+        )
+    return status
 
 
 @router.get("/spotify/health")
@@ -706,6 +811,7 @@ def spotify_health() -> dict[str, Any]:
 
 @router.get("/spotify/login")
 def spotify_login() -> RedirectResponse:
+    require_account_connections()
     state = spotify.new_state()
     repo.save_json("spotify_oauth_state", {"state": state, "created_at": datetime.now(timezone.utc).isoformat()})
     try:
@@ -726,6 +832,7 @@ def spotify_callback(
     state: str | None = Query(None),
     error: str | None = Query(None),
 ) -> RedirectResponse:
+    require_account_connections()
     if error:
         return RedirectResponse(f"{settings.frontend_url}/settings?source=spotify&spotify_error={error}")
     if not code:
@@ -752,12 +859,14 @@ def spotify_callback(
 
 @router.post("/spotify/disconnect")
 def spotify_disconnect() -> dict[str, Any]:
+    require_account_connections()
     repo.delete_json_many(SPOTIFY_CACHE_KEYS)
     return {"connected": False, "message": "Spotify disconnected. YouTube Music and Google Takeout data were left untouched."}
 
 
 @router.post("/spotify/refresh")
 def spotify_refresh() -> dict[str, Any]:
+    require_account_connections()
     try:
         return rebuild_spotify_cache()
     except Exception as exc:  # noqa: BLE001
@@ -835,6 +944,7 @@ def process_refresh(options: dict[str, bool], coordinator: RefreshCoordinator, d
 
 @router.post("/data/refresh", response_model=RefreshQueuedResponse, status_code=202)
 def refresh_data(request: RefreshRequest) -> RefreshQueuedResponse:
+    require_account_connections()
     try:
         job = refresh_jobs.start(request.model_dump(), process_refresh)
     except RefreshAlreadyRunning as exc:
@@ -874,7 +984,11 @@ async def import_takeout(file: UploadFile = File(...)) -> TakeoutImportQueuedRes
             detail={"error": "Takeout import already running", "detail": str(exc), "code": "takeout_import_in_progress"},
         ) from exc
 
-    import_dir = settings.private_dir / "takeout-imports"
+    import_dir = (
+        Path(tempfile.gettempdir()) / "saville-music-persona" / "takeout-imports"
+        if settings.anonymous_mode
+        else settings.private_dir / "takeout-imports"
+    )
     import_dir.mkdir(parents=True, exist_ok=True)
     upload_path = import_dir / f"{job_id}{suffix}"
     file_size = 0
@@ -1224,7 +1338,7 @@ def process_spotify_history_import(
         genre_cache, _ = seed_cache_from_source(durable_genre_cache(), normalised, provider="spotify")
         apply_genre_cache(normalised, genre_cache)
         normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
-        current_recording_catalog().sync_normalised(normalised, profile_source="spotify")
+        sync_recording_catalog(normalised, "spotify")
     except Exception:  # noqa: BLE001
         coordinator.fail(
             job_id,
@@ -1337,7 +1451,7 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     apply_track_metadata_cache(rebuilt_normalised, track_metadata_cache)
     rebuilt_normalised = apply_release_year_cache(rebuilt_normalised, release_year_cache)
     apply_genre_cache(rebuilt_normalised, durable_genre_cache())
-    current_recording_catalog().sync_normalised(rebuilt_normalised)
+    sync_recording_catalog(rebuilt_normalised, "youtube")
     rebuilt_analysis = build_analysis(rebuilt_normalised)
     if "coverage" not in rebuilt_analysis:
         raise ValueError("duration rebuild produced an incomplete analysis")
@@ -1398,7 +1512,7 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     recording_catalog = current_recording_catalog()
     cache = durable_genre_cache()
     apply_genre_cache(working_normalised, cache)
-    recording_catalog.sync_normalised(working_normalised)
+    recording_catalog.sync_normalised(working_normalised, profile_source=recording_profile_source("youtube"))
     before_analysis = build_analysis(working_normalised)
     before_coverage = genre_coverage_payload(before_analysis)
     coordinator.stage(
@@ -1452,7 +1566,7 @@ def process_genre_enrichment(coordinator: GenreEnrichmentCoordinator, deadline: 
     if isinstance(latest_normalised, dict) and latest_normalised.get("tracks"):
         working_normalised = copy.deepcopy(latest_normalised)
     apply_genre_cache(working_normalised, cache)
-    recording_catalog.sync_normalised(working_normalised)
+    recording_catalog.sync_normalised(working_normalised, profile_source=recording_profile_source("youtube"))
     rebuilt_analysis = build_analysis(working_normalised)
     after_coverage = genre_coverage_payload(rebuilt_analysis)
     repo.save_json_batch(
@@ -1587,7 +1701,7 @@ def overview(
         generation_source = "cache-gemma"
     elif fallback_cache_fresh:
         generation_source = "fallback"
-    elif payload["selectedPeriod"]["key"] != PERSONA_REPORT_PERIOD:
+    elif settings.anonymous_mode or payload["selectedPeriod"]["key"] != PERSONA_REPORT_PERIOD:
         generation_source = "fallback"
     else:
         language = ollama.generate_overview_language(evidence)
@@ -1690,6 +1804,7 @@ def insights(
     metadata = normalised.get("metadata") or {}
     coverage = normalised.get("coverage") or {}
     cache_key = (
+        current_session_namespace(),
         source,
         period,
         month,
@@ -1883,6 +1998,8 @@ def persona_character_rewrite(payload: dict[str, Any]) -> dict[str, Any]:
     mode = str(payload.get("mode") or "playful")
     source = normalise_source(str(payload.get("source") or "youtube"))
     profile = character_payload(require_source_cache("normalised", source), period, str(month) if month else None, settings.local_timezone)
+    if settings.anonymous_mode:
+        raise HTTPException(status_code=503, detail={"error": "Hosted rewrite unavailable", "detail": "Anonymous hosted mode currently uses deterministic report language.", "code": "hosted_rewrite_unavailable"})
     status = ollama.status()
     if not status["reachable"] or not status["model_installed"]:
         raise HTTPException(status_code=503, detail={"error": "Ollama rewrite unavailable", "detail": status["message"], "code": "ollama_unavailable"})
@@ -1919,7 +2036,11 @@ def generate_report(request: ReportRequest) -> PersonaReportResponse:
     profile = report_profile_with_characters(source, period)
     analytics_fingerprint = persona_report_fingerprint(profile)
     report_cache_key = persona_report_cache_key(source, request.mode, analytics_fingerprint, period)
-    language = ollama.generate_persona_language(profile["languageEvidence"], request.mode).model_dump()
+    language = (
+        ollama.fallback_persona_language(profile["languageEvidence"], "anonymous_hosted_mode").model_dump()
+        if settings.anonymous_mode
+        else ollama.generate_persona_language(profile["languageEvidence"], request.mode).model_dump()
+    )
     generated_at = datetime.now(timezone.utc).isoformat()
     payload = compose_persona_report(
         profile,
@@ -2013,13 +2134,13 @@ def generate_recommendation_endpoint() -> list[dict[str, Any]]:
     normalised = require_cache("normalised")
     analysis = require_cache("analysis")
     candidates: list[dict[str, Any]] = []
-    if (repo.load_json("last_refresh_meta") or {}).get("use_demo") is not True:
+    if not settings.anonymous_mode and (repo.load_json("last_refresh_meta") or {}).get("use_demo") is not True:
         try:
             candidates = ytmusic.search_candidates(analysis)
         except Exception:
             candidates = []
     recommendations = generate_recommendations(normalised, analysis, candidates)
-    explanations = ollama.generate_recommendation_explanations(analysis["report_profile"], recommendations)
+    explanations = [] if settings.anonymous_mode else ollama.generate_recommendation_explanations(analysis["report_profile"], recommendations)
     if explanations:
         explanation_map = {f"{item['track_title']}::{item['artist']}": item["why_this_fits"] for item in explanations}
         recommendations = generate_recommendations(normalised, analysis, candidates, explanation_map)
@@ -2029,6 +2150,7 @@ def generate_recommendation_endpoint() -> list[dict[str, Any]]:
 
 @router.post("/recommendations/create-playlist", response_model=PlaylistCreateResponse)
 def create_playlist(request: PlaylistCreateRequest) -> PlaylistCreateResponse:
+    require_account_connections()
     if not request.confirm:
         raise HTTPException(status_code=400, detail={"error": "Confirmation required", "detail": "Playlist creation only runs after explicit confirmation.", "code": "confirmation_required"})
     recommendations = require_cache("recommendations")

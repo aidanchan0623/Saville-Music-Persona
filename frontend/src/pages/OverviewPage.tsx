@@ -17,6 +17,7 @@ interface Props {
   prerequisites: Prerequisites | null;
   busy: boolean;
   useDemo: boolean;
+  anonymousMode: boolean;
   onRefresh: () => void;
   onOpenSettings: () => void;
   onOpenReport: () => void;
@@ -36,6 +37,7 @@ export function OverviewPage({
   overview,
   busy,
   useDemo,
+  anonymousMode,
   onRefresh,
   onOpenSettings,
   onOpenReport,
@@ -86,11 +88,11 @@ export function OverviewPage({
           eyebrow="Private local music identity"
           title="No listening analysis loaded yet"
           titleAnimationKey={titleAnimationKey}
-          subtitle={source === "spotify" ? "Upload a Spotify streaming-history export for dated plays, or connect Spotify for catalogue signals." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
+          subtitle={anonymousMode ? "Upload a Google Takeout or Spotify export. Your listening data stays isolated to this anonymous browser session." : source === "spotify" ? "Upload a Spotify streaming-history export for dated plays, or connect Spotify for catalogue signals." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
           actions={
             <div className="flex flex-wrap justify-center gap-3">
               <button className="btn-primary" onClick={onRefresh} disabled={busy}>
-                <RefreshCw size={17} /> {busy ? "Refreshing..." : useDemo ? "Load Demo Data" : "Refresh My Music Data"}
+                <RefreshCw size={17} /> {busy ? "Refreshing..." : anonymousMode ? "Upload Listening Data" : useDemo ? "Load Demo Data" : "Refresh My Music Data"}
               </button>
               <button className="btn-secondary" onClick={onOpenSettings}>Open Settings</button>
             </div>

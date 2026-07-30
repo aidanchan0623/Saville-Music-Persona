@@ -401,10 +401,21 @@ class RecordingCatalog:
                 event_id = str(event.get("event_id") or event.get("id") or "").strip()
                 if not event_id:
                     continue
+                # Canonical event identifiers are intentionally stable so
+                # overlapping uploads deduplicate inside one profile. In
+                # anonymous hosted mode the same event may legitimately be
+                # imported by different browser sessions, so scope only the
+                # physical catalogue key while preserving the source event ID
+                # in each session's normalised profile.
+                stored_event_id = (
+                    hashlib.sha256(f"{source_name}\0{event_id}".encode("utf-8")).hexdigest()
+                    if source_name.startswith("session:")
+                    else event_id
+                )
                 resolved = resolutions.get(str(event.get("track_id") or ""))
                 event_rows.append(
                     (
-                        event_id,
+                        stored_event_id,
                         resolved.recording_id if resolved else None,
                         source_name,
                         str(event.get("source") or "unknown"),

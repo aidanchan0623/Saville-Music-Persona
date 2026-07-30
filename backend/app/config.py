@@ -25,7 +25,25 @@ class Settings:
         self.backend_dir = Path(__file__).resolve().parents[1]
         self.project_root = Path(__file__).resolve().parents[2]
         self.private_dir = Path(os.getenv("SMP_PRIVATE_DIR", self.backend_dir / "private"))
-        load_private_env(self.private_dir)
+        self.deployment_mode = os.getenv("SMP_DEPLOYMENT_MODE", "local").strip().casefold()
+        if self.deployment_mode not in {"local", "anonymous"}:
+            raise ValueError("SMP_DEPLOYMENT_MODE must be local or anonymous")
+        # Hosted anonymous deployments must never inherit account credentials
+        # from a bundled private directory. Deployment secrets come only from
+        # the host environment, and account-connection routes remain disabled.
+        if self.deployment_mode == "local":
+            load_private_env(self.private_dir)
+        self.session_cookie_name = os.getenv("SMP_SESSION_COOKIE_NAME", "smp_session")
+        self.session_ttl_hours = max(1, int(os.getenv("SMP_SESSION_TTL_HOURS", "24")))
+        self.session_cookie_secure = os.getenv(
+            "SMP_SESSION_COOKIE_SECURE",
+            "true" if self.deployment_mode == "anonymous" else "false",
+        ).strip().casefold() in {"1", "true", "yes", "on"}
+        self.session_cookie_samesite = os.getenv("SMP_SESSION_COOKIE_SAMESITE", "lax").strip().casefold()
+        if self.session_cookie_samesite not in {"lax", "strict", "none"}:
+            raise ValueError("SMP_SESSION_COOKIE_SAMESITE must be lax, strict, or none")
+        if self.session_cookie_samesite == "none" and not self.session_cookie_secure:
+            raise ValueError("SMP_SESSION_COOKIE_SECURE must be true when SMP_SESSION_COOKIE_SAMESITE=none")
         self.data_dir = Path(os.getenv("SMP_DATA_DIR", self.project_root / "data"))
         self.raw_dir = self.data_dir / "raw"
         self.db_path = Path(os.getenv("SMP_DB_PATH", self.data_dir / "saville_music_persona.db"))
@@ -61,15 +79,21 @@ class Settings:
         self.spotify_client_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "")
         self.spotify_redirect_uri = os.getenv("SPOTIFY_REDIRECT_URI", "http://localhost:8000/api/spotify/callback")
         self.frontend_url = os.getenv("SMP_FRONTEND_URL", "http://localhost:5173")
-        self.cors_origins = [
+        configured_origins = [value.strip() for value in os.getenv("SMP_CORS_ORIGINS", "").split(",") if value.strip()]
+        self.cors_origins = configured_origins or [
             "http://localhost:5173",
             "http://127.0.0.1:5173",
             "http://localhost:5174",
             "http://127.0.0.1:5174",
         ]
 
+    @property
+    def anonymous_mode(self) -> bool:
+        return self.deployment_mode == "anonymous"
+
     def ensure_local_dirs(self) -> None:
-        self.private_dir.mkdir(parents=True, exist_ok=True)
+        if not self.anonymous_mode:
+            self.private_dir.mkdir(parents=True, exist_ok=True)
         self.raw_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 

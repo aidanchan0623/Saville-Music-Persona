@@ -71,6 +71,19 @@ def test_event_index_is_partitioned_by_profile_source(tmp_path) -> None:
     assert catalog.summary()["listening_events"] == 2
 
 
+def test_identical_events_can_exist_in_separate_anonymous_sessions(tmp_path) -> None:
+    catalog = RecordingCatalog(tmp_path / "catalog.db")
+    normalised = normalise_collection(
+        {"source": "google_takeout", "history": [history_item("shared", "Shared Song", "2026-07-01T12:00:00Z")]},
+        today=date(2026, 7, 2),
+    )
+
+    catalog.sync_normalised(normalised, profile_source=f"session:{'a' * 64}:youtube")
+    catalog.sync_normalised(normalised, profile_source=f"session:{'b' * 64}:youtube")
+
+    assert catalog.summary()["listening_events"] == 2
+
+
 def test_versions_are_not_merged_but_presentation_variants_can_be(tmp_path) -> None:
     catalog = RecordingCatalog(tmp_path / "catalog.db")
     original = {"video_id": "original", "title": "Signal", "primary_artist": "Band", "album": "One", "duration_seconds": 240}

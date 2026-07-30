@@ -5,11 +5,13 @@ import logging
 import threading
 import time
 import uuid
+from contextvars import copy_context
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from app.database.repository import JsonRepository
+from app.session import current_session_namespace
 
 
 TERMINAL_STATUSES = {"complete", "failed"}
@@ -51,7 +53,7 @@ class TakeoutImportCoordinator:
         self.job_prefix = job_prefix
         self.source_label = source_label
         self._state_lock = threading.Lock()
-        self._active_job_id: str | None = None
+        self._active_jobs: dict[str, str] = {}
         self._logger = logging.getLogger(f"saville.{source_label.casefold().replace(' ', '_')}_import")
         self._logger.setLevel(logging.INFO)
         self.recover_interrupted_jobs()
@@ -72,18 +74,20 @@ class TakeoutImportCoordinator:
                 self.log(job.get("jobId", "unknown"), "failure", stage="restart_recovery", errorCode="backend_restarted")
 
     def reserve(self, file_type: str) -> str:
+        scope = current_session_namespace() or "local"
         with self._state_lock:
-            if self._active_job_id:
+            if scope in self._active_jobs:
                 raise TakeoutImportAlreadyRunning(f"Another {self.source_label} import is already running.")
             job_id = uuid.uuid4().hex
-            self._active_job_id = job_id
+            self._active_jobs[scope] = job_id
         self.log(job_id, "upload_received", fileType=file_type)
         return job_id
 
     def release_reservation(self, job_id: str) -> None:
+        scope = current_session_namespace() or "local"
         with self._state_lock:
-            if self._active_job_id == job_id:
-                self._active_job_id = None
+            if self._active_jobs.get(scope) == job_id:
+                self._active_jobs.pop(scope, None)
 
     def queue(self, job_id: str, path: Path, file_size: int, processor: Processor) -> dict[str, Any]:
         job = {
@@ -101,9 +105,10 @@ class TakeoutImportCoordinator:
         }
         self.repo.save_json(self.key(job_id), job)
         self.log(job_id, "file_size", fileSize=file_size)
+        context = copy_context()
         thread = threading.Thread(
-            target=self._run,
-            args=(job_id, path, processor),
+            target=context.run,
+            args=(self._run, job_id, path, processor),
             name=f"{self.source_label.casefold().replace(' ', '-')}-import-{job_id[:8]}",
             daemon=True,
         )

@@ -137,6 +137,27 @@ Default URLs:
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:8000`
 
+## Anonymous hosted mode (Phase 1 foundation)
+
+Set `SMP_DEPLOYMENT_MODE=anonymous` before the backend starts to switch from the single-user desktop runtime to cookie-isolated upload sessions. The browser first calls `/api/session`; the backend issues an opaque HTTP-only cookie, and all listening profiles, analytics, reports, and background-job state are transparently stored under that session namespace. Reusable public music metadata caches remain shared, but one visitor cannot read another visitor's listening profile. Canonical listening-event index keys are session-scoped as well, so two people may import the same event without a database collision.
+
+Anonymous mode disables YouTube Music and Spotify account connections, playlist writes, local credential discovery, and calls to the developer's local Ollama service. Visitors use Google Takeout or Spotify extended streaming-history uploads instead. Temporary upload files are removed when their background import finishes, and simultaneous imports are reserved independently per browser session.
+
+Example hosted environment:
+
+```text
+SMP_DEPLOYMENT_MODE=anonymous
+SMP_SESSION_COOKIE_SECURE=true
+SMP_SESSION_COOKIE_SAMESITE=none
+SMP_SESSION_TTL_HOURS=24
+SMP_CORS_ORIGINS=https://your-frontend.example
+SMP_FRONTEND_URL=https://your-frontend.example
+```
+
+Use `SMP_SESSION_COOKIE_SECURE=false` only for plain-HTTP localhost testing. When frontend and API use different sites, set `SMP_SESSION_COOKIE_SAMESITE=none`, configure the exact frontend origin rather than `*`, and keep credentialed requests enabled.
+
+Phase 1 establishes isolation and removes account-authentication paths; it does **not** yet make the deployment production-ready. Automatic expiry/deletion of persisted session rows, upload abuse controls, storage quotas, and the hosted LLM/provider design belong to the next phases. Until that cleanup lifecycle is implemented, run anonymous mode only in a controlled test environment and remove its test database between trials.
+
 ## Development commands
 
 ```powershell
