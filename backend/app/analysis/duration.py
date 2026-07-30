@@ -291,6 +291,12 @@ def simple_identity(value: Any) -> str:
 
 
 def usable_duration_seconds(event: dict[str, Any]) -> int | None:
+    # Spotify's extended export reports actual milliseconds played for each
+    # event. Prefer that over a full track duration so skips and partial plays
+    # do not inflate listening minutes.
+    playback_seconds = extract_duration_seconds(event.get("playback_seconds"))
+    if playback_seconds:
+        return playback_seconds
     if event.get("excluded_from_minutes_reason"):
         return None
     if event.get("is_music_candidate") is False:

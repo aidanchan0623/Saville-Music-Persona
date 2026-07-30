@@ -5,6 +5,7 @@ import shutil
 import hashlib
 import json
 import time
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -45,7 +46,7 @@ from app.analysis.periods import (
 )
 from app.analysis.scoring import build_analysis
 from app.analysis.persona_report import build_persona_report_evidence, compose_persona_report
-from app.analysis.spotify_adapter import SPOTIFY_LIMITATION_NOTE, spotify_raw_to_collection
+from app.analysis.spotify_adapter import SPOTIFY_HISTORY_NOTE, SPOTIFY_LIMITATION_NOTE, spotify_raw_to_collection
 from app.config import settings
 from app.database.repository import JsonRepository
 from app.database.recording_catalog import RecordingCatalog
@@ -96,6 +97,11 @@ from app.services.recording_genre_service import MusicBrainzRecordingGenreServic
 from app.services.refresh_jobs import RefreshAlreadyRunning, RefreshCoordinator
 from app.services.recommendations import generate_recommendations
 from app.services.spotify_service import SpotifyService
+from app.services.spotify_history_service import (
+    SPOTIFY_HISTORY_PARSER_SCHEMA_VERSION,
+    SpotifyHistoryParseError,
+    parse_spotify_history_file,
+)
 from app.services.takeout_import_jobs import (
     TakeoutImportAlreadyRunning,
     TakeoutImportCoordinator,
@@ -115,6 +121,12 @@ ytmusic = YTMusicService(settings)
 ollama = OllamaService(settings)
 spotify = SpotifyService(settings)
 takeout_imports = TakeoutImportCoordinator(repo, settings.takeout_import_timeout_seconds)
+spotify_history_imports = TakeoutImportCoordinator(
+    repo,
+    settings.takeout_import_timeout_seconds,
+    job_prefix="spotify_history_import_job:",
+    source_label="Spotify history",
+)
 duration_enrichment = DurationEnrichmentCoordinator(repo, settings.duration_enrichment_timeout_seconds)
 genre_enrichment_service = MusicBrainzGenreService()
 recording_genre_enrichment_service = MusicBrainzRecordingGenreService()
@@ -581,7 +593,12 @@ def analytics_envelope(source: str, profile: dict[str, Any], normalised: dict[st
 
 def rebuild_spotify_cache() -> dict[str, Any]:
     settings.ensure_local_dirs()
+    previous_raw = repo.load_json("spotify_raw") or {}
     raw = spotify.fetch_all(repo)
+    if isinstance(previous_raw, dict) and isinstance(previous_raw.get("streaming_history"), list):
+        raw["streaming_history"] = previous_raw["streaming_history"]
+        raw["spotify_history_import_batch_id"] = previous_raw.get("spotify_history_import_batch_id")
+        raw["spotify_history_import_diagnostics"] = previous_raw.get("spotify_history_import_diagnostics")
     repo.save_json("spotify_profile", raw.get("profile") or {})
     collection = spotify_raw_to_collection(raw)
     normalised = normalise_collection(collection)
@@ -592,18 +609,19 @@ def rebuild_spotify_cache() -> dict[str, Any]:
     normalised["refreshed_at"] = refreshed_at
     normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     analysis = build_analysis(normalised)
+    warnings = list(collection.get("warnings") or [SPOTIFY_LIMITATION_NOTE])
     repo.save_json_batch(
         {
             "spotify_raw": raw,
             "spotify_normalised": normalised,
             "spotify_analysis": analysis,
-            "spotify_last_refresh_meta": {"refreshed_at": refreshed_at, "warnings": [SPOTIFY_LIMITATION_NOTE], "use_demo": False},
+            "spotify_last_refresh_meta": {"refreshed_at": refreshed_at, "warnings": warnings, "use_demo": False},
             "genre_metadata_cache": genre_cache,
         }
     )
     return {
         "refreshed_at": refreshed_at,
-        "warnings": [SPOTIFY_LIMITATION_NOTE],
+        "warnings": warnings,
         "coverage": analysis["coverage"],
         "track_count": normalised["metadata"]["track_count"],
         "play_count": normalised["metadata"]["play_count"],
@@ -1077,6 +1095,199 @@ def process_takeout_import(
         "Google Takeout history imported. Overview is ready.",
         importedCount=len(parsed.entries),
         totalImportedCount=len(combined_entries),
+        duplicateCount=int(parsed.diagnostics.get("duplicates") or 0),
+        trackCount=normalised["metadata"]["track_count"],
+        playCount=normalised["metadata"]["play_count"],
+    )
+
+
+@router.post("/data/import-spotify-history", response_model=TakeoutImportQueuedResponse, status_code=202)
+async def import_spotify_history(file: UploadFile = File(...)) -> TakeoutImportQueuedResponse:
+    settings.ensure_local_dirs()
+    suffix = Path(file.filename or "").suffix.casefold()
+    if suffix not in {".zip", ".json"}:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "Unsupported Spotify history file",
+                "detail": "Upload the ZIP from Spotify's data download, or a Spotify streaming-history JSON file.",
+                "code": "spotify_history_file_type_invalid",
+            },
+        )
+    try:
+        job_id = spotify_history_imports.reserve(suffix)
+    except TakeoutImportAlreadyRunning as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "Spotify history import already running", "detail": str(exc), "code": "spotify_history_import_in_progress"},
+        ) from exc
+
+    import_dir = Path(tempfile.gettempdir()) / "saville-music-persona" / "spotify-history-imports"
+    import_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = import_dir / f"{job_id}{suffix}"
+    file_size = 0
+    try:
+        with upload_path.open("wb") as destination:
+            while chunk := await file.read(1024 * 1024):
+                file_size += len(chunk)
+                if file_size > settings.takeout_max_upload_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail={
+                            "error": "Spotify history upload is too large",
+                            "detail": f"The upload exceeds the configured {settings.takeout_max_upload_bytes // (1024 * 1024)} MB limit.",
+                            "code": "spotify_history_upload_too_large",
+                        },
+                    )
+                destination.write(chunk)
+        if file_size == 0:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "Spotify history file is empty", "detail": "Choose a non-empty Spotify export.", "code": "spotify_history_upload_empty"},
+            )
+        spotify_history_imports.queue(job_id, upload_path, file_size, process_spotify_history_import)
+    except HTTPException:
+        upload_path.unlink(missing_ok=True)
+        spotify_history_imports.release_reservation(job_id)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        upload_path.unlink(missing_ok=True)
+        spotify_history_imports.release_reservation(job_id)
+        raise HTTPException(
+            status_code=500,
+            detail={"error": "Spotify history upload failed", "detail": "The file could not be stored locally.", "code": "spotify_history_upload_failed"},
+        ) from exc
+    finally:
+        await file.close()
+    return TakeoutImportQueuedResponse(jobId=job_id, status="queued")
+
+
+@router.get("/data/import-spotify-history/{job_id}", response_model=TakeoutImportStatusResponse)
+def spotify_history_import_status(job_id: str) -> TakeoutImportStatusResponse:
+    job = spotify_history_imports.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "Spotify history import job not found",
+                "detail": "The backend may have restarted before the upload was queued. Retry the import.",
+                "code": "spotify_history_import_job_not_found",
+            },
+        )
+    return TakeoutImportStatusResponse.model_validate(job)
+
+
+def process_spotify_history_import(
+    job_id: str,
+    upload_path: Path,
+    coordinator: TakeoutImportCoordinator,
+    deadline: float,
+) -> None:
+    coordinator.stage(job_id, "parsing", "Opening and validating the Spotify streaming-history export.")
+    try:
+        parsed = parse_spotify_history_file(
+            upload_path,
+            on_event=lambda event, fields: coordinator.log(job_id, event, **fields),
+            check_timeout=lambda: coordinator.check_timeout(deadline),
+        )
+    except SpotifyHistoryParseError as exc:
+        coordinator.fail(job_id, str(exc), "spotify_history_parse_failed", "parsing")
+        return
+    if not parsed.entries:
+        coordinator.fail(
+            job_id,
+            "No usable Spotify music plays were found. Podcast, audiobook, and zero-playback rows are ignored.",
+            "spotify_history_no_accepted_events",
+            "parsing",
+        )
+        return
+
+    coordinator.stage(
+        job_id,
+        "normalizing",
+        "Building a Spotify profile from canonical listening events.",
+        importedCount=len(parsed.entries),
+    )
+    previous_raw = repo.load_json("spotify_raw")
+    raw = dict(previous_raw) if isinstance(previous_raw, dict) else {"source": "spotify"}
+    raw["source"] = "spotify"
+    # A new export replaces the previous imported export. Spotify's export
+    # already contains its complete requested range, so appending would double
+    # count overlapping downloads. OAuth catalogue/top-item data is retained.
+    raw["streaming_history"] = list(parsed.entries)
+    raw["spotify_history_parser_schema_version"] = SPOTIFY_HISTORY_PARSER_SCHEMA_VERSION
+    raw["spotify_history_import_batch_id"] = job_id
+    raw["spotify_history_import_diagnostics"] = parsed.diagnostics
+    try:
+        collection = spotify_raw_to_collection(raw)
+        normalised = normalise_collection(collection)
+        genre_cache, _ = seed_cache_from_source(durable_genre_cache(), normalised, provider="spotify")
+        apply_genre_cache(normalised, genre_cache)
+        normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
+        current_recording_catalog().sync_normalised(normalised, profile_source="spotify")
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "Spotify event normalization failed. Your previous Spotify profile was preserved.",
+            "spotify_history_normalization_failed",
+            "normalizing",
+        )
+        return
+    coordinator.check_timeout(deadline)
+    if not normalised.get("play_events"):
+        coordinator.fail(
+            job_id,
+            "The Spotify export contained no music events usable for analysis. Your previous profile was preserved.",
+            "spotify_history_profile_empty",
+            "normalizing",
+        )
+        return
+
+    coordinator.stage(job_id, "rebuilding", "Rebuilding Spotify listening totals and period profiles.")
+    try:
+        refreshed_at = datetime.now(timezone.utc).isoformat()
+        normalised["refreshed_at"] = refreshed_at
+        analysis = build_analysis(normalised)
+        if not analysis.get("top_tracks") or not analysis.get("coverage"):
+            raise ValueError("analysis profile is incomplete")
+        build_overview_response(normalised, "this_month", None, settings.local_timezone)
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "Spotify analytics rebuild failed. Your previous Spotify profile was preserved.",
+            "spotify_history_analytics_rebuild_failed",
+            "rebuilding",
+        )
+        return
+
+    warnings = [SPOTIFY_HISTORY_NOTE]
+    coordinator.stage(job_id, "saving", "Saving the Spotify profile and invalidating dependent reports.")
+    try:
+        repo.save_json_batch(
+            {
+                "spotify_raw": raw,
+                "spotify_normalised": normalised,
+                "spotify_analysis": analysis,
+                "spotify_last_refresh_meta": {"refreshed_at": refreshed_at, "use_demo": False, "warnings": warnings},
+                "genre_metadata_cache": genre_cache,
+            },
+            delete_keys=["spotify_latest_report", "spotify_recommendations"],
+            delete_prefixes=["persona_report:spotify:", "persona_report_pointer:spotify:", "overview_language:spotify:"],
+        )
+    except Exception:  # noqa: BLE001
+        coordinator.fail(
+            job_id,
+            "The Spotify profile could not be saved. Your previous Spotify profile was preserved.",
+            "spotify_history_persistence_failed",
+            "saving",
+        )
+        return
+    clear_analytics_memory_caches()
+    coordinator.stage(
+        job_id,
+        "complete",
+        "Spotify streaming history imported. Spotify analysis is ready.",
+        importedCount=len(parsed.entries),
         duplicateCount=int(parsed.diagnostics.get("duplicates") or 0),
         trackCount=normalised["metadata"]["track_count"],
         playCount=normalised["metadata"]["play_count"],

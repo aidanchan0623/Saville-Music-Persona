@@ -46,6 +46,24 @@ def test_spotify_connected_status_returns_profile_without_tokens(tmp_path: Path)
     assert "private-refresh" not in str(status)
 
 
+def test_spotify_history_is_ready_without_oauth_credentials(tmp_path: Path) -> None:
+    repo = JsonRepository(tmp_path / "spotify-history-status.db")
+    repo.save_json("spotify_raw", {"streaming_history": [{"sourceEventId": "one"}, {"sourceEventId": "two"}]})
+    repo.save_json("spotify_normalised", {"metadata": {"source": "spotify", "play_count": 2}})
+    settings = _settings(tmp_path)
+    settings.spotify_client_id = ""
+    settings.spotify_client_secret = ""
+    service = SpotifyService(settings)
+
+    status = service.status(repo)
+
+    assert status["connected"] is False
+    assert status["cached_data_available"] is True
+    assert status["historical_data_available"] is True
+    assert status["historical_play_count"] == 2
+    assert "OAuth is optional" in status["message"]
+
+
 def test_spotify_cache_keys_do_not_overwrite_youtube_data(tmp_path: Path) -> None:
     repo = JsonRepository(tmp_path / "storage.db")
     repo.save_json("normalised", {"metadata": {"source": "ytmusicapi"}, "tracks": [{"title": "YouTube"}]})

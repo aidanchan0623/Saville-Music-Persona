@@ -86,7 +86,7 @@ export function OverviewPage({
           eyebrow="Private local music identity"
           title="No listening analysis loaded yet"
           titleAnimationKey={titleAnimationKey}
-          subtitle={source === "spotify" ? "Connect Spotify to generate a music profile from your Spotify top artists, top tracks, saved songs, playlists and recent plays." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
+          subtitle={source === "spotify" ? "Upload a Spotify streaming-history export for dated plays, or connect Spotify for catalogue signals." : "Connect YouTube Music for private local analysis, or switch on demo data to explore the dashboard without account access."}
           actions={
             <div className="flex flex-wrap justify-center gap-3">
               <button className="btn-primary" onClick={onRefresh} disabled={busy}>

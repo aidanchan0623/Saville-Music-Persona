@@ -8,6 +8,10 @@ SPOTIFY_LIMITATION_NOTE = (
     "Spotify profile is based on top items, saved music, playlists and recent sync data. "
     "Full historical play counts are not available immediately, so monthly history improves after repeated syncs."
 )
+SPOTIFY_HISTORY_NOTE = (
+    "Spotify exported streaming history is imported as dated listening events; "
+    "playback minutes use Spotify's recorded milliseconds played."
+)
 
 
 def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) -> dict[str, Any]:
@@ -19,6 +23,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
     saved_tracks = raw.get("saved_tracks") if isinstance(raw.get("saved_tracks"), list) else []
     playlists = raw.get("playlists") if isinstance(raw.get("playlists"), list) else []
     raw_playlist_tracks = raw.get("playlist_tracks") if isinstance(raw.get("playlist_tracks"), dict) else {}
+    streaming_history = raw.get("streaming_history") if isinstance(raw.get("streaming_history"), list) else []
 
     history: list[dict[str, Any]] = []
     library_songs: dict[str, dict[str, Any]] = {}
@@ -27,6 +32,15 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
     library_artists: dict[str, dict[str, Any]] = {}
     platform_top_tracks: list[dict[str, Any]] = []
 
+    for item in streaming_history:
+        if not isinstance(item, dict):
+            continue
+        source_track_id = str(item.get("source_track_id") or "").strip()
+        if not source_track_id:
+            continue
+        history.append(dict(item))
+        library_songs.setdefault(source_track_id, dict(item))
+
     for period, tracks in top_tracks.items():
         if not isinstance(tracks, list):
             continue
@@ -34,7 +48,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
             adapted = adapt_track(track, artist_details, source_type="spotify_top_track", time_range=str(period), rank=rank)
             if not adapted:
                 continue
-            library_songs.setdefault(adapted["source_track_id"], adapted)
+            library_songs[adapted["source_track_id"]] = adapted
             platform_top_tracks.append({**adapted, "event_source": "spotify_top_track_signal"})
 
     for play in recent_plays:
@@ -43,14 +57,22 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
         if not adapted:
             continue
         played_at = play.get("played_at")
-        library_songs.setdefault(adapted["source_track_id"], adapted)
-        history.append({**adapted, "played": played_at, "event_source": "spotify_recent_play", "spotify_signal_label": "Spotify recent play"})
+        library_songs[adapted["source_track_id"]] = adapted
+        history.append(
+            {
+                **adapted,
+                "played": played_at,
+                "event_source": "spotify_play",
+                "sourceEventId": spotify_play_event_id(adapted["source_track_id"], played_at),
+                "spotify_signal_label": "Spotify recent play",
+            }
+        )
 
     for saved in saved_tracks:
         track = saved.get("track") if isinstance(saved, dict) else saved
         adapted = adapt_track(track, artist_details, source_type="spotify_saved_track")
         if adapted:
-            library_songs.setdefault(adapted["source_track_id"], adapted)
+            library_songs[adapted["source_track_id"]] = adapted
             liked_songs.append(adapted)
 
     for playlist in playlists:
@@ -63,7 +85,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
             adapted = adapt_track(track, artist_details, source_type="spotify_playlist_track")
             if not adapted:
                 continue
-            library_songs.setdefault(adapted["source_track_id"], adapted)
+            library_songs[adapted["source_track_id"]] = adapted
             adapted_tracks.append(adapted)
         playlist_tracks[playlist_id] = adapted_tracks
 
@@ -80,6 +102,9 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
 
     return {
         "source": "spotify",
+        "import_batch_id": raw.get("spotify_history_import_batch_id"),
+        "takeout_parser_schema_version": raw.get("spotify_history_parser_schema_version"),
+        "takeout_import_diagnostics": raw.get("spotify_history_import_diagnostics"),
         "profile": raw.get("profile") or {},
         "history": history,
         "liked_songs": {"tracks": liked_songs},
@@ -100,7 +125,7 @@ def spotify_raw_to_collection(raw: dict[str, Any], today: date | None = None) ->
         "playlist_tracks": playlist_tracks,
         "platform_top_tracks": platform_top_tracks,
         "spotify_top_items": {"tracks": top_tracks, "artists": top_artists},
-        "warnings": [SPOTIFY_LIMITATION_NOTE],
+        "warnings": [SPOTIFY_HISTORY_NOTE if streaming_history else SPOTIFY_LIMITATION_NOTE],
     }
 
 
@@ -174,6 +199,13 @@ def spotify_id(kind: str, value: Any) -> str:
     if text.startswith("spotify:"):
         return text
     return f"spotify:{kind}:{text}"
+
+
+def spotify_play_event_id(source_track_id: str, played_at: Any) -> str:
+    import hashlib
+
+    seed = f"{source_track_id}|{str(played_at or '').strip()}"
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24]
 
 
 def spotify_signal_label(source_type: str, time_range: str | None = None) -> str:

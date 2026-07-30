@@ -70,8 +70,10 @@ export default function App() {
   const durationAbortControllerRef = useRef<AbortController | null>(null);
   const genreAbortControllerRef = useRef<AbortController | null>(null);
   const lastTakeoutFileRef = useRef<File | null>(null);
+  const lastSpotifyHistoryFileRef = useRef<File | null>(null);
   const skipNextSourceLoadRef = useRef(false);
   const [canRetryTakeout, setCanRetryTakeout] = useState(false);
+  const [canRetrySpotifyHistory, setCanRetrySpotifyHistory] = useState(false);
 
   const loadStatus = async () => {
     const [nextPrerequisites, nextAuth, nextSpotifyStatus] = await Promise.all([api.prerequisites(), api.authStatus(), api.spotifyStatus()]);
@@ -179,7 +181,7 @@ export default function App() {
         error instanceof Error
           ? error.message
           : source === "spotify"
-            ? "Connect Spotify in Settings, then refresh Spotify data."
+            ? "Upload Spotify history or connect Spotify in Settings."
             : "YouTube Music analysis could not be loaded.",
       );
     });
@@ -317,6 +319,53 @@ export default function App() {
   const retryTakeout = () => {
     const file = lastTakeoutFileRef.current;
     if (file) void importTakeout(file);
+  };
+
+  const importSpotifyHistory = async (file: File): Promise<boolean> => {
+    lastSpotifyHistoryFileRef.current = file;
+    setCanRetrySpotifyHistory(false);
+    let completed = false;
+    const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
+      const controller = new AbortController();
+      importAbortControllerRef.current = controller;
+      setMessage(`Uploading ${file.name} from Spotify...`);
+      try {
+        const queued = await api.importSpotifyHistory(file, controller.signal);
+        const result = await pollTakeoutImport(
+          (signal) => api.spotifyHistoryImportStatus(queued.jobId, signal),
+          {
+            signal: controller.signal,
+            onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
+          },
+        );
+        await loadStatus();
+        await loadAnalysis("spotify");
+        if (source !== "spotify") {
+          skipNextSourceLoadRef.current = true;
+          setSource("spotify");
+        }
+        setCanRetrySpotifyHistory(false);
+        setMessage(`${result.message} Imported ${result.importedCount ?? 0} Spotify plays.`);
+        completed = true;
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCanRetrySpotifyHistory(true);
+          setMessage(error instanceof Error ? error.message : "Spotify history import failed. Retry with the same file.");
+        }
+      } finally {
+        if (importAbortControllerRef.current === controller) importAbortControllerRef.current = null;
+      }
+    });
+    if (!started) {
+      setMessage("Another import or refresh is already running. Wait for it to finish before importing Spotify history.");
+      return false;
+    }
+    return completed;
+  };
+
+  const retrySpotifyHistory = () => {
+    const file = lastSpotifyHistoryFileRef.current;
+    if (file) void importSpotifyHistory(file);
   };
 
   const enrichDurationsInBackground = async () => {
@@ -484,9 +533,12 @@ export default function App() {
               }
             }}
             onImportTakeout={importTakeout}
+            onImportSpotifyHistory={importSpotifyHistory}
             message={message}
             canRetryTakeout={canRetryTakeout}
             onRetryTakeout={retryTakeout}
+            canRetrySpotifyHistory={canRetrySpotifyHistory}
+            onRetrySpotifyHistory={retrySpotifyHistory}
             onViewOverview={() => navigate("overview")}
             spotifyStatus={spotifyStatus}
             onConnectSpotify={connectSpotify}
@@ -497,7 +549,7 @@ export default function App() {
           />
         );
     }
-  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source, message, canRetryTakeout]);
+  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source, message, canRetryTakeout, canRetrySpotifyHistory]);
 
   const youtubeAnalysisReady = overview?.source === "youtube";
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || youtubeAnalysisReady || (useDemo && overview));
@@ -536,7 +588,7 @@ export default function App() {
           />
         </Suspense>
       </div>
-      <DesktopSidebar activePage={page} collapsed={sidebarCollapsed} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={spotifyStatus?.connected} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
+      <DesktopSidebar activePage={page} collapsed={sidebarCollapsed} youtubeReady={youtubeReady} youtubeLabel={youtubeLabel} spotifyConnected={Boolean(spotifyStatus?.connected || spotifyStatus?.cached_data_available)} modelInstalled={Boolean(prerequisites?.ollama_reachable && prerequisites.model_installed)} onToggle={() => setSidebarCollapsed((value) => !value)} onNavigate={navigate} />
 
       {mobileOpen ? (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -631,7 +683,9 @@ function SourceSwitcher({
           <p className="mt-1 text-sm font-semibold text-white">Currently analysing: {label}</p>
           {source === "spotify" ? (
             <p className="mt-1 max-w-3xl text-xs leading-5 text-mist">
-              Spotify profile is based on top items, saved music, playlists and recent sync data. Full historical play counts are not available immediately.
+              {spotifyStatus?.historical_data_available
+                ? `Using ${spotifyStatus.historical_play_count.toLocaleString()} imported Spotify plays${spotifyStatus.connected ? " plus connected catalogue metadata" : ""}.`
+                : "Connect Spotify for catalogue signals, or upload an export for dated historical play counts."}
             </p>
           ) : null}
         </div>
@@ -642,7 +696,7 @@ function SourceSwitcher({
           <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "spotify" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("spotify")}>
             Spotify
           </button>
-          {source === "spotify" && !spotifyStatus?.connected ? (
+          {source === "spotify" && !spotifyStatus?.connected && !spotifyStatus?.cached_data_available ? (
             <button className="btn-secondary" onClick={onConnectSpotify}>Connect Spotify</button>
           ) : null}
         </div>

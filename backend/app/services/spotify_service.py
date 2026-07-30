@@ -78,7 +78,16 @@ class SpotifyService:
     def status(self, repo: JsonRepository) -> dict[str, Any]:
         tokens = repo.load_json("spotify_tokens")
         profile = repo.load_json("spotify_profile") if isinstance(tokens, dict) else None
+        raw = repo.load_json("spotify_raw") or {}
+        normalised = repo.load_json("spotify_normalised") or {}
         meta = repo.load_json("spotify_last_refresh_meta") or {}
+        streaming_history = raw.get("streaming_history") if isinstance(raw, dict) else None
+        historical_play_count = len(streaming_history) if isinstance(streaming_history, list) else 0
+        cached_data_available = bool(
+            isinstance(normalised, dict)
+            and isinstance(normalised.get("metadata"), dict)
+            and int(normalised["metadata"].get("play_count") or 0) > 0
+        )
         images = profile.get("images") if isinstance(profile, dict) else []
         image = first_image_url(images)
         return {
@@ -88,7 +97,10 @@ class SpotifyService:
             "profile_image": image,
             "spotify_user_id": profile.get("id") if isinstance(profile, dict) else None,
             "last_synced_at": meta.get("refreshed_at"),
-            "message": self.status_message(tokens, profile),
+            "cached_data_available": cached_data_available,
+            "historical_data_available": historical_play_count > 0,
+            "historical_play_count": historical_play_count,
+            "message": self.status_message(tokens, profile, historical_play_count),
         }
 
     def fetch_all(self, repo: JsonRepository) -> dict[str, Any]:
@@ -204,7 +216,10 @@ class SpotifyService:
                 break
         return items[:max_items]
 
-    def status_message(self, tokens: Any, profile: Any) -> str:
+    def status_message(self, tokens: Any, profile: Any, historical_play_count: int = 0) -> str:
+        if historical_play_count:
+            connection = " Spotify OAuth is also connected." if isinstance(tokens, dict) else " OAuth is optional."
+            return f"{historical_play_count:,} exported Spotify plays are available.{connection}"
         if not self.configured():
             return "Spotify credentials are not configured in backend/private/.env."
         if not isinstance(tokens, dict):

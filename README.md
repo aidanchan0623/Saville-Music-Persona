@@ -24,7 +24,7 @@ Screenshots are intentionally left out until you run the app against your own pr
 - One persistent decorative album-dome background built from real ranked album covers
 - Evidence-driven recommendations
 - Connect YouTube Music settings page
-- Optional Spotify login/profile source switcher
+- Spotify source switcher with optional OAuth and direct extended streaming-history ZIP/JSON import
 
 ## Architecture
 
@@ -124,7 +124,7 @@ SPOTIFY_REDIRECT_URI=http://localhost:8000/api/spotify/callback
 4. Run the backend and frontend, open Settings, and click Connect Spotify.
 5. If your Spotify app is in Development Mode, add each friend/account as an allow-listed user in the Spotify dashboard.
 
-Spotify data uses top tracks, top artists, saved songs, playlists, and recent plays. Spotify does not provide a Google Takeout-style full historical play-count export through the Web API, so Spotify monthly history improves after repeated syncs.
+Spotify OAuth data uses top tracks, top artists, saved songs, playlists, and recent plays. For complete dated history, request **Extended streaming history** from Spotify's account privacy page and upload the downloaded ZIP directly in Settings. Saville keeps each genuine play event, removes only exact duplicate copies from overlapping export files, ignores podcast/audiobook rows, and uses Spotify's `ms_played` value for listening minutes. OAuth remains optional, but connecting it can enrich imported history with catalogue images, albums, release dates, and artist genres.
 
 ## Run the app
 
@@ -258,7 +258,7 @@ Never commit account data or authentication files.
 - Play timestamps may be relative, missing, or not parseable.
 - Detected listening minutes are estimates from full track durations, not exact listening time.
 - Google Takeout and YouTube Music history can omit durations, so duration coverage may be partial.
-- Spotify does not expose full historical play counts through the Web API; Spotify profiles use top-item, saved-library, playlist, and recent-sync signals.
+- Spotify does not expose full historical play counts through the Web API; Saville accepts Spotify's user-requested extended streaming-history ZIP/JSON export for dated play counts and combines it with optional OAuth catalogue signals.
 - Genre, subscriber, and release-year metadata may be incomplete.
 - The LLM explains calculated data; it does not decide facts.
 - The app never claims a full 365-day analysis unless the available dated history supports it.

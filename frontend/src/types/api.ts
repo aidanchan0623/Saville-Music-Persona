@@ -98,6 +98,9 @@ export interface GenreEnrichmentStatus {
 export interface SpotifyStatus {
   configured: boolean;
   connected: boolean;
+  cached_data_available: boolean;
+  historical_data_available: boolean;
+  historical_play_count: number;
   display_name: string | null;
   profile_image: string | null;
   spotify_user_id: string | null;

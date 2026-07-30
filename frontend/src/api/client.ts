@@ -112,6 +112,24 @@ export const api = {
   },
   takeoutImportStatus: (jobId: string, signal?: AbortSignal) =>
     request<TakeoutImportStatus>(`/data/import-takeout/${encodeURIComponent(jobId)}`, { signal }),
+  importSpotifyHistory: async (file: File, signal?: AbortSignal) => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch(`${API_BASE}/data/import-spotify-history`, { method: "POST", body: form, signal });
+    if (!response.ok) {
+      let message = `${response.status} ${response.statusText}`;
+      try {
+        const data = await response.json();
+        message = data.detail?.detail || data.detail?.error || message;
+      } catch {
+        // Keep HTTP status message.
+      }
+      throw new Error(message);
+    }
+    return response.json() as Promise<TakeoutImportQueued>;
+  },
+  spotifyHistoryImportStatus: (jobId: string, signal?: AbortSignal) =>
+    request<TakeoutImportStatus>(`/data/import-spotify-history/${encodeURIComponent(jobId)}`, { signal }),
   startDurationEnrichment: () => request<DurationEnrichmentStatus>("/data/duration-enrichment", { method: "POST", body: "{}" }),
   durationEnrichmentStatus: (signal?: AbortSignal) => request<DurationEnrichmentStatus>("/data/duration-enrichment", { signal }),
   startGenreEnrichment: () => request<GenreEnrichmentStatus>("/data/genre-enrichment", { method: "POST", body: "{}" }),

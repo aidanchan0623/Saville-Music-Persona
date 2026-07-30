@@ -38,17 +38,26 @@ Processor = Callable[[str, Path, "TakeoutImportCoordinator", float], None]
 
 
 class TakeoutImportCoordinator:
-    def __init__(self, repo: JsonRepository, timeout_seconds: int) -> None:
+    def __init__(
+        self,
+        repo: JsonRepository,
+        timeout_seconds: int,
+        *,
+        job_prefix: str = JOB_PREFIX,
+        source_label: str = "Takeout",
+    ) -> None:
         self.repo = repo
         self.timeout_seconds = timeout_seconds
+        self.job_prefix = job_prefix
+        self.source_label = source_label
         self._state_lock = threading.Lock()
         self._active_job_id: str | None = None
-        self._logger = logging.getLogger("saville.takeout_import")
+        self._logger = logging.getLogger(f"saville.{source_label.casefold().replace(' ', '_')}_import")
         self._logger.setLevel(logging.INFO)
         self.recover_interrupted_jobs()
 
     def recover_interrupted_jobs(self) -> None:
-        for key, job in self.repo.load_json_prefix(JOB_PREFIX).items():
+        for key, job in self.repo.load_json_prefix(self.job_prefix).items():
             if isinstance(job, dict) and job.get("status") in ACTIVE_STATUSES:
                 job.update(
                     {
@@ -65,7 +74,7 @@ class TakeoutImportCoordinator:
     def reserve(self, file_type: str) -> str:
         with self._state_lock:
             if self._active_job_id:
-                raise TakeoutImportAlreadyRunning("Another Takeout import is already running.")
+                raise TakeoutImportAlreadyRunning(f"Another {self.source_label} import is already running.")
             job_id = uuid.uuid4().hex
             self._active_job_id = job_id
         self.log(job_id, "upload_received", fileType=file_type)
@@ -81,7 +90,7 @@ class TakeoutImportCoordinator:
             "jobId": job_id,
             "status": "queued",
             "progress": STAGE_PROGRESS["queued"],
-            "message": "Takeout upload received. Waiting to parse locally.",
+            "message": f"{self.source_label} upload received. Waiting to parse locally.",
             "errorCode": None,
             "fileSize": file_size,
             "createdAt": utc_now(),
@@ -95,7 +104,7 @@ class TakeoutImportCoordinator:
         thread = threading.Thread(
             target=self._run,
             args=(job_id, path, processor),
-            name=f"takeout-import-{job_id[:8]}",
+            name=f"{self.source_label.casefold().replace(' ', '-')}-import-{job_id[:8]}",
             daemon=True,
         )
         thread.start()
@@ -108,8 +117,8 @@ class TakeoutImportCoordinator:
         except TakeoutImportTimedOut:
             self.fail(job_id, "Import exceeded the local processing timeout. Your previous profile was preserved.", "import_timeout", "timeout")
         except Exception:  # noqa: BLE001
-            self._logger.exception(json.dumps({"event": "takeout_import_failure", "jobId": job_id, "stage": "unexpected", "errorCode": "import_internal_error"}))
-            self.fail(job_id, "Takeout import failed safely. Your previous profile was preserved.", "import_internal_error", "unexpected")
+            self._logger.exception(json.dumps({"event": "history_import_failure", "jobId": job_id, "stage": "unexpected", "errorCode": "import_internal_error"}))
+            self.fail(job_id, f"{self.source_label} import failed safely. Your previous profile was preserved.", "import_internal_error", "unexpected")
         finally:
             try:
                 path.unlink(missing_ok=True)
@@ -159,12 +168,11 @@ class TakeoutImportCoordinator:
             raise TakeoutImportTimedOut
 
     def log(self, job_id: str, event: str, **fields: Any) -> None:
-        payload = {"event": f"takeout_import_{event}", "jobId": job_id, **fields}
+        payload = {"event": f"history_import_{event}", "source": self.source_label, "jobId": job_id, **fields}
         self._logger.info(json.dumps(payload, sort_keys=True, default=str))
 
-    @staticmethod
-    def key(job_id: str) -> str:
-        return f"{JOB_PREFIX}{job_id}"
+    def key(self, job_id: str) -> str:
+        return f"{self.job_prefix}{job_id}"
 
 
 def utc_now() -> str:

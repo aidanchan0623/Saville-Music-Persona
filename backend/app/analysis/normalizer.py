@@ -273,6 +273,10 @@ def canonical_event_for_item(
     event["genre_clusters"] = list(track.get("genre_clusters") or [])
     event["release_year"] = track.get("release_year")
     event["source_track_id"] = track.get("source_track_id")
+    playback_seconds = parse_duration_seconds(item.get("playback_seconds"))
+    if playback_seconds:
+        event["playback_seconds"] = playback_seconds
+        event["duration_source"] = "spotify_ms_played"
     event["raw_title"] = item.get("rawTitle") or item.get("raw_title") or item.get("title")
     event["raw_channel"] = item.get("rawChannel") or item.get("raw_channel")
     event["source_url"] = item.get("titleUrl") or item.get("source_url")

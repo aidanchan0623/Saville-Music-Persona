@@ -20,7 +20,7 @@ export function ReportPage({ report, busy, onGenerate, source, titleAnimationKey
           {busy
             ? "The deterministic profile is ready; the language layer is finishing locally."
             : source === "spotify"
-              ? "Connect and refresh Spotify, then return here for your report."
+              ? "Upload Spotify history or connect and refresh Spotify, then return here for your report."
               : "Refresh YouTube Music data or import Takeout history, then return here for your report."}
         </p>
       </section>

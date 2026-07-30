@@ -15,6 +15,7 @@ interface Props {
   onUseDemoChange: (value: boolean) => void;
   onCheckAuth: () => void;
   onImportTakeout: (file: File) => Promise<boolean>;
+  onImportSpotifyHistory: (file: File) => Promise<boolean>;
   spotifyStatus: SpotifyStatus | null;
   onConnectSpotify: () => void;
   onRefreshSpotify: () => void;
@@ -23,6 +24,8 @@ interface Props {
   message: string | null;
   canRetryTakeout: boolean;
   onRetryTakeout: () => void;
+  canRetrySpotifyHistory: boolean;
+  onRetrySpotifyHistory: () => void;
   onViewOverview: () => void;
   titleAnimationKey: string;
 }
@@ -35,6 +38,7 @@ export function SettingsPage({
   onUseDemoChange,
   onCheckAuth,
   onImportTakeout,
+  onImportSpotifyHistory,
   spotifyStatus,
   onConnectSpotify,
   onRefreshSpotify,
@@ -43,10 +47,13 @@ export function SettingsPage({
   message,
   canRetryTakeout,
   onRetryTakeout,
+  canRetrySpotifyHistory,
+  onRetrySpotifyHistory,
   onViewOverview,
   titleAnimationKey,
 }: Props) {
   const [sourceModalOpen, setSourceModalOpen] = useState(false);
+  const spotifyReady = Boolean(spotifyStatus?.connected || spotifyStatus?.cached_data_available);
   return (
     <div className="space-y-6">
       <PageTitlePanel
@@ -58,7 +65,7 @@ export function SettingsPage({
         metadata={
           <div className="grid w-full gap-3 md:grid-cols-3">
           <StatusSummary label="YouTube Music" value={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data" : "Offline"} ok={Boolean(auth?.connected || auth?.cached_data_available)} />
-          <StatusSummary label="Spotify" value={spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Not configured"} ok={Boolean(spotifyStatus?.connected)} />
+          <StatusSummary label="Spotify" value={spotifyStatus?.historical_data_available ? "History imported" : spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Ready to import"} ok={spotifyReady} />
           <StatusSummary label="Gemma" value={prerequisites?.model_installed ? "Ready" : "Offline"} ok={Boolean(prerequisites?.model_installed)} />
           </div>
         }
@@ -71,11 +78,12 @@ export function SettingsPage({
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatusSummary label="YouTube Music" value={auth?.connected ? "Connected" : auth?.cached_data_available ? "Cached data available" : "Ready to connect"} ok={Boolean(auth?.connected || auth?.cached_data_available)} />
-          <StatusSummary label="Spotify" value={spotifyStatus?.connected ? "Connected" : spotifyStatus?.configured ? "Ready to connect" : "Not connected"} ok={Boolean(spotifyStatus?.connected)} />
+          <StatusSummary label="Spotify" value={spotifyStatus?.historical_data_available ? `${spotifyStatus.historical_play_count.toLocaleString()} plays imported` : spotifyStatus?.connected ? "Connected" : "Not imported"} ok={spotifyReady} />
           <StatusSummary label="Google Takeout" value={busy && message?.toLowerCase().includes("takeout") ? "Importing" : auth?.cached_data_available ? "Import complete" : "Not imported"} ok={Boolean(auth?.cached_data_available)} />
           <StatusSummary label="Demo data" value={useDemo ? "Demo mode active" : "Inactive"} ok={useDemo} />
         </div>
         {message?.toLowerCase().includes("takeout") ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-white/10 bg-black/20 p-3 text-sm text-mist" role="status"><span>{message}</span>{canRetryTakeout ? <button className="btn-secondary" type="button" onClick={onRetryTakeout}>Retry import</button> : null}</div> : null}
+        {message?.toLowerCase().includes("spotify") ? <div className="mt-4 flex flex-wrap items-center gap-3 rounded border border-white/10 bg-black/20 p-3 text-sm text-mist" role="status"><span>{message}</span>{canRetrySpotifyHistory ? <button className="btn-secondary" type="button" onClick={onRetrySpotifyHistory}>Retry Spotify import</button> : null}</div> : null}
         {auth?.cached_data_available && message?.includes("Imported") ? <button className="btn-secondary mt-4" type="button" onClick={onViewOverview}>View Updated Overview</button> : null}
       </SettingsCard>
 
@@ -117,7 +125,7 @@ export function SettingsPage({
               Spotify is optional. It stays separate from YouTube Music and uses top artists, top tracks, saved songs, playlists, and recent plays.
             </p>
           </div>
-          <StatusPill ok={spotifyStatus?.connected} label={spotifyStatus?.connected ? "Connected" : "Optional"} />
+          <StatusPill ok={spotifyReady} label={spotifyStatus?.historical_data_available ? "History imported" : spotifyStatus?.connected ? "Connected" : "Optional"} />
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <div className="border-t border-white/10 pt-4">
@@ -133,6 +141,7 @@ export function SettingsPage({
           </div>
           <Info label="Spotify configured" value={spotifyStatus?.configured ? "Yes" : "No"} />
           <Info label="Last Spotify sync" value={spotifyStatus?.last_synced_at || "Never"} />
+          <Info label="Imported history" value={spotifyStatus?.historical_data_available ? `${spotifyStatus.historical_play_count.toLocaleString()} plays` : "Not imported"} />
           <Info label="Status" value={sanitizePrivateDetails(spotifyStatus?.message || "Not checked yet")} />
         </div>
         <div className="mt-5 flex flex-wrap gap-3">
@@ -150,9 +159,13 @@ export function SettingsPage({
               </button>
             </>
           )}
+          <label className="btn-secondary inline-flex cursor-pointer">
+            Import Spotify History
+            <input className="sr-only" disabled={busy} type="file" accept=".json,.zip,application/json,application/zip" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onImportSpotifyHistory(file); event.currentTarget.value = ""; }} />
+          </label>
         </div>
         <p className="mt-5 border-t border-white/10 pt-4 text-sm leading-6 text-mist">
-          Spotify does not provide Google Takeout-style full historical play counts. Initial Spotify profiles are based on top items, saved music, playlists, and recent sync data; monthly history improves after repeated syncs.
+          Upload Spotify's extended streaming-history ZIP for dated play counts and actual milliseconds played. OAuth remains optional and can add catalogue images, albums, release dates, and artist genres.
         </p>
       </SettingsCard>
 
@@ -232,7 +245,7 @@ export function SettingsPage({
         </div>
       </SettingsCard>
 
-      <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} busy={busy} message={message} spotifyConfigured={Boolean(spotifyStatus?.configured)} />
+      <MusicSourceModal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} onConnectSpotify={onConnectSpotify} onImportTakeout={onImportTakeout} onImportSpotifyHistory={onImportSpotifyHistory} busy={busy} message={message} spotifyConfigured={Boolean(spotifyStatus?.configured)} />
     </div>
   );
 }
