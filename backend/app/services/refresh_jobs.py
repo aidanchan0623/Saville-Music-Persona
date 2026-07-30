@@ -4,12 +4,10 @@ import logging
 import threading
 import time
 import uuid
-from contextvars import copy_context
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.database.repository import JsonRepository
-from app.session import current_session_namespace
 
 
 JOB_KEY = "refresh_job"
@@ -39,7 +37,7 @@ class RefreshCoordinator:
         self.repo = repo
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
-        self._active_scopes: set[str] = set()
+        self._active = False
         self._logger = logging.getLogger("saville.refresh")
         self.recover_interrupted_job()
 
@@ -60,14 +58,13 @@ class RefreshCoordinator:
         self.repo.save_json(JOB_KEY, job)
 
     def start(self, options: dict[str, bool], processor: Processor) -> dict[str, Any]:
-        scope = current_session_namespace() or "local"
         with self._lock:
-            if scope in self._active_scopes:
+            if self._active:
                 raise RefreshAlreadyRunning("Music refresh is already running.")
             previous = self.status()
             if previous and previous.get("status") in ACTIVE_STATUSES:
                 raise RefreshAlreadyRunning("Music refresh is already running.")
-            self._active_scopes.add(scope)
+            self._active = True
         job = {
             "jobId": uuid.uuid4().hex,
             "status": "queued",
@@ -83,8 +80,7 @@ class RefreshCoordinator:
             "warnings": [],
         }
         self.repo.save_json(JOB_KEY, job)
-        context = copy_context()
-        threading.Thread(target=context.run, args=(self._run, options, processor), name="music-refresh", daemon=True).start()
+        threading.Thread(target=self._run, args=(options, processor), name="music-refresh", daemon=True).start()
         return job
 
     def _run(self, options: dict[str, bool], processor: Processor) -> None:
@@ -97,9 +93,8 @@ class RefreshCoordinator:
             self._logger.exception("music refresh failed")
             self.fail("Music refresh failed safely. Your previous profile was preserved.", "refresh_failed")
         finally:
-            scope = current_session_namespace() or "local"
             with self._lock:
-                self._active_scopes.discard(scope)
+                self._active = False
 
     def stage(self, status: str, message: str, **fields: Any) -> dict[str, Any]:
         job = self.status() or {"jobId": uuid.uuid4().hex, "createdAt": utc_now()}

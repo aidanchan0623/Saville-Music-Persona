@@ -13,7 +13,7 @@ import { RecommendationsPage } from "./pages/RecommendationsPage";
 import { ReportPage } from "./pages/ReportPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { Top10Page } from "./pages/Top10Page";
-import type { AuthStatus, MusicSource, OverviewResponse, PersonaReport, Prerequisites, Recommendation, SessionStatus, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
+import type { AuthStatus, MusicSource, OverviewResponse, PersonaReport, Prerequisites, Recommendation, SpotifyStatus, TopArtist, TopTrack } from "./types/api";
 
 const PAGE_PATHS: Record<Page, string> = {
   overview: "/",
@@ -61,10 +61,6 @@ export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [spotifyStatus, setSpotifyStatus] = useState<SpotifyStatus | null>(null);
   const [prerequisites, setPrerequisites] = useState<Prerequisites | null>(null);
-  const [runtime, setRuntime] = useState<SessionStatus | null>(null);
-  const [sessionReady, setSessionReady] = useState(false);
-  const [sessionError, setSessionError] = useState<string | null>(null);
-  const [sessionAttempt, setSessionAttempt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const loadAnalysisTokenRef = useRef(0);
@@ -140,23 +136,6 @@ export default function App() {
   }, [useDemo]);
 
   useEffect(() => {
-    let cancelled = false;
-    setSessionReady(false);
-    setSessionError(null);
-    api.sessionStatus()
-      .then((status) => {
-        if (cancelled) return;
-        setRuntime(status);
-        if (status.anonymous) setUseDemo(false);
-        setSessionReady(true);
-      })
-      .catch((error) => {
-        if (!cancelled) setSessionError(error instanceof Error ? error.message : "Could not start a private upload session.");
-      });
-    return () => { cancelled = true; };
-  }, [sessionAttempt]);
-
-  useEffect(() => {
     localStorage.setItem("smp_sidebar_collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
 
@@ -167,14 +146,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionReady) return;
     const refreshStatus = () => {
       void loadStatus().catch((error) => setMessage(error.message));
     };
     refreshStatus();
     const interval = window.setInterval(refreshStatus, 30_000);
     return () => window.clearInterval(interval);
-  }, [sessionReady]);
+  }, []);
 
   useEffect(() => {
     const legacyPath = ["/scores", "/patterns"].includes(normalisePath(window.location.pathname));
@@ -193,7 +171,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!sessionReady) return;
     if (skipNextSourceLoadRef.current) {
       skipNextSourceLoadRef.current = false;
       return;
@@ -208,7 +185,7 @@ export default function App() {
             : "YouTube Music analysis could not be loaded.",
       );
     });
-  }, [source, sessionReady]);
+  }, [source]);
 
   useEffect(() => () => {
     importAbortControllerRef.current?.abort();
@@ -218,11 +195,6 @@ export default function App() {
   }, []);
 
   const refresh = async () => {
-    if (runtime?.anonymous) {
-      navigate("settings");
-      setMessage("Upload a Google Takeout or Spotify export to begin this anonymous session.");
-      return;
-    }
     const started = await runExclusiveOperation(operationInFlightRef, setBusy, async () => {
       setMessage(source === "spotify" ? "Refreshing local Spotify data..." : useDemo ? "Loading anonymised demo listening history..." : "Refreshing local YouTube Music data...");
       try {
@@ -265,13 +237,13 @@ export default function App() {
 
   const generateReport = async (period: "rolling_year" | "this_month" = "rolling_year"): Promise<{ ok: boolean; message: string }> => {
     setBusy(true);
-    setMessage(runtime?.anonymous ? "Writing your private persona report..." : "Asking local Gemma to rewrite the deterministic Music Character profile...");
+    setMessage("Asking local Gemma to rewrite the deterministic Music Character profile...");
     try {
       const nextReport = await api.generateReport("roast", source, period);
       setReport(nextReport);
       navigate("report");
       void loadStatus().catch(() => undefined);
-      const message = reportGenerationMessage(nextReport.generation.source, nextReport.generation.fallbackReason, Boolean(runtime?.anonymous));
+      const message = reportGenerationMessage(nextReport.generation.source, nextReport.generation.fallbackReason);
       setMessage(message);
       return { ok: true, message };
     } catch (error) {
@@ -463,10 +435,6 @@ export default function App() {
   }, [analysisReady, source, useDemo]);
 
   const createPlaylist = async () => {
-    if (!runtime?.accountConnectionsEnabled) {
-      setMessage("Playlist creation is unavailable in anonymous upload mode.");
-      return;
-    }
     if (source === "spotify") {
       setMessage("Playlist creation currently uses YouTube Music recommendations. Switch back to YouTube Music first.");
       return;
@@ -485,11 +453,6 @@ export default function App() {
   };
 
   const connectSpotify = () => {
-    if (!runtime?.accountConnectionsEnabled) {
-      setMessage("Upload your Spotify export instead; anonymous sessions do not connect accounts.");
-      navigate("settings");
-      return;
-    }
     window.location.href = api.spotifyLoginUrl();
   };
 
@@ -537,7 +500,6 @@ export default function App() {
             prerequisites={prerequisites}
             busy={busy}
             useDemo={useDemo}
-            anonymousMode={Boolean(runtime?.anonymous)}
             onRefresh={refresh}
             onOpenSettings={() => navigate("settings")}
             onOpenReport={() => navigate("report")}
@@ -552,13 +514,12 @@ export default function App() {
       case "report":
         return <ReportPage report={report} busy={busy} onGenerate={generateReport} source={source} titleAnimationKey={titleAnimationKey} />;
       case "recommendations":
-        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} canCreatePlaylist={Boolean(runtime?.accountConnectionsEnabled)} source={source} titleAnimationKey={titleAnimationKey} />;
+        return <RecommendationsPage recommendations={recommendations} busy={busy} onGenerate={generateRecommendations} onCreatePlaylist={createPlaylist} source={source} titleAnimationKey={titleAnimationKey} />;
       case "settings":
         return (
           <SettingsPage
             auth={auth}
             prerequisites={prerequisites}
-            runtime={runtime}
             useDemo={useDemo}
             busy={busy}
             onUseDemoChange={setUseDemo}
@@ -588,7 +549,7 @@ export default function App() {
           />
         );
     }
-  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, runtime, busy, useDemo, tracks, artists, report, recommendations, source, message, canRetryTakeout, canRetrySpotifyHistory]);
+  }, [page, titleVisitId, overview, auth, spotifyStatus, prerequisites, busy, useDemo, tracks, artists, report, recommendations, source, message, canRetryTakeout, canRetrySpotifyHistory]);
 
   const youtubeAnalysisReady = overview?.source === "youtube";
   const youtubeReady = Boolean(auth?.connected || auth?.cached_data_available || youtubeAnalysisReady || (useDemo && overview));
@@ -600,19 +561,6 @@ export default function App() {
         ? "YouTube data loaded"
         : "YouTube offline";
   const currentNav = NAVIGATION_ITEMS.find((item) => item.id === page) ?? NAVIGATION_ITEMS[0];
-
-  if (!sessionReady) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-ink px-5 text-white">
-        <GlowPanel as="section" variant="card" className="max-w-lg p-7 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-200">Saville Music</p>
-          <h1 className="mt-3 text-3xl font-black">{sessionError ? "Session could not start" : "Starting your private session"}</h1>
-          <p className="mt-3 text-sm leading-6 text-mist">{sessionError || "Preparing an isolated space before any listening data is requested."}</p>
-          {sessionError ? <button className="btn-primary mt-5" type="button" onClick={() => setSessionAttempt((value) => value + 1)}>Try again</button> : null}
-        </GlowPanel>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -691,7 +639,7 @@ export default function App() {
           </div>
         </header>
         <main className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-10">
-          {page !== "report" ? <SourceSwitcher source={source} spotifyStatus={spotifyStatus} accountConnectionsEnabled={Boolean(runtime?.accountConnectionsEnabled)} onChange={setSource} onConnectSpotify={connectSpotify} /> : null}
+          {page !== "report" ? <SourceSwitcher source={source} spotifyStatus={spotifyStatus} onChange={setSource} onConnectSpotify={connectSpotify} /> : null}
           {message && page !== "report" ? (
             <GlowPanel as="div" variant="row" wrapperClassName="mb-5" className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm text-mist">
               <span>{message}</span>
@@ -707,8 +655,7 @@ export default function App() {
   );
 }
 
-function reportGenerationMessage(source: PersonaReport["generation"]["source"], fallbackReason: string | null, anonymous = false) {
-  if (anonymous) return source === "fallback" ? "Persona report generated with the private deterministic writer." : "Persona report generated for this anonymous session.";
+function reportGenerationMessage(source: PersonaReport["generation"]["source"], fallbackReason: string | null) {
   if (source !== "fallback") return "Persona report regenerated locally with Gemma.";
   if (fallbackReason === "ollama_timeout") return "Gemma is available but did not finish in time; the report uses the local fallback.";
   if (fallbackReason === "model_not_installed") return "Gemma is not installed; the report uses the local fallback.";
@@ -719,13 +666,11 @@ function reportGenerationMessage(source: PersonaReport["generation"]["source"], 
 function SourceSwitcher({
   source,
   spotifyStatus,
-  accountConnectionsEnabled,
   onChange,
   onConnectSpotify,
 }: {
   source: MusicSource;
   spotifyStatus: SpotifyStatus | null;
-  accountConnectionsEnabled: boolean;
   onChange: (source: MusicSource) => void;
   onConnectSpotify: () => void;
 }) {
@@ -740,7 +685,7 @@ function SourceSwitcher({
             <p className="mt-1 max-w-3xl text-xs leading-5 text-mist">
               {spotifyStatus?.historical_data_available
                 ? `Using ${spotifyStatus.historical_play_count.toLocaleString()} imported Spotify plays${spotifyStatus.connected ? " plus connected catalogue metadata" : ""}.`
-                : accountConnectionsEnabled ? "Connect Spotify for catalogue signals, or upload an export for dated historical play counts." : "Upload a Spotify export for dated historical play counts."}
+                : "Connect Spotify for catalogue signals, or upload an export for dated historical play counts."}
             </p>
           ) : null}
         </div>
@@ -751,7 +696,7 @@ function SourceSwitcher({
           <button className={`rounded-md px-3 py-2 text-sm font-semibold ${source === "spotify" ? "bg-red-600 text-white" : "bg-white/10 text-mist hover:text-white"}`} onClick={() => onChange("spotify")}>
             Spotify
           </button>
-          {accountConnectionsEnabled && source === "spotify" && !spotifyStatus?.connected && !spotifyStatus?.cached_data_available ? (
+          {source === "spotify" && !spotifyStatus?.connected && !spotifyStatus?.cached_data_available ? (
             <button className="btn-secondary" onClick={onConnectSpotify}>Connect Spotify</button>
           ) : null}
         </div>

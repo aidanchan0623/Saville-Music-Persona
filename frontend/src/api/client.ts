@@ -18,7 +18,6 @@ import type {
   Recommendation,
   RefreshQueued,
   RefreshStatus,
-  SessionStatus,
   SpotifyStatus,
   TasteDnaComparison,
   TasteDnaExplorer,
@@ -40,9 +39,8 @@ function paramsWithSource(source: MusicSource = "youtube", values: Record<string
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    credentials: "include",
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    ...init,
   });
   if (!response.ok) {
     let message = `${response.status} ${response.statusText}`;
@@ -77,7 +75,6 @@ function requireOverviewSchema(value: OverviewResponse) {
 
 export const api = {
   health: () => request<{ ok: boolean }>("/health"),
-  sessionStatus: () => request<SessionStatus>("/session"),
   prerequisites: () => request<Prerequisites>("/prerequisites"),
   authStatus: (live = false) => request<AuthStatus>(`/auth/status${live ? "?live=true" : ""}`),
   authSetup: () => request<Record<string, unknown>>("/auth/setup", { method: "POST", body: "{}" }),
@@ -100,7 +97,7 @@ export const api = {
   importTakeout: async (file: File, signal?: AbortSignal) => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch(`${API_BASE}/data/import-takeout`, { method: "POST", body: form, signal, credentials: "include" });
+    const response = await fetch(`${API_BASE}/data/import-takeout`, { method: "POST", body: form, signal });
     if (!response.ok) {
       let message = `${response.status} ${response.statusText}`;
       try {
@@ -118,7 +115,7 @@ export const api = {
   importSpotifyHistory: async (file: File, signal?: AbortSignal) => {
     const form = new FormData();
     form.append("file", file);
-    const response = await fetch(`${API_BASE}/data/import-spotify-history`, { method: "POST", body: form, signal, credentials: "include" });
+    const response = await fetch(`${API_BASE}/data/import-spotify-history`, { method: "POST", body: form, signal });
     if (!response.ok) {
       let message = `${response.status} ${response.statusText}`;
       try {

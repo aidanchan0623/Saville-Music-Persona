@@ -10,12 +10,11 @@ interface Props {
   busy: boolean;
   onGenerate: () => void;
   onCreatePlaylist: () => void;
-  canCreatePlaylist: boolean;
   source: MusicSource;
   titleAnimationKey: string;
 }
 
-export function RecommendationsPage({ recommendations, busy, onGenerate, onCreatePlaylist, canCreatePlaylist, source, titleAnimationKey }: Props) {
+export function RecommendationsPage({ recommendations, busy, onGenerate, onCreatePlaylist, source, titleAnimationKey }: Props) {
   const groups = RECOMMENDATION_GROUPS.map((group) => ({
     ...group,
     items: recommendations.filter((item) => recommendationGroup(item) === group.group),
@@ -34,15 +33,13 @@ export function RecommendationsPage({ recommendations, busy, onGenerate, onCreat
             <button className="btn-primary" disabled={busy || spotifyMode} onClick={onGenerate}>
               <WandSparkles size={17} /> {busy ? "Generating..." : "Generate 20 Recommendations"}
             </button>
-            {canCreatePlaylist ? (
-              <button className="btn-secondary" disabled={busy || recommendations.length === 0 || spotifyMode} onClick={onCreatePlaylist}>
-                <ListPlus size={17} /> Create "Saville Recommendations" Playlist
-              </button>
-            ) : null}
+            <button className="btn-secondary" disabled={busy || recommendations.length === 0 || spotifyMode} onClick={onCreatePlaylist}>
+              <ListPlus size={17} /> Create "Saville Recommendations" Playlist
+            </button>
           </div>
         }
         metadata={
-          <span>{spotifyMode ? "Spotify view" : "YouTube Music view"} / {recommendations.length} saved picks / {spotifyMode ? "Generation paused" : canCreatePlaylist ? "Playlist tools ready" : "Anonymous session"}</span>
+          <span>{spotifyMode ? "Spotify view" : "YouTube Music view"} / {recommendations.length} saved picks / {spotifyMode ? "Generation paused" : "Playlist tools ready"}</span>
         }
       />
       <div className="grid gap-3 md:grid-cols-3">

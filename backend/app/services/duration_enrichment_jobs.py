@@ -4,12 +4,10 @@ import logging
 import threading
 import time
 import uuid
-from contextvars import copy_context
 from datetime import datetime, timezone
 from typing import Any, Callable
 
 from app.database.repository import JsonRepository
-from app.session import current_session_namespace
 
 
 JOB_KEY = "duration_enrichment_job"
@@ -30,7 +28,7 @@ class DurationEnrichmentCoordinator:
         self.repo = repo
         self.timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
-        self._active_scopes: set[str] = set()
+        self._active = False
         self._logger = logging.getLogger("saville.duration_enrichment")
         self.recover_interrupted_job()
 
@@ -50,14 +48,13 @@ class DurationEnrichmentCoordinator:
         self.repo.save_json(JOB_KEY, job)
 
     def start(self, processor: Processor) -> dict[str, Any]:
-        scope = current_session_namespace() or "local"
         with self._lock:
-            if scope in self._active_scopes:
+            if self._active:
                 raise DurationEnrichmentAlreadyRunning("Track duration enrichment is already running.")
             previous = self.status()
             if previous and previous.get("status") in ACTIVE_STATUSES:
                 raise DurationEnrichmentAlreadyRunning("Track duration enrichment is already running.")
-            self._active_scopes.add(scope)
+            self._active = True
         job = {
             "jobId": uuid.uuid4().hex,
             "status": "queued",
@@ -71,8 +68,7 @@ class DurationEnrichmentCoordinator:
             "added": 0,
         }
         self.repo.save_json(JOB_KEY, job)
-        context = copy_context()
-        thread = threading.Thread(target=context.run, args=(self._run, processor), name="duration-enrichment", daemon=True)
+        thread = threading.Thread(target=self._run, args=(processor,), name="duration-enrichment", daemon=True)
         thread.start()
         return job
 
@@ -87,9 +83,8 @@ class DurationEnrichmentCoordinator:
             self._logger.exception("duration enrichment failed")
             self.fail("Duration enrichment failed safely. Your current listening profile was preserved.", "duration_enrichment_failed")
         finally:
-            scope = current_session_namespace() or "local"
             with self._lock:
-                self._active_scopes.discard(scope)
+                self._active = False
             completed = self.status()
             continue_with_next_batch = bool(completed and completed.get("status") == "complete" and completed.get("continueQueued"))
             if continue_with_next_batch:
