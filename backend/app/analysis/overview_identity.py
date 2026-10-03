@@ -108,9 +108,10 @@ def deterministic_identity(evidence: dict[str, Any]) -> dict[str, Any]:
         context = "Soundtrack"
 
     title = f"The {emotional} {context} {behaviour}"
-    top_sound = str(evidence.get("topGenre") or "Still mapping")
+    raw_sound = str(evidence.get("topGenre") or "").strip()
+    top_sound = raw_sound if raw_sound.casefold() not in {"", "unknown", "unclassified", "other / unclassified"} else "Still mapping"
     traits = [str(item) for item in evidence.get("sonicTraits") or [] if str(item).strip()]
-    description = traits[0].capitalize() if traits else "The strongest mapped sound in this period"
+    description = traits[0].capitalize() if traits else "No classified genre evidence yet" if top_sound == "Still mapping" else "The strongest mapped sound in this period"
     tagline = _fallback_tagline(behaviour, repeat, discovery)
     explanation = _fallback_explanation(top_sound, traits, repeat, discovery, stability)
     return {
@@ -168,6 +169,8 @@ def _fallback_tagline(behaviour: str, repeat: float, discovery: float) -> str:
 
 
 def _fallback_explanation(top_sound: str, traits: list[str], repeat: float, discovery: float, stability: float) -> str:
+    if top_sound == "Still mapping":
+        return "Play counts and repeated favourites are available. Genre metadata is incomplete, so a dominant sound has not been assigned."
     texture = ", ".join(traits[:2]) if traits else "a consistent emotional texture"
     behaviour = (
         "Trusted songs have strong repeat gravity"

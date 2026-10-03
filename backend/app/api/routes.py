@@ -139,7 +139,7 @@ def current_recording_catalog() -> RecordingCatalog:
     return RecordingCatalog(repo.db_path)
 
 PERSONA_REPORT_SCHEMA_VERSION = 8
-PERSONA_REPORT_PROMPT_VERSION = 10
+PERSONA_REPORT_PROMPT_VERSION = 11
 PERSONA_REPORT_PERIOD = "rolling_year"
 PERSONA_REPORT_PERIODS = {"rolling_year", "this_month"}
 OVERVIEW_FALLBACK_CACHE_SECONDS = 300
@@ -225,7 +225,9 @@ def save_persona_report_pointer(source: str, mode: str, analytics_fingerprint: s
 
 def require_cache(key: str) -> Any:
     if key in {"normalised", "analysis", "recommendations"}:
-        validate_takeout_cache_schema()
+        active_profile = repo.load_json_cached("normalised") or {}
+        if (active_profile.get("metadata") or {}).get("source") != "demo":
+            validate_takeout_cache_schema()
     value = repo.load_json_cached(key)
     if value is None:
         raise HTTPException(status_code=404, detail={"error": "No data yet", "detail": "Refresh music data first or enable demo data.", "code": "no_cached_data"})
@@ -303,6 +305,16 @@ def takeout_reimport_status(metadata: Any) -> dict[str, Any]:
         "storedDataSchemaVersion": data,
         "currentDataSchemaVersion": NORMALISED_DATA_SCHEMA_VERSION,
     }
+
+
+def active_takeout_reimport_status(source: str, normalised: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Only an active Takeout import can require an import-schema migration."""
+    if normalise_source(source) != "youtube" or repo.updated_at("takeout_history") is None:
+        return {"requiresReimport": False}
+    active_profile = normalised if normalised is not None else repo.load_json_cached("normalised") or {}
+    if (active_profile.get("metadata") or {}).get("source") == "demo":
+        return {"requiresReimport": False}
+    return takeout_reimport_status(repo.load_json(TAKEOUT_CACHE_METADATA_KEY))
 
 
 def ensure_youtube_artist_images() -> None:
@@ -550,8 +562,8 @@ def clear_analytics_memory_caches() -> None:
 def analytics_envelope(source: str, profile: dict[str, Any], normalised: dict[str, Any], data: Any) -> AnalyticsEnvelope[Any]:
     figures = profile["figures"]
     metadata = normalised.get("metadata") or {}
-    import_meta = repo.load_json(TAKEOUT_CACHE_METADATA_KEY) if source == "youtube" else {}
-    reimport = takeout_reimport_status(import_meta) if source == "youtube" else {"requiresReimport": False}
+    import_meta = repo.load_json(TAKEOUT_CACHE_METADATA_KEY) if source == "youtube" and metadata.get("source") != "demo" and repo.updated_at("takeout_history") is not None else {}
+    reimport = active_takeout_reimport_status(source, normalised)
     warnings: list[ContractWarning] = []
     if figures["duration_coverage"] < 100:
         warnings.append(ContractWarning(code="LOW_DURATION_COVERAGE", severity="warning", message="Detected listening time excludes plays without known duration.", affectedFields=["detectedMinutes"]))
@@ -995,11 +1007,10 @@ def process_takeout_import(
         normalised = normalise_with_duration_cache(
             raw,
             warnings,
-            # Both lookups can use the public YouTube Music catalogue. A
-            # Takeout-only setup should not need a live account session just to
-            # display its own artists and album covers.
-            allow_artist_image_enrichment=True,
-            allow_album_image_enrichment=True,
+            # Import uses local records and cached metadata. Keep catalogue
+            # lookups outside the file transaction so large imports can finish.
+            allow_artist_image_enrichment=False,
+            allow_album_image_enrichment=False,
         )
         normalised = annotate_normalised_durations(normalised, repo.load_json("duration_cache") or {})
     except Exception:  # noqa: BLE001
@@ -1305,7 +1316,14 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     duration_cache = repo.load_json("duration_cache") or {}
     if not isinstance(duration_cache, dict):
         duration_cache = {}
-    stats = ytmusic.enrich_duration_cache(cached_normalised, duration_cache, settings.duration_enrichment_limit)
+    # Reserve rebuild time and checkpoint each resolved record. Each explicit
+    # action runs one batch rather than chaining through the entire archive.
+    resolution_deadline = max(time.monotonic(), deadline - 45)
+    stats = ytmusic.enrich_duration_cache(
+        cached_normalised, duration_cache, settings.duration_enrichment_limit,
+        deadline=min(resolution_deadline, time.monotonic() + 100),
+        on_cache_update=lambda updated: repo.save_json("duration_cache", updated),
+    )
     release_year_cache = repo.load_json("release_year_cache_v1") or {}
     if not isinstance(release_year_cache, dict):
         release_year_cache = {}
@@ -1313,12 +1331,16 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
         cached_normalised,
         release_year_cache,
         settings.release_year_enrichment_limit,
+        deadline=min(resolution_deadline, time.monotonic() + 50),
+        on_cache_update=lambda updated: repo.save_json("release_year_cache_v1", updated),
     )
     track_metadata_cache = ensure_track_metadata_cache(repo.load_json("track_metadata_cache_v1") or {})
     metadata_stats = ytmusic.enrich_track_metadata_cache(
         cached_normalised,
         track_metadata_cache,
         settings.track_metadata_enrichment_limit,
+        deadline=resolution_deadline,
+        on_cache_update=lambda updated: repo.save_json("track_metadata_cache_v1", updated),
     )
     coordinator.check_timeout(deadline)
     if not stats.get("attempted") and not release_stats.get("attempted") and not metadata_stats.get("attempted"):
@@ -1353,15 +1375,11 @@ def process_duration_enrichment(coordinator: DurationEnrichmentCoordinator, dead
     )
     clear_analytics_memory_caches()
     remaining_total = int(stats.get("remaining") or 0) + int(release_stats.get("remaining") or 0) + int(metadata_stats.get("remaining") or 0)
-    remaining_note = f" {remaining_total} more track(s) remain queued for the next local batch." if remaining_total else ""
+    remaining_note = f" {remaining_total} metadata lookups remain available for another batch." if remaining_total else ""
     coordinator.stage(
         "complete",
         f"Resolved {stats['added']} track duration(s), {metadata_stats['added']} authoritative track metadata record(s), and {release_stats['added']} release year(s). Listening totals are updated.{remaining_note}",
-        # Duration lookups are cheap to resume automatically.  Release-year
-        # matching makes upstream searches and album reads, so leave additional
-        # metadata for the next explicit/background refresh instead of chaining
-        # an unbounded job on a laptop.
-        continueQueued=bool(stats.get("remaining")),
+        continueQueued=False,
         **stats,
         releaseYearEnrichment=release_stats,
         trackMetadataEnrichment=metadata_stats,
@@ -1539,7 +1557,7 @@ def analytics_diagnostics(
     source: str = Query("youtube"),
 ) -> dict[str, Any]:
     """Developer-safe reconciliation; it exposes counts and versions, never events."""
-    reimport = takeout_reimport_status(repo.load_json(TAKEOUT_CACHE_METADATA_KEY)) if normalise_source(source) == "youtube" else {"requiresReimport": False}
+    reimport = active_takeout_reimport_status(source)
     if reimport["requiresReimport"]:
         return {"cache": {"status": "stale"}, "reimport": reimport}
     profile, normalised = canonical_period_profile(source, period, month, timezone_name)

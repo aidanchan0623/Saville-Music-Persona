@@ -4,9 +4,11 @@ import json
 import logging
 import re
 import shutil
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from functools import partial
 from typing import Any, Callable
 import unicodedata
 
@@ -163,7 +165,11 @@ class YTMusicService:
             from ytmusicapi import YTMusic
         except Exception as exc:  # noqa: BLE001
             raise RuntimeError("ytmusicapi is not installed. Run scripts/setup_windows.ps1 first.") from exc
-        return YTMusic()
+        import requests
+
+        session = requests.Session()
+        session.request = partial(session.request, timeout=10)
+        return YTMusic(requests_session=session)
 
     def fetch_library(self) -> dict[str, Any]:
         yt = self.client()
@@ -356,6 +362,8 @@ class YTMusicService:
         metadata_cache: dict[str, Any],
         limit: int = 100,
         preferred_track_ids: list[str] | None = None,
+        deadline: float | None = None,
+        on_cache_update: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, int]:
         """Resolve authoritative per-video track, artist, album, and year metadata.
 
@@ -418,9 +426,12 @@ class YTMusicService:
             return {"attempted": 0, "added": 0, "failed": 0, "albumAliases": 0, "remaining": 0}
 
         yt = self.public_client()
-        added = failed = album_aliases = 0
+        added = failed = album_aliases = attempted = 0
         fetched_albums: dict[str, dict[str, Any] | None] = {}
         for track in selected:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            attempted += 1
             video_id = str(track.get("video_id") or "")
             source_title = str(track.get("title") or "")
             source_artist = str(track.get("primary_artist") or "")
@@ -467,6 +478,8 @@ class YTMusicService:
                     "retryAfter": (now + timedelta(days=7)).isoformat(),
                 }
                 failed += 1
+                if on_cache_update:
+                    on_cache_update(cache)
                 continue
 
             candidate_artists = [
@@ -552,15 +565,18 @@ class YTMusicService:
                     cache_track_metadata(cache, album_entry, video_id=album_track.get("videoId"))
                     album_aliases += 1
 
+            if on_cache_update:
+                on_cache_update(cache)
+
         return {
-            "attempted": len(selected),
+            "attempted": attempted,
             "added": added,
             "failed": failed,
             "albumAliases": album_aliases,
-            "remaining": max(0, len(targets) - len(selected)),
+            "remaining": max(0, len(targets) - attempted),
         }
 
-    def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 1000) -> dict[str, Any]:
+    def enrich_duration_cache(self, normalised: dict[str, Any], duration_cache: dict[str, Any], limit: int = 1000, *, deadline: float | None = None, on_cache_update: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
         if limit <= 0:
             return {"attempted": 0, "added": 0, "failed": 0, "api_batches": 0, "fallback_attempted": 0, "remaining": 0}
         all_targets = _duration_targets(normalised, duration_cache, limit)
@@ -574,9 +590,13 @@ class YTMusicService:
         added = 0
         api_batches = 0
         unresolved = list(targets)
+        attempted_ids: set[str] = set()
         if self.settings.youtube_data_api_key:
             unresolved = []
             for batch in _chunks(targets, 50):
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                attempted_ids.update(batch)
                 api_batches += 1
                 try:
                     response = httpx.get(
@@ -619,6 +639,8 @@ class YTMusicService:
                 except (httpx.HTTPError, ValueError, TypeError):
                     # A public YTMusic lookup can still resolve individual IDs when the API key is misconfigured or quota-limited.
                     unresolved.extend(batch)
+                if on_cache_update:
+                    on_cache_update(duration_cache)
 
         fallback_attempted = 0
         if unresolved:
@@ -627,6 +649,9 @@ class YTMusicService:
             except Exception:
                 yt = None
             for video_id in unresolved:
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                attempted_ids.add(video_id)
                 fallback_attempted += 1
                 try:
                     payload = yt.get_song(video_id) if yt is not None else None
@@ -650,18 +675,20 @@ class YTMusicService:
                     added += 1
                 else:
                     _set_duration_cache_retry(duration_cache, video_id, "ytmusicapi.public.get_song", now)
+                if on_cache_update:
+                    on_cache_update(duration_cache)
 
-        failed = len(targets) - added
+        failed = len(attempted_ids) - added
         return {
-            "attempted": len(targets),
+            "attempted": len(attempted_ids),
             "added": added,
             "failed": failed,
             "api_batches": api_batches,
             "fallback_attempted": fallback_attempted,
-            "remaining": remaining,
+            "remaining": len(all_targets) - len(attempted_ids),
         }
 
-    def enrich_release_year_cache(self, normalised: dict[str, Any], release_cache: dict[str, Any], limit: int = 100) -> dict[str, int]:
+    def enrich_release_year_cache(self, normalised: dict[str, Any], release_cache: dict[str, Any], limit: int = 100, *, deadline: float | None = None, on_cache_update: Callable[[dict[str, Any]], None] | None = None) -> dict[str, int]:
         """Resolve high-impact missing release years through exact song and artist matches.
 
         The cache is keyed by stable local track ID, so an import can be rebuilt
@@ -701,8 +728,11 @@ class YTMusicService:
         if not selected:
             return {"attempted": 0, "added": 0, "failed": 0, "remaining": 0}
         yt = self.public_client()
-        added = failed = 0
+        added = failed = attempted = 0
         for track in selected:
+            if deadline is not None and time.monotonic() >= deadline:
+                break
+            attempted += 1
             track_id = str(track["track_id"])
             year = self._release_year_for_track(yt, track)
             if year:
@@ -724,7 +754,9 @@ class YTMusicService:
                     "retry_after": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
                 }
                 failed += 1
-        return {"attempted": len(selected), "added": added, "failed": failed, "remaining": max(0, len(pending) - len(selected))}
+            if on_cache_update:
+                on_cache_update(release_cache)
+        return {"attempted": attempted, "added": added, "failed": failed, "remaining": max(0, len(pending) - attempted)}
 
     def _release_year_for_track(self, yt: Any, track: dict[str, Any]) -> int | None:
         title = str(track.get("title") or "").strip()

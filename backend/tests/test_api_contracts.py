@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from datetime import date
 from pydantic import ValidationError
 
 from app.analysis.insights import insights_payload
@@ -26,7 +27,8 @@ def fixture_normalised() -> dict:
     )
 
 
-def test_envelope_projects_one_canonical_period_profile() -> None:
+def test_envelope_projects_one_canonical_period_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.analysis.periods.local_today", lambda _timezone=None: date(2026, 7, 7))
     normalised = fixture_normalised()
     profile = build_period_profile(normalised, "this_month", timezone_name="Asia/Kuala_Lumpur")
     overview = build_overview_response(normalised, "this_month", timezone_name="Asia/Kuala_Lumpur")
@@ -51,3 +53,16 @@ def test_contract_percentages_are_bounded() -> None:
             genreCoverage=0,
             releaseYearCoverage=0,
         )
+
+
+def test_overview_active_days_and_range_follow_selected_timezone() -> None:
+    normalised = normalise_collection({"history": [
+        {"videoId": "first", "title": "First", "artists": [{"name": "Artist One"}], "played": "2026-06-30T17:00:00Z", "duration_seconds": 180},
+        {"videoId": "second", "title": "Second", "artists": [{"name": "Artist Two"}], "played": "2026-07-01T10:00:00Z", "duration_seconds": 180},
+    ]})
+    response = build_overview_response(normalised, "month", "2026-07", "Asia/Kuala_Lumpur", today=date(2026, 7, 7))
+    coverage = response["overview"]["coverage"]
+    assert coverage["days_represented"] == 1
+    assert coverage["earliest_detected_play"] == "2026-07-01"
+    assert coverage["latest_detected_play"] == "2026-07-01"
+    assert response["overview"]["canonical_figures"]["active_days"] == 1

@@ -21,6 +21,7 @@ interface Props {
   onRefreshSpotify: () => void;
   onDisconnectSpotify: () => void;
   onImproveGenres: () => void;
+  onImproveMetadata: () => void;
   message: string | null;
   canRetryTakeout: boolean;
   onRetryTakeout: () => void;
@@ -44,6 +45,7 @@ export function SettingsPage({
   onRefreshSpotify,
   onDisconnectSpotify,
   onImproveGenres,
+  onImproveMetadata,
   message,
   canRetryTakeout,
   onRetryTakeout,
@@ -192,9 +194,15 @@ export function SettingsPage({
         </p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <Info label="Analytics timezone" value={prerequisites?.local_timezone || "Asia/Kuala_Lumpur"} />
-          <Info label="Duration enrichment limit" value={`${prerequisites?.duration_enrichment_limit ?? 150} missing tracks per refresh/import`} />
+          <Info label="Metadata lookup limit" value={`${prerequisites?.duration_enrichment_limit ?? 150} missing tracks per batch`} />
         </div>
         <div className="mt-5 border-t border-white/10 pt-4">
+          <button className="btn-secondary" type="button" disabled={busy || !auth?.cached_data_available} onClick={onImproveMetadata}>
+            <RefreshCw size={16} /> Look up track metadata
+          </button>
+          <p className="mt-3 mb-4 max-w-3xl text-sm leading-6 text-mist">
+            Looks up song and video identifiers with the YouTube catalogue for missing durations and release years. Your Takeout file stays local; importing it does not start these lookups.
+          </p>
           <button className="btn-secondary" type="button" disabled={busy || !auth?.cached_data_available} onClick={onImproveGenres}>
             <RefreshCw size={16} /> Improve genre coverage
           </button>
@@ -209,6 +217,7 @@ export function SettingsPage({
         <h2 className="mt-2 text-2xl font-black text-white">Import Google Takeout history</h2>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-mist">
           YouTube Music only exposed a short recent web history feed. Upload a Google Takeout YouTube watch-history JSON, HTML, or ZIP file to rebuild analysis with the longest account history Google provides.
+          Imports use local records and cached metadata. Online metadata lookups are separate.
         </p>
         <label className="mt-5 inline-flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-white transition hover:border-red-500/40 hover:bg-white/[0.09]">
           Choose Takeout file

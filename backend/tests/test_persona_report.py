@@ -51,7 +51,8 @@ def test_report_schema_is_v8_and_strict() -> None:
         PersonaReportResponse.model_validate({**payload, "legacyStory": {}})
 
 
-def test_persona_report_can_be_generated_for_current_month() -> None:
+def test_persona_report_can_be_generated_for_current_month(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.analysis.periods.local_today", lambda _timezone=None: date(2026, 7, 7))
     normalised = normalise_collection(
         {
             "history": [
@@ -175,7 +176,7 @@ def test_gemma_language_validation_accepts_bounded_prose() -> None:
 def test_gemma_language_rejects_numbers_and_unknown_artist() -> None:
     service = OllamaService(Settings())
     with pytest.raises(ValueError, match="numeric"):
-        service.parse_persona_language(valid_language_json().replace("carefully", "carefully 42", 1), evidence()["languageEvidence"])
+        service.parse_persona_language(valid_language_json().replace("familiar", "familiar 42", 1), evidence()["languageEvidence"])
     with pytest.raises(ValueError, match="unknown artist"):
         service.parse_persona_language(valid_language_json().replace("the familiar rotation", "the band Invented Artist"), evidence()["languageEvidence"])
 
@@ -223,6 +224,53 @@ def test_stalled_gemma_returns_the_complete_report_fallback() -> None:
     report = stalled.generate_persona_language(evidence()["languageEvidence"])
     assert report.generationSource == "fallback"
     assert report.fallbackReason == "ollama_timeout"
+
+
+def test_unused_age_prose_cannot_reject_valid_visible_sections() -> None:
+    import json
+    raw = json.loads(valid_language_json())
+    raw["musicalAgeExplanation"] = "Invented 1234 and 1700s."
+    parsed = OllamaService(Settings()).parse_persona_language(json.dumps(raw), evidence()["languageEvidence"])
+    assert parsed.generationSource == "gemma"
+    assert "1234" not in parsed.musicalAgeExplanation
+
+
+def test_fact_check_runs_before_short_body_fallback() -> None:
+    import json
+    raw = json.loads(valid_language_json())
+    raw["finalRoastBody"] = "You listened 42 times."
+    with pytest.raises(ValueError, match="numeric"):
+        OllamaService(Settings()).parse_persona_language(json.dumps(raw), evidence()["languageEvidence"])
+
+
+def test_rejected_fact_gets_one_bounded_repair_then_genuine_gemma() -> None:
+    class RepairService(FakeLanguageService):
+        calls = 0
+        def _request_json(self, method, path, payload=None, timeout=10):
+            self.calls += 1
+            assert 0 < timeout <= 90
+            if self.calls == 1:
+                return {"response": valid_language_json().replace("familiar", "familiar 42", 1)}
+            assert "REPAIR:" in payload["prompt"]
+            return {"response": valid_language_json()}
+    service = RepairService()
+    parsed = service.generate_persona_language(evidence()["languageEvidence"])
+    assert service.calls == 2
+    assert parsed.generationSource == "gemma"
+    assert parsed.fallbackReason is None
+
+
+def test_repeat_rejection_has_specific_reason_without_unlimited_retries() -> None:
+    class InvalidService(FakeLanguageService):
+        calls = 0
+        def _request_json(self, method, path, payload=None, timeout=10):
+            self.calls += 1
+            return {"response": valid_language_json().replace("familiar", "familiar 42", 1)}
+    service = InvalidService()
+    parsed = service.generate_persona_language(evidence()["languageEvidence"])
+    assert service.calls == 2
+    assert parsed.generationSource == "fallback"
+    assert parsed.fallbackReason == "language_numeric_claim"
 
 
 def test_final_roast_fallback_is_natural_and_metric_free() -> None:

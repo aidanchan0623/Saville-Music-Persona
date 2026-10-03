@@ -4,7 +4,7 @@ import json
 import threading
 import time
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -88,6 +88,20 @@ def test_large_valid_takeout_file_keeps_all_events(tmp_path: Path) -> None:
     result = parse_takeout_file(path)
     assert result.raw_event_count == 5000
     assert len(result.entries) == 5000
+
+
+def test_takeout_import_does_not_start_catalogue_lookups(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository = JsonRepository(tmp_path / "offline-import.db")
+    coordinator = TakeoutImportCoordinator(repository, timeout_seconds=30)
+    monkeypatch.setattr(routes, "repo", repository)
+    def unexpected_lookup(*_args, **_kwargs):
+        pytest.fail("Import must not contact an external artwork catalogue")
+    monkeypatch.setattr(routes.ytmusic, "enrich_artist_image_cache", unexpected_lookup)
+    monkeypatch.setattr(routes.ytmusic, "enrich_album_image_cache", unexpected_lookup)
+    coordinator.stage("offline", "queued", "queued")
+    routes.process_takeout_import("offline", write_format(tmp_path, "zip"), coordinator, time.monotonic() + 30)
+    assert coordinator.get("offline")["status"] == "complete"
+    assert repository.load_json("normalised")["metadata"]["play_count"] == 3
 
 
 def test_new_takeout_replaces_previous_profile_without_cross_user_contamination(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -197,10 +211,12 @@ def test_duration_enrichment_rebuilds_cached_profile_without_reimport(tmp_path: 
     repository.save_json("normalised", normalised)
     repository.save_json("analysis", {"top_tracks": [{"title": "Old"}], "coverage": {}})
     monkeypatch.setattr(routes, "repo", repository)
+    monkeypatch.setattr(routes.ytmusic, "enrich_release_year_cache", lambda *_args, **_kwargs: {"attempted": 0, "added": 0, "failed": 0})
+    monkeypatch.setattr(routes.ytmusic, "enrich_track_metadata_cache", lambda *_args, **_kwargs: {"attempted": 0, "added": 0, "failed": 0})
     monkeypatch.setattr(
         routes.ytmusic,
         "enrich_duration_cache",
-        lambda _normalised, cache, _limit: cache.update({"track": {"duration_seconds": 200, "duration_source": "test", "duration_confidence": "high"}}) or {"attempted": 1, "added": 1, "failed": 0, "api_batches": 0, "fallback_attempted": 0},
+        lambda _normalised, cache, _limit, **_kwargs: cache.update({"track": {"duration_seconds": 200, "duration_source": "test", "duration_confidence": "high"}}) or {"attempted": 1, "added": 1, "failed": 0, "api_batches": 0, "fallback_attempted": 0},
     )
     coordinator = DurationEnrichmentCoordinator(repository, timeout_seconds=30)
 
@@ -235,6 +251,7 @@ def test_timeout_check_raises_safe_timeout(tmp_path: Path) -> None:
 
 
 def test_upload_endpoint_queues_job_and_new_profile_is_readable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.analysis.periods.local_today", lambda _timezone=None: date(2026, 7, 20))
     repository = JsonRepository(tmp_path / "endpoint.db")
     coordinator = TakeoutImportCoordinator(repository, timeout_seconds=30)
     monkeypatch.setattr(routes, "repo", repository)

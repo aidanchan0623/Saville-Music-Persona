@@ -220,7 +220,6 @@ export default function App() {
         );
         await loadStatus();
         await loadAnalysis(source);
-        if (source === "youtube" && !useDemo) void enrichDurationsInBackground();
         setMessage(`Refreshed ${(response.trackCount ?? 0).toLocaleString()} tracks and ${(response.playCount ?? 0).toLocaleString()} detected plays.`);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -290,6 +289,7 @@ export default function App() {
             onStatus: (status) => setMessage(`${status.message} (${status.progress}%)`),
           },
         );
+        setUseDemo(false);
         await loadStatus();
         await loadAnalysis("youtube");
         if (source !== "youtube") {
@@ -298,7 +298,6 @@ export default function App() {
         }
         setCanRetryTakeout(false);
         setMessage(`${result.message} Imported ${result.importedCount ?? 0} history entries.`);
-        void enrichDurationsInBackground();
         completed = true;
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
@@ -429,11 +428,6 @@ export default function App() {
     if (!started) setMessage("Another data operation is already running. Wait for it to finish before enriching genres.");
   };
 
-  const analysisReady = Boolean(overview);
-  useEffect(() => {
-    if (analysisReady && source === "youtube" && !useDemo) void enrichDurationsInBackground();
-  }, [analysisReady, source, useDemo]);
-
   const createPlaylist = async () => {
     if (source === "spotify") {
       setMessage("Playlist creation currently uses YouTube Music recommendations. Switch back to YouTube Music first.");
@@ -545,6 +539,7 @@ export default function App() {
             onRefreshSpotify={refreshSpotify}
             onDisconnectSpotify={disconnectSpotify}
             onImproveGenres={improveGenres}
+            onImproveMetadata={enrichDurationsInBackground}
             titleAnimationKey={titleAnimationKey}
           />
         );
@@ -656,10 +651,13 @@ export default function App() {
 }
 
 function reportGenerationMessage(source: PersonaReport["generation"]["source"], fallbackReason: string | null) {
+  if (source !== "fallback" && fallbackReason === "gemma_short_final_roast") return "Gemma wrote the report; its short closing paragraph uses the local fallback.";
   if (source !== "fallback") return "Persona report regenerated locally with Gemma.";
   if (fallbackReason === "ollama_timeout") return "Gemma is available but did not finish in time; the report uses the local fallback.";
   if (fallbackReason === "model_not_installed") return "Gemma is not installed; the report uses the local fallback.";
   if (fallbackReason === "ollama_unavailable") return "Ollama is unavailable; the report uses the local fallback.";
+  if (fallbackReason === "language_length") return "Gemma's text exceeded the report limits after a retry; the local fallback was used.";
+  if (fallbackReason === "language_numeric_claim" || fallbackReason === "language_unknown_artist") return "Gemma added an unsupported fact after a retry; the report uses the verified local fallback.";
   return "Gemma could not produce a valid report this time; the local fallback was used.";
 }
 

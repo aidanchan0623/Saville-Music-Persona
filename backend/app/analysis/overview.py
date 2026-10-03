@@ -8,7 +8,7 @@ from typing import Any
 from app.analysis.music_character import character_payload
 from app.analysis.musical_age import apply_musical_age_language, calculate_musical_age
 from app.analysis.overview_identity import build_identity_evidence, compose_identity, validate_identity_language
-from app.analysis.periods import filter_events, normalised_for_events, resolve_period, serialise_spec, top_payload
+from app.analysis.periods import event_local_date, filter_events, normalised_for_events, resolve_period, serialise_spec, top_payload
 from app.analysis.period_profile import build_period_profile
 from app.analysis.scoring import build_analysis
 
@@ -164,9 +164,10 @@ def overview_language_fingerprint(evidence: dict[str, Any], source: str, model: 
 def _period_coverage(base: dict[str, Any], events: list[dict[str, Any]], spec: dict[str, Any]) -> dict[str, Any]:
     dates = sorted(
         {
-            str(event.get("played_at") or event.get("played_date_raw") or "")[:10]
+            day.isoformat()
             for event in events
-            if event.get("played_at") or event.get("played_date_raw")
+            for day in [event_local_date(event, spec["timezone"])]
+            if day is not None
         }
     )
     return {

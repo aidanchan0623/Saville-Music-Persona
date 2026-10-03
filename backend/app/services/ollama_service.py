@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import socket
 import time
@@ -18,19 +19,23 @@ from app.config import Settings
 # common laptop GPUs, which made a healthy model look offline to the report.
 REPORT_GENERATE_TIMEOUT_SECONDS = 90.0
 OVERVIEW_GENERATE_TIMEOUT_SECONDS = 12.0
+PERSONA_TEXT_LIMITS = {
+    "openingDescription": 380,
+    "personalityRoast": 260,
+    "finalRoastHeadline": 64,
+    "finalRoastBody": 850,
+    "finalLine": 90,
+}
 PERSONA_LANGUAGE_FORMAT = {
     "type": "object",
     "properties": {
-        "s": {
-            "type": "array",
-            "items": {"type": "string"},
-            "minItems": 6,
-            "maxItems": 6,
-        }
+        key: {"type": "string", "minLength": 1, "maxLength": limit}
+        for key, limit in PERSONA_TEXT_LIMITS.items()
     },
-    "required": ["s"],
+    "required": list(PERSONA_TEXT_LIMITS),
     "additionalProperties": False,
 }
+logger = logging.getLogger(__name__)
 
 
 class PersonaReportLanguage(BaseModel):
@@ -117,57 +122,90 @@ class OllamaService:
         if not status["model_installed"]:
             return self.fallback_persona_language(evidence, "model_not_installed", started)
         prompt = self._build_persona_language_prompt(evidence, mode)
-        try:
-            data = self._request_json(
-                "POST",
-                "/api/generate",
-                {
-                    "model": self.settings.ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    # Gemma 3 can return an empty object when merely asked for
-                    # JSON. Ollama's JSON-schema mode constrains decoding to
-                    # the exact six report fields the validator expects.
-                    "format": PERSONA_LANGUAGE_FORMAT,
-                    # The response is bounded to six short fields.  Keeping
-                    # the model warm removes repeated laptop-GPU load time and
-                    # the smaller cap avoids waiting for unused tokens.
-                    "keep_alive": "15m",
-                    "options": {"temperature": 0.38, "top_p": 0.86, "num_predict": 420},
-                },
-                timeout=min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS),
-            )
-            parsed = self.parse_persona_language(str(data.get("response") or ""), evidence)
-            parsed.durationMs = self._duration_ms(started)
-            return parsed
-        except TimeoutError:
-            return self.fallback_persona_language(evidence, "ollama_timeout", started)
-        except (ValueError, ValidationError):
-            return self.fallback_persona_language(evidence, "invalid_language_json", started)
-        except Exception:
-            return self.fallback_persona_language(evidence, "ollama_error", started)
+        deadline = started + min(float(self.settings.ollama_generate_timeout_seconds), REPORT_GENERATE_TIMEOUT_SECONDS)
+        for attempt in range(2):
+            try:
+                data = self._request_json(
+                    "POST",
+                    "/api/generate",
+                    {
+                        "model": self.settings.ollama_model,
+                        "prompt": prompt,
+                        "stream": False,
+                        # Named fields avoid positional ambiguity. Musical Age
+                        # stays deterministic and is not part of this generation.
+                        "format": PERSONA_LANGUAGE_FORMAT,
+                        "keep_alive": "15m",
+                        "options": {"temperature": 0, "num_predict": 760},
+                    },
+                    timeout=max(0.1, deadline - time.monotonic()),
+                )
+                if data.get("done_reason") == "length":
+                    raise ValueError("generation reached the token limit")
+                parsed = self.parse_persona_language(str(data.get("response") or ""), evidence)
+                parsed.durationMs = self._duration_ms(started)
+                return parsed
+            except TimeoutError:
+                return self.fallback_persona_language(evidence, "ollama_timeout", started)
+            except (ValueError, ValidationError) as exc:
+                # Record only a reason code, never the prompt or private profile.
+                reason = self._language_failure_reason(exc)
+                logger.warning("Persona language rejected: reason=%s attempt=%s", reason, attempt + 1)
+                if attempt == 0 and deadline - time.monotonic() >= 10:
+                    prompt += f"\nREPAIR: The previous answer failed validation ({reason}). Return all five named strings, no digits or new artist names; keep the closing body within seventy to one hundred fifteen words."
+                    continue
+                return self.fallback_persona_language(evidence, reason, started)
+            except Exception:
+                return self.fallback_persona_language(evidence, "ollama_error", started)
+        return self.fallback_persona_language(evidence, "invalid_language_json", started)
+
+    @staticmethod
+    def _language_failure_reason(exc: Exception) -> str:
+        message = str(exc)
+        if "numeric" in message:
+            return "language_numeric_claim"
+        if "unknown artist" in message:
+            return "language_unknown_artist"
+        if "missing" in message:
+            return "language_missing_field"
+        if "length" in message or "too long" in message:
+            return "language_length"
+        if "token limit" in message:
+            return "language_truncated"
+        return "invalid_language_json"
 
     def _build_persona_language_prompt(self, evidence: dict[str, Any], mode: str) -> str:
+        behaviour = evidence.get("behaviour") or {}
+        prose_evidence = {
+            key: evidence.get(key)
+            for key in ("personality", "strongestSignals", "knownArtists", "knownGenres")
+        }
+        prose_evidence["listeningHabits"] = {
+            key: behaviour.get(key)
+            for key in ("sonicTraits", "secondaryCharacter", "habits")
+        }
         return (
             "You are a funny, affectionate friend roasting someone's music taste from calculated evidence. Analytics already chose every fact. "
             "Do not add or change artists, numbers, dates, ranks, genres, diagnoses, relationships, private-life claims, "
             "protected-trait insults, slurs, or scientific certainty. Do not include any digits. Only mention an artist if "
-            "that exact artist appears in knownArtists. Return strict JSON with exactly one key named s, whose value is "
-            "an array of exactly six strings in this order: openingDescription, personalityRoast, musicalAgeExplanation, "
-            "finalRoastHeadline, finalRoastBody, finalLine. Do not use those names as keys. "
-            "Every field except musicalAgeExplanation should contain a clean joke, playful exaggeration, or vivid comparison; roast habits, never the person. "
+            "that exact artist appears in knownArtists. Return a JSON object with the five named string fields in the schema. "
+            "Use the supplied artist and listening-habit evidence so the prose is specific to this profile. "
+            "Every field should contain dry wit, a clean joke or a vivid comparison; roast listening habits, never the person. "
             "In serious mode use dry wit, in playful mode use warm teasing, and in roast mode be sharper but still kind. "
-            "openingDescription is at most fifty words. personalityRoast is one short punchline. musicalAgeExplanation is "
-            "two short sentences about only the supplied release-year centre, dominant decade and confidence; it must not "
-            "mention habits, discovery, album depth, emotion, or personality. It does not restate the age. finalRoastHeadline is at most sixty-four characters. "
-            "finalRoastBody is seventy to one hundred fifteen words and interprets personality, intensity, repetition, "
+            "openingDescription is at most fifty words. personalityRoast is one short punchline. "
+            "Do not discuss years, decades, ages or life events; those are handled separately by the app. "
+            "finalRoastHeadline is at most sixty-four characters. "
+            "finalRoastBody MUST be a complete paragraph of eighty to one hundred words, interpreting intensity, repetition, "
             "discovery, reflective or cinematic taste, and favourite-artist patterns without listing metrics. finalLine is "
             "at most ninety characters and lands as the final punchline. Tone mode: "
-            f"{mode}. CALCULATED_EVIDENCE_JSON:{json.dumps(evidence, ensure_ascii=True, separators=(',', ':'))}"
+            f"{mode}. OUTPUT_SCHEMA:{json.dumps(PERSONA_LANGUAGE_FORMAT)} "
+            f"CALCULATED_EVIDENCE_JSON:{json.dumps(prose_evidence, ensure_ascii=True, separators=(',', ':'))}"
         )
 
     def parse_persona_language(self, raw: str, evidence: dict[str, Any]) -> PersonaReportLanguage:
         data = self.extract_json(raw)
+        if not data:
+            raise ValueError("invalid report JSON")
         ordered = data.get("s") if isinstance(data.get("s"), list) and len(data["s"]) == 6 else None
         if ordered:
             data = dict(zip(
@@ -175,6 +213,9 @@ class OllamaService:
                 ordered,
                 strict=True,
             ))
+        # Legacy six-field responses remain readable, but generated age prose
+        # is neither rendered nor validated. The factual explanation is local.
+        data["musicalAgeExplanation"] = self.fallback_persona_language(evidence, "deterministic_musical_age").musicalAgeExplanation
         fields = {
             key: self._clean_text(data.get(key), limit)
             for key, limit in {
@@ -191,34 +232,22 @@ class OllamaService:
         if len(fields["openingDescription"].split()) > 50:
             raise ValueError("opening description is too long")
         body_words = len(fields["finalRoastBody"].split())
-        if body_words < 70:
-            # Gemma 3 4B reliably follows the six-field JSON shape, but can
-            # occasionally compress the closing section into a sentence. Keep
-            # the model-written sections and use the deterministic evidence
-            # summary for that one under-length field rather than throwing away
-            # an otherwise valid local generation.
-            fields["finalRoastBody"] = self.fallback_persona_language(evidence, "gemma_short_final_roast").finalRoastBody
-        elif body_words > 115:
+        if body_words > 115:
             raise ValueError("final roast length is outside the accepted range")
-        # The report renders Musical Age from deterministic data below.  A
-        # supplied year/decade may appear in the discarded age prose, but no
-        # other numerical claim is allowed anywhere.
-        age_facts = evidence.get("musicalAge") if isinstance(evidence.get("musicalAge"), dict) else {}
-        allowed_age_numbers = {
-            str(value)
-            for value in (age_facts.get("weightedMedianReleaseYear"), age_facts.get("dominantDecade"))
-            if value not in (None, "", 0, "Unknown")
-        }
+        # Only displayed prose is checked; Musical Age is calculated locally.
         has_invented_number = any(re.search(r"\d", value) for key, value in fields.items() if key != "musicalAgeExplanation")
-        age_numbers = re.findall(r"\d+(?:s)?", fields["musicalAgeExplanation"])
-        if has_invented_number or any(number not in allowed_age_numbers for number in age_numbers):
+        if has_invented_number:
             raise ValueError("generated language contains an invented numeric claim")
         known = [str(value).strip() for value in evidence.get("knownArtists", []) if str(value).strip()]
         for match in re.finditer(r"\b(?:by|artist|band)\s+([A-Z][\w'&.-]+(?:\s+[A-Z][\w'&.-]+){0,4})", " ".join(fields.values())):
             candidate = match.group(1).strip()
             if not any(candidate.casefold() == artist.casefold() for artist in known):
                 raise ValueError("generated language contains an unknown artist")
-        return PersonaReportLanguage(**fields, generationSource="gemma", fallbackReason=None)
+        partial_reason = None
+        if body_words < 70:
+            fields["finalRoastBody"] = self.fallback_persona_language(evidence, "gemma_short_final_roast").finalRoastBody
+            partial_reason = "gemma_short_final_roast"
+        return PersonaReportLanguage(**fields, generationSource="gemma", fallbackReason=partial_reason)
 
     def fallback_persona_language(
         self,
@@ -461,8 +490,8 @@ class OllamaService:
     def _clean_text(self, value: Any, max_chars: int = 220) -> str:
         if value is None:
             return ""
-        text_value = re.sub(r"\\s+", " ", str(value)).strip()
-        text_value = re.sub(r"^(?:#+\\s*|[-*]\\s+)", "", text_value)
+        text_value = re.sub(r"\s+", " ", str(value)).strip()
+        text_value = re.sub(r"^(?:#+\s*|[-*]\s+)", "", text_value)
         return text_value[:max_chars].strip()
 
     def extract_json(self, raw: str) -> dict[str, Any]:

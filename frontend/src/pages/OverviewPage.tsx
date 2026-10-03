@@ -49,8 +49,10 @@ export function OverviewPage({
   const [periodError, setPeriodError] = useState<string | null>(null);
 
   useEffect(() => {
-    setPeriod("this_month");
-    setSelectedMonth(null);
+    const latestMonth = overview?.selectedPeriod.availableMonths.at(-1);
+    const useLatestImportedMonth = overview?.overview.total_detected_plays === 0 && Boolean(latestMonth);
+    setPeriod(useLatestImportedMonth ? "month" : "this_month");
+    setSelectedMonth(useLatestImportedMonth ? latestMonth!.value : null);
     setActiveResponse(overview);
   }, [overview?.languageFingerprint, source]);
 
@@ -140,6 +142,11 @@ export function OverviewPage({
 
       {periodLoading ? <p className="overview-period-status" role="status">Loading {periodLabel(period).toLowerCase()}...</p> : null}
       {periodError ? <p className="overview-period-status overview-period-status--error" role="alert">{periodError}</p> : null}
+      {data.total_detected_plays === 0 && months.length > 0 ? (
+        <p className="overview-period-status" role="status">
+          No detected plays in {activeResponse.selectedPeriod.label}. The latest imported month is {months.at(-1)!.label}; choose Select Month to view it.
+        </p>
+      ) : null}
 
       <PageTitlePanel
         eyebrow="Private music identity"
@@ -169,8 +176,8 @@ export function OverviewPage({
       <section className="overview-coverage-strip" aria-label="Analysis coverage">
         <div><span>Detected plays</span><strong>{data.total_detected_plays.toLocaleString()}</strong></div>
         <div><span>Active days</span><strong>{data.coverage.days_represented.toLocaleString()}</strong></div>
-        <div><span>History range</span><strong>{data.coverage.earliest_detected_play || "Not available"}</strong></div>
-        <div><span>Status</span><strong>{data.coverage.history_coverage_status}</strong></div>
+        <div><span>History range</span><strong>{data.coverage.earliest_detected_play ? `${data.coverage.earliest_detected_play} – ${data.coverage.latest_detected_play ?? data.coverage.earliest_detected_play}` : "Not available"}</strong></div>
+        <div><span>Status</span><strong>{data.coverage.history_coverage_status.replaceAll("_", " ")}</strong></div>
       </section>
     </div>
   );

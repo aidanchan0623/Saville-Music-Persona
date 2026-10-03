@@ -86,6 +86,24 @@ def test_duration_enrichment_verifies_unknown_exact_video_as_music() -> None:
     assert cache["unknown-video"]["media_author"] == "Verified Artist - Topic"  # type: ignore[index]
 
 
+def test_metadata_deadline_preserves_completed_lookup_and_leaves_next_track_due(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    fake = FakeYTMusic(song_pages={"first": {"videoDetails": {"lengthSeconds": "200"}}, "second": {"videoDetails": {"lengthSeconds": "300"}}})
+    service = fake_service(fake)
+    service.public_client = lambda: fake  # type: ignore[method-assign]
+    clock = iter([0.0, 11.0])
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    checkpoints = []
+    cache = {}
+    normalised = {"tracks": [{"video_id": "first"}, {"video_id": "second"}], "play_events": [{"video_id": "first"}] * 2 + [{"video_id": "second"}]}
+    stats = service.enrich_duration_cache(normalised, cache, deadline=10, on_cache_update=lambda value: checkpoints.append(dict(value)))
+    assert fake.get_song_calls == ["first"]
+    assert stats == {"attempted": 1, "added": 1, "failed": 0, "api_batches": 0, "fallback_attempted": 1, "remaining": 1}
+    assert checkpoints[0]["first"]["duration_seconds"] == 200
+    assert "second" not in cache
+
+
 def test_duration_enrichment_respects_unknown_identity_retry_window() -> None:
     fake = FakeYTMusic(song_pages={})
     service = fake_service(fake)
